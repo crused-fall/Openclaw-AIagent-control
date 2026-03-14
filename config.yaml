@@ -1,0 +1,23 @@
+agents:
+  claude:
+    api_key: ${ANTHROPIC_API_KEY}
+    model: claude-sonnet-4-6
+    max_tokens: 4096
+
+  gemini:
+    api_key: ${GOOGLE_API_KEY}
+    model: gemini-2.0-flash-exp
+
+  codex:
+    api_key: ${OPENAI_API_KEY}
+    model: gpt-4
+
+routing_rules:
+  - keywords: ["代码", "code", "编程", "bug"]
+    agent: claude
+  - keywords: ["搜索", "search", "查找"]
+    agent: gemini
+  - keywords: ["图片", "image", "视频"]
+    agent: gemini
+  - keywords: ["分析", "优化"]
+    agent: codex
