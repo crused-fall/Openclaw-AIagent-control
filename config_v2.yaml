@@ -1,0 +1,196 @@
+runtime:
+  pipeline: hybrid_default
+  dry_run: true
+  artifacts_dir: .openclaw/runs
+  worktrees_dir: /tmp/openclaw-worktrees
+  cleanup_worktrees: true
+  retain_failed_worktrees: true
+
+github:
+  repo: ${OPENCLAW_GITHUB_REPO}
+  base_branch: main
+  default_labels:
+    - openclaw
+    - ai-task
+
+profiles:
+  claude_local:
+    agent: claude
+    mode: cli
+    command:
+      - claude
+      - -p
+      - "{prompt}"
+
+  codex_local:
+    agent: codex
+    mode: cli
+    command:
+      - codex
+      - exec
+      - "{prompt}"
+
+  copilot_issue:
+    agent: copilot
+    mode: github
+    action: issue
+    labels:
+      - openclaw
+      - planning
+    title_template: "[OpenClaw] {title}"
+    body_template: |
+      OpenClaw generated this planning issue.
+
+      ## Task
+      {title}
+
+      ## Prompt
+      {prompt}
+
+  copilot_pr:
+    agent: copilot
+    mode: github
+    action: pr
+    labels:
+      - openclaw
+      - review
+    title_template: "[OpenClaw] {title}"
+    body_template: |
+      OpenClaw generated this draft PR request.
+
+      ## Task
+      {title}
+
+      ## Prompt
+      {prompt}
+
+  copilot_issue_followup:
+    agent: copilot
+    mode: github
+    action: issue_comment
+    body_template: |
+      OpenClaw follow-up update.
+
+      ## Task
+      {title}
+
+      ## Prompt
+      {prompt}
+
+  github_review_workflow:
+    agent: copilot
+    mode: github
+    action: workflow_dispatch
+    workflow_name: openclaw-review.yml
+
+pipelines:
+  hybrid_default:
+    - id: triage
+      title: Triage user request
+      profile: claude_local
+      metadata:
+        export_branch: false
+      prompt_template: |
+        你是 OpenClaw 的需求拆解 agent。
+        运行编号：{run_id}
+        仓库路径：{repo_path}
+        Artifacts 目录：{artifacts_dir}
+
+        用户请求：
+        {user_request}
+
+        请输出：
+        1. 任务拆分
+        2. 风险点
+        3. 实施顺序
+
+    - id: implement
+      title: Implement main changes locally
+      profile: codex_local
+      depends_on:
+        - triage
+      metadata:
+        export_branch: true
+      prompt_template: |
+        你是 OpenClaw 的本地实现 agent。
+        基于以下用户请求和依赖结果，在本地工作区准备实现方案。
+        工作目录：{workspace_path}
+        分支名：{branch_name}
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        请重点关注：
+        1. 需要修改的文件
+        2. 实施步骤
+        3. 验证方式
+
+    - id: sync_issue
+      title: Sync planning issue to GitHub
+      profile: copilot_issue
+      depends_on:
+        - triage
+      prompt_template: |
+        请把以下任务分析整理成 GitHub issue，便于异步跟踪。
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+    - id: draft_pr
+      title: Prepare GitHub draft PR summary
+      profile: copilot_pr
+      depends_on:
+        - implement
+        - sync_issue
+        - update_issue
+      prompt_template: |
+        请把本地实现结果整理为 Draft PR 描述，便于后续人工审核和合并。
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        建议使用的实现分支：
+        {primary_branch_name}
+
+    - id: update_issue
+      title: Update GitHub issue with implementation status
+      profile: copilot_issue_followup
+      depends_on:
+        - implement
+        - sync_issue
+      prompt_template: |
+        请把本地实现结果回写到现有 GitHub issue，作为阶段性进展更新。
+
+        用户请求：
+        {user_request}
+
+        当前实现分支：
+        {primary_branch_name}
+
+        目标 issue：
+        {primary_issue_ref}
+
+        {dependency_summaries}
+
+    - id: dispatch_review
+      title: Trigger GitHub review workflow
+      profile: github_review_workflow
+      depends_on:
+        - implement
+        - draft_pr
+      prompt_template: |
+        请触发 GitHub review workflow，对以下实现分支执行异步检查。
+
+        用户请求：
+        {user_request}
+
+        推荐分支：
+        {primary_branch_name}
+
+        {dependency_summaries}
