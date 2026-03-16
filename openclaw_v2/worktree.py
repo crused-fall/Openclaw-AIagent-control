@@ -19,6 +19,15 @@ class WorktreeManager:
             work_item.metadata["workspace_strategy"] = "shared"
             return
 
+        source_branch = str(work_item.metadata.get("source_branch", "")).strip()
+        if source_branch:
+            work_item.workspace_path = context.repo_path
+            work_item.branch_name = source_branch
+            work_item.metadata["workspace_strategy"] = "reuse-source-branch"
+            work_item.metadata["workspace_repo_root"] = context.repo_path
+            work_item.metadata["workspace_prepared"] = True
+            return
+
         workspace_path = os.path.join(context.worktrees_dir, work_item.id)
         branch_name = self._branch_name(context.run_id, work_item.id)
 
@@ -80,6 +89,10 @@ class WorktreeManager:
                 continue
 
             if not work_item.workspace_path:
+                continue
+
+            if work_item.metadata.get("workspace_strategy") == "reuse-source-branch":
+                work_item.metadata["workspace_cleanup_status"] = "skipped_reused_branch"
                 continue
 
             if not cleanup_enabled:

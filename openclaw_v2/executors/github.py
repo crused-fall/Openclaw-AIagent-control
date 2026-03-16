@@ -253,6 +253,8 @@ class GitHubWorkflowExecutor(Executor):
                 status=TaskStatus.SUCCEEDED,
                 summary=f"Dry-run only. Planned GitHub workflow command for {work_item.title}.",
                 output=rendered_prompt,
+                stdout=rendered_prompt,
+                exit_code=0,
                 command=command,
                 artifacts=artifacts,
             )
@@ -283,6 +285,9 @@ class GitHubWorkflowExecutor(Executor):
                 status=TaskStatus.SUCCEEDED,
                 summary=f"GitHub workflow task {work_item.title} finished successfully.",
                 output=output,
+                stdout=output,
+                stderr=error_output,
+                exit_code=process.returncode,
                 command=command,
                 artifacts=artifacts,
             )
@@ -295,6 +300,9 @@ class GitHubWorkflowExecutor(Executor):
             status=TaskStatus.FAILED,
             summary=f"GitHub workflow task {work_item.title} failed with exit code {process.returncode}.",
             output=error_output or output,
+            stdout=output,
+            stderr=error_output,
+            exit_code=process.returncode,
             command=command,
             artifacts={
                 "repo": repo,

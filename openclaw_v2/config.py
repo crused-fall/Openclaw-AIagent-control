@@ -18,6 +18,8 @@ class RuntimeConfig:
     worktrees_dir: str = "/tmp/openclaw-worktrees"
     cleanup_worktrees: bool = True
     retain_failed_worktrees: bool = True
+    require_step_selection_for_live: bool = True
+    allowed_live_steps: list[str] = field(default_factory=lambda: ["triage", "implement", "publish_branch"])
 
 
 @dataclass

@@ -54,11 +54,14 @@ class CLIExecutor(Executor):
                 status=TaskStatus.SUCCEEDED,
                 summary=f"Dry-run only. Planned CLI command for {work_item.title}.",
                 output=rendered_prompt,
+                stdout=rendered_prompt,
+                exit_code=0,
                 command=command,
                 artifacts={
                     "workspace_path": workspace_path,
                     "branch_name": work_item.branch_name,
                     "exports_branch": bool(work_item.metadata.get("export_branch", False)),
+                    "source_branch": work_item.branch_name if bool(work_item.metadata.get("export_branch", False)) else "",
                     "workspace_prepare_command": work_item.metadata.get("workspace_prepare_command", []),
                 },
             )
@@ -82,11 +85,15 @@ class CLIExecutor(Executor):
                 status=TaskStatus.SUCCEEDED,
                 summary=f"CLI task {work_item.title} finished successfully.",
                 output=output,
+                stdout=output,
+                stderr=error_output,
+                exit_code=process.returncode,
                 command=command,
                 artifacts={
                     "workspace_path": workspace_path,
                     "branch_name": work_item.branch_name,
                     "exports_branch": bool(work_item.metadata.get("export_branch", False)),
+                    "source_branch": work_item.branch_name if bool(work_item.metadata.get("export_branch", False)) else "",
                 },
             )
 
@@ -98,10 +105,14 @@ class CLIExecutor(Executor):
             status=TaskStatus.FAILED,
             summary=f"CLI task {work_item.title} failed with exit code {process.returncode}.",
             output=error_output or output,
+            stdout=output,
+            stderr=error_output,
+            exit_code=process.returncode,
             command=command,
             artifacts={
                 "workspace_path": workspace_path,
                 "branch_name": work_item.branch_name,
                 "exports_branch": bool(work_item.metadata.get("export_branch", False)),
+                "source_branch": work_item.branch_name if bool(work_item.metadata.get("export_branch", False)) else "",
             },
         )

@@ -5,6 +5,11 @@ runtime:
   worktrees_dir: /tmp/openclaw-worktrees
   cleanup_worktrees: true
   retain_failed_worktrees: true
+  require_step_selection_for_live: true
+  allowed_live_steps:
+    - triage
+    - implement
+    - publish_branch
 
 github:
   repo: ${OPENCLAW_GITHUB_REPO}
@@ -29,6 +34,16 @@ profiles:
       - codex
       - exec
       - "{prompt}"
+
+  git_push_branch:
+    agent: system
+    mode: cli
+    command:
+      - git
+      - push
+      - -u
+      - origin
+      - "{branch_name}"
 
   copilot_issue:
     agent: copilot
@@ -127,6 +142,25 @@ pipelines:
         2. 实施步骤
         3. 验证方式
 
+    - id: publish_branch
+      title: Publish implementation branch to origin
+      profile: git_push_branch
+      depends_on:
+        - implement
+      metadata:
+        export_branch: true
+        requires_origin_remote: true
+      prompt_template: |
+        将当前实现分支推送到 origin，供 GitHub PR 和 workflow 使用。
+        工作目录：{workspace_path}
+        分支名：{branch_name}
+
+        用户请求：
+        {user_request}
+
+        来源分支：
+        {source_branch}
+
     - id: sync_issue
       title: Sync planning issue to GitHub
       profile: copilot_issue
@@ -144,7 +178,7 @@ pipelines:
       title: Prepare GitHub draft PR summary
       profile: copilot_pr
       depends_on:
-        - implement
+        - publish_branch
         - sync_issue
         - update_issue
       prompt_template: |
@@ -162,7 +196,7 @@ pipelines:
       title: Update GitHub issue with implementation status
       profile: copilot_issue_followup
       depends_on:
-        - implement
+        - publish_branch
         - sync_issue
       prompt_template: |
         请把本地实现结果回写到现有 GitHub issue，作为阶段性进展更新。
@@ -182,7 +216,7 @@ pipelines:
       title: Trigger GitHub review workflow
       profile: github_review_workflow
       depends_on:
-        - implement
+        - publish_branch
         - draft_pr
       prompt_template: |
         请触发 GitHub review workflow，对以下实现分支执行异步检查。

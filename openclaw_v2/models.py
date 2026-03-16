@@ -10,6 +10,7 @@ class AgentType(str, Enum):
     CODEX = "codex"
     COPILOT = "copilot"
     ANTIGRAVITY = "antigravity"
+    SYSTEM = "system"
 
 
 class ExecutionMode(str, Enum):
@@ -23,6 +24,12 @@ class TaskStatus(str, Enum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     SKIPPED = "skipped"
+
+
+class CheckStatus(str, Enum):
+    PASSED = "passed"
+    WARNING = "warning"
+    FAILED = "failed"
 
 
 @dataclass
@@ -59,6 +66,9 @@ class AgentResult:
     status: TaskStatus
     summary: str
     output: str = ""
+    stdout: str = ""
+    stderr: str = ""
+    exit_code: int | None = None
     command: list[str] = field(default_factory=list)
     artifacts: dict[str, Any] = field(default_factory=dict)
 
@@ -74,3 +84,20 @@ class RunResult:
     results: list[AgentResult]
     success: bool
     artifacts_dir: str = ""
+
+
+@dataclass
+class PreflightCheck:
+    name: str
+    status: CheckStatus
+    message: str
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PreflightReport:
+    checks: list[PreflightCheck]
+
+    @property
+    def ok(self) -> bool:
+        return all(check.status != CheckStatus.FAILED for check in self.checks)

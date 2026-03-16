@@ -51,6 +51,34 @@ python3 openclaw.py
 python3 test_setup.py
 ```
 
+## v2 混合编排框架
+
+仓库里还有一套新的 v2 骨架，入口是 `main_v2.py`，目标是把本地 CLI agent、GitHub 工作流、独立 worktree 和 artifacts 串成一条可控执行链。
+
+### v2 常用命令
+
+```bash
+# 查看有效计划，会自动补齐依赖
+/usr/bin/python3 main_v2.py --list-steps --steps publish_branch
+
+# 只做预检，不执行任务
+/usr/bin/python3 main_v2.py --preflight-only --steps publish_branch,draft_pr
+
+# dry-run 执行最小链路
+/usr/bin/python3 main_v2.py --request "修复登录页报错" --steps publish_branch
+
+# live 模式默认只允许白名单步骤
+/usr/bin/python3 main_v2.py --live --request "修复登录页报错" --steps publish_branch
+```
+
+### v2 额外环境要求
+
+- `OPENCLAW_GITHUB_REPO=owner/repo`
+- `gh auth login`
+- `git remote origin` 已配置
+
+更详细的结构说明见 `FRAMEWORK_V2.md`。
+
 ## 使用示例
 
 ```

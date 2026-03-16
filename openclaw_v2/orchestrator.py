@@ -7,8 +7,9 @@ from datetime import datetime, timezone
 from .artifacts import ArtifactStore
 from .config import AppConfig, resolve_runtime_path
 from .executors import CLIExecutor, GitHubWorkflowExecutor
-from .models import AgentResult, ExecutionContext, ExecutionMode, RunResult, TaskStatus, WorkItem
+from .models import AgentResult, CheckStatus, ExecutionContext, ExecutionMode, RunResult, TaskStatus, WorkItem
 from .planner import PipelinePlanner
+from .preflight import PreflightRunner
 from .worktree import WorktreeManager
 
 
@@ -20,6 +21,7 @@ class HybridOrchestrator:
         self.planner = PipelinePlanner(config)
         self.artifact_store = ArtifactStore()
         self.worktree_manager = WorktreeManager()
+        self.preflight_runner = PreflightRunner(config)
         self.executors = {
             ExecutionMode.CLI: CLIExecutor(config),
             ExecutionMode.GITHUB: GitHubWorkflowExecutor(config),
@@ -29,6 +31,18 @@ class HybridOrchestrator:
     def _make_run_id() -> str:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         return f"run-{timestamp}"
+
+    def build_plan(self, selected_steps: list[str] | None = None) -> list[WorkItem]:
+        return self.planner.build_plan(selected_steps=selected_steps)
+
+    async def preflight(
+        self,
+        repo_path: str,
+        selected_steps: list[str] | None = None,
+    ):
+        plan = self.build_plan(selected_steps=selected_steps)
+        report = await self.preflight_runner.run(repo_path, plan)
+        return plan, report
 
     @staticmethod
     def _dependency_summary(work_item: WorkItem, completed: dict[str, AgentResult]) -> str:
@@ -51,6 +65,7 @@ class HybridOrchestrator:
         branches: list[str] = []
         issue_refs: list[str] = []
         pr_refs: list[str] = []
+        source_branches: list[str] = []
 
         for dependency_id in work_item.depends_on:
             result = completed[dependency_id]
@@ -58,6 +73,10 @@ class HybridOrchestrator:
             exports_branch = bool(result.artifacts.get("exports_branch", False))
             if branch and exports_branch:
                 branches.append(branch)
+
+            source_branch = str(result.artifacts.get("source_branch", "")).strip()
+            if source_branch:
+                source_branches.append(source_branch)
 
             issue_ref = str(
                 result.artifacts.get("issue_number")
@@ -78,6 +97,7 @@ class HybridOrchestrator:
         return {
             "primary_branch_name": branches[0] if branches else "",
             "dependency_branches": ", ".join(branches),
+            "source_branch": source_branches[0] if source_branches else (branches[0] if branches else ""),
             "primary_issue_ref": issue_refs[0] if issue_refs else "",
             "primary_pr_ref": pr_refs[0] if pr_refs else "",
         }
@@ -112,8 +132,8 @@ class HybridOrchestrator:
         tasks = []
         for work_item in ready_items:
             try:
-                await self.worktree_manager.prepare(work_item, context)
                 work_item.metadata.update(self._collect_dependency_values(work_item, completed))
+                await self.worktree_manager.prepare(work_item, context)
                 self.artifact_store.write_workspace_manifest(context, work_item)
                 profile = self.config.profiles[work_item.profile]
                 rendered_prompt = self._render_prompt(work_item, context, completed)
@@ -142,8 +162,13 @@ class HybridOrchestrator:
             immediate_results.extend(await asyncio.gather(*tasks))
         return immediate_results
 
-    async def run(self, user_request: str, repo_path: str) -> RunResult:
-        plan = self.planner.build_plan()
+    async def run(
+        self,
+        user_request: str,
+        repo_path: str,
+        selected_steps: list[str] | None = None,
+    ) -> RunResult:
+        plan = self.build_plan(selected_steps=selected_steps)
         run_id = self._make_run_id()
         artifacts_root = resolve_runtime_path(repo_path, self.config.runtime.artifacts_dir)
         worktrees_root = resolve_runtime_path(repo_path, self.config.runtime.worktrees_dir)
@@ -156,10 +181,36 @@ class HybridOrchestrator:
             worktrees_dir=os.path.join(worktrees_root, run_id),
         )
         self.artifact_store.initialize_run(context, plan)
+        preflight_report = await self.preflight_runner.run(repo_path, plan)
+        self.artifact_store.write_preflight_report(context, preflight_report)
 
         pending = {item.id: item for item in plan}
         completed: dict[str, AgentResult] = {}
         ordered_results: list[AgentResult] = []
+
+        if not preflight_report.ok and not self.config.runtime.dry_run:
+            for item in plan:
+                item.status = TaskStatus.SKIPPED
+                result = AgentResult(
+                    work_item_id=item.id,
+                    profile=item.profile,
+                    agent=item.agent,
+                    mode=item.mode,
+                    status=TaskStatus.SKIPPED,
+                    summary="Skipped because preflight checks failed.",
+                    artifacts={"preflight_failed": True},
+                )
+                self.artifact_store.write_result(context, result)
+                ordered_results.append(result)
+            run_result = RunResult(
+                run_id=context.run_id,
+                plan=plan,
+                results=ordered_results,
+                success=False,
+                artifacts_dir=context.artifacts_dir,
+            )
+            self.artifact_store.write_run_summary(run_result)
+            return run_result
 
         while pending:
             ready_items = [
