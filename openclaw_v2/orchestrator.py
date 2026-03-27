@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import datetime, timezone
+from typing import Callable
 
 from .artifacts import ArtifactStore
 from .config import AppConfig, resolve_runtime_path
-from .executors import CLIExecutor, GitHubWorkflowExecutor
+from .executors import CLIExecutor, GitHubWorkflowExecutor, OpenClawExecutor
 from .models import AgentResult, CheckStatus, ExecutionContext, ExecutionMode, RunResult, TaskStatus, WorkItem
 from .planner import PipelinePlanner
 from .preflight import PreflightRunner
@@ -25,6 +26,7 @@ class HybridOrchestrator:
         self.executors = {
             ExecutionMode.CLI: CLIExecutor(config),
             ExecutionMode.GITHUB: GitHubWorkflowExecutor(config),
+            ExecutionMode.OPENCLAW: OpenClawExecutor(config),
         }
 
     @staticmethod
@@ -65,6 +67,7 @@ class HybridOrchestrator:
         branches: list[str] = []
         issue_refs: list[str] = []
         pr_refs: list[str] = []
+        workflow_refs: list[str] = []
         source_branches: list[str] = []
 
         for dependency_id in work_item.depends_on:
@@ -94,13 +97,91 @@ class HybridOrchestrator:
             if pr_ref:
                 pr_refs.append(pr_ref)
 
+            workflow_ref = str(
+                result.artifacts.get("workflow_run_id")
+                or result.artifacts.get("workflow_run_url")
+                or ""
+            ).strip()
+            if workflow_ref:
+                workflow_refs.append(workflow_ref)
+
         return {
             "primary_branch_name": branches[0] if branches else "",
             "dependency_branches": ", ".join(branches),
             "source_branch": source_branches[0] if source_branches else (branches[0] if branches else ""),
             "primary_issue_ref": issue_refs[0] if issue_refs else "",
             "primary_pr_ref": pr_refs[0] if pr_refs else "",
+            "primary_workflow_run_ref": workflow_refs[0] if workflow_refs else "",
         }
+
+    @staticmethod
+    def _dependency_outcomes(
+        work_item: WorkItem,
+        completed: dict[str, AgentResult],
+    ) -> dict[str, list[dict[str, str]]]:
+        blocked: list[dict[str, str]] = []
+        failed: list[dict[str, str]] = []
+        skipped: list[dict[str, str]] = []
+
+        for dependency_id in work_item.depends_on:
+            if dependency_id not in completed:
+                continue
+
+            result = completed[dependency_id]
+            entry = {
+                "id": dependency_id,
+                "status": result.status.value,
+                "summary": result.summary,
+            }
+            blocked_reason = str(result.artifacts.get("blocked_reason", "")).strip()
+            if blocked_reason:
+                entry["blocked_reason"] = blocked_reason
+
+            if result.status == TaskStatus.BLOCKED:
+                blocked.append(entry)
+            elif result.status == TaskStatus.FAILED:
+                failed.append(entry)
+            elif result.status == TaskStatus.SKIPPED:
+                skipped.append(entry)
+
+        return {
+            "blocked": blocked,
+            "failed": failed,
+            "skipped": skipped,
+        }
+
+    @classmethod
+    def _blocked_summary(cls, work_item: WorkItem, completed: dict[str, AgentResult]) -> str:
+        dependency_outcomes = cls._dependency_outcomes(work_item, completed)
+        blocked = dependency_outcomes["blocked"]
+        failed = dependency_outcomes["failed"]
+        skipped = dependency_outcomes["skipped"]
+
+        if blocked:
+            if len(blocked) == 1:
+                dependency = blocked[0]
+                blocked_reason = dependency.get("blocked_reason", "")
+                if blocked_reason:
+                    return f"Skipped because dependency {dependency['id']} was blocked: {blocked_reason}"
+                return f"Skipped because dependency {dependency['id']} was blocked and needs clarification."
+            blocked_ids = ", ".join(item["id"] for item in blocked)
+            return f"Skipped because dependencies were blocked and need clarification: {blocked_ids}"
+
+        if failed:
+            if len(failed) == 1:
+                dependency = failed[0]
+                return f"Skipped because dependency {dependency['id']} failed: {dependency['summary']}"
+            failed_ids = ", ".join(item["id"] for item in failed)
+            return f"Skipped because dependencies failed: {failed_ids}"
+
+        if skipped:
+            if len(skipped) == 1:
+                dependency = skipped[0]
+                return f"Skipped because dependency {dependency['id']} was skipped: {dependency['summary']}"
+            skipped_ids = ", ".join(item["id"] for item in skipped)
+            return f"Skipped because dependencies were skipped: {skipped_ids}"
+
+        return "Skipped because one or more dependencies did not succeed."
 
     def _render_prompt(
         self,
@@ -122,15 +203,66 @@ class HybridOrchestrator:
         }
         return work_item.prompt_template.format(**values).strip()
 
+    @staticmethod
+    def _trace_artifacts(work_item: WorkItem) -> dict[str, object]:
+        artifacts: dict[str, object] = {
+            "assignment": work_item.assignment,
+            "assignment_source": work_item.assignment_source,
+            "managed_agent": work_item.managed_agent,
+            "assignment_reason": work_item.assignment_reason,
+            "fallback_used": work_item.fallback_used,
+            "fallback_chain": work_item.fallback_chain,
+            "required_capabilities": work_item.required_capabilities,
+            "assignment_candidates": work_item.assignment_candidates,
+            "assignment_attempts": work_item.assignment_attempts,
+            "planning_blocked_reason": work_item.planning_blocked_reason,
+        }
+        return {key: value for key, value in artifacts.items() if value not in ("", [], False)}
+
+    @staticmethod
+    def _emit_progress(
+        progress_callback: Callable[[str], None] | None,
+        message: str,
+    ) -> None:
+        if progress_callback is not None:
+            progress_callback(message)
+
     async def _execute_ready_items(
         self,
         ready_items: list[WorkItem],
         context: ExecutionContext,
         completed: dict[str, AgentResult],
+        progress_callback: Callable[[str], None] | None = None,
     ) -> list[AgentResult]:
         immediate_results: list[AgentResult] = []
         tasks = []
         for work_item in ready_items:
+            if work_item.planning_blocked_reason:
+                work_item.status = TaskStatus.BLOCKED
+                immediate_results.append(
+                    AgentResult(
+                        work_item_id=work_item.id,
+                        profile=work_item.profile,
+                        agent=work_item.agent,
+                        mode=work_item.mode,
+                        status=TaskStatus.BLOCKED,
+                        summary=(
+                            f"Step {work_item.title} was blocked before execution: "
+                            f"{work_item.planning_blocked_reason}"
+                        ),
+                        artifacts={
+                            "blocked_reason": work_item.planning_blocked_reason,
+                            "workspace_path": work_item.workspace_path,
+                            "branch_name": work_item.branch_name,
+                            **self._trace_artifacts(work_item),
+                        },
+                    )
+                )
+                self._emit_progress(
+                    progress_callback,
+                    f"step:block {work_item.id} -> {work_item.planning_blocked_reason}",
+                )
+                continue
             try:
                 work_item.metadata.update(self._collect_dependency_values(work_item, completed))
                 await self.worktree_manager.prepare(work_item, context)
@@ -141,6 +273,14 @@ class HybridOrchestrator:
                 executor = self.executors[work_item.mode]
                 work_item.status = TaskStatus.RUNNING
                 work_item.metadata["prompt_path"] = prompt_path
+                self._emit_progress(
+                    progress_callback,
+                    (
+                        f"step:start {work_item.id} "
+                        f"[{work_item.mode.value}/{work_item.agent.value}] "
+                        f"workspace={work_item.workspace_path or context.repo_path}"
+                    ),
+                )
                 tasks.append(executor.execute(work_item, profile, context, rendered_prompt))
             except Exception as error:
                 work_item.status = TaskStatus.FAILED
@@ -155,8 +295,13 @@ class HybridOrchestrator:
                         artifacts={
                             "workspace_path": work_item.workspace_path,
                             "branch_name": work_item.branch_name,
+                            **self._trace_artifacts(work_item),
                         },
                     )
+                )
+                self._emit_progress(
+                    progress_callback,
+                    f"step:fail {work_item.id} -> Preparation failed: {error}",
                 )
         if tasks:
             immediate_results.extend(await asyncio.gather(*tasks))
@@ -167,6 +312,7 @@ class HybridOrchestrator:
         user_request: str,
         repo_path: str,
         selected_steps: list[str] | None = None,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> RunResult:
         plan = self.build_plan(selected_steps=selected_steps)
         run_id = self._make_run_id()
@@ -181,7 +327,12 @@ class HybridOrchestrator:
             worktrees_dir=os.path.join(worktrees_root, run_id),
         )
         self.artifact_store.initialize_run(context, plan)
+        self._emit_progress(progress_callback, "preflight:start")
         preflight_report = await self.preflight_runner.run(repo_path, plan)
+        self._emit_progress(
+            progress_callback,
+            f"preflight:{'ok' if preflight_report.ok else 'failed'}",
+        )
         self.artifact_store.write_preflight_report(context, preflight_report)
 
         pending = {item.id: item for item in plan}
@@ -198,10 +349,14 @@ class HybridOrchestrator:
                     mode=item.mode,
                     status=TaskStatus.SKIPPED,
                     summary="Skipped because preflight checks failed.",
-                    artifacts={"preflight_failed": True},
+                    artifacts={"preflight_failed": True, **self._trace_artifacts(item)},
                 )
                 self.artifact_store.write_result(context, result)
                 ordered_results.append(result)
+                self._emit_progress(
+                    progress_callback,
+                    f"step:skip {item.id} -> preflight checks failed",
+                )
             run_result = RunResult(
                 run_id=context.run_id,
                 plan=plan,
@@ -223,7 +378,7 @@ class HybridOrchestrator:
             ]
             if not ready_items:
                 blocked_results = []
-                for item in pending.values():
+                for item in list(pending.values()):
                     item.status = TaskStatus.SKIPPED
                     result = AgentResult(
                         work_item_id=item.id,
@@ -231,19 +386,29 @@ class HybridOrchestrator:
                         agent=item.agent,
                         mode=item.mode,
                         status=TaskStatus.SKIPPED,
-                        summary="Skipped because one or more dependencies failed.",
+                        summary=self._blocked_summary(item, completed),
                         artifacts={
                             "workspace_path": item.workspace_path,
                             "branch_name": item.branch_name,
+                            "dependency_outcomes": self._dependency_outcomes(item, completed),
+                            **self._trace_artifacts(item),
                         },
                     )
                     self.artifact_store.write_result(context, result)
+                    completed[item.id] = result
                     blocked_results.append(result)
+                    pending.pop(item.id, None)
                 ordered_results.extend(blocked_results)
                 break
 
-            batch_results = await self._execute_ready_items(ready_items, context, completed)
+            batch_results = await self._execute_ready_items(
+                ready_items,
+                context,
+                completed,
+                progress_callback=progress_callback,
+            )
             for result in batch_results:
+                result.artifacts.update(self._trace_artifacts(pending[result.work_item_id]))
                 result.artifacts.setdefault(
                     "prompt_path",
                     pending[result.work_item_id].metadata.get("prompt_path", ""),
@@ -252,6 +417,10 @@ class HybridOrchestrator:
                 completed[result.work_item_id] = result
                 ordered_results.append(result)
                 pending[result.work_item_id].status = result.status
+                self._emit_progress(
+                    progress_callback,
+                    f"step:done {result.work_item_id} -> {result.status.value}",
+                )
                 pending.pop(result.work_item_id, None)
 
         run_result = RunResult(
@@ -267,6 +436,7 @@ class HybridOrchestrator:
             cleanup_enabled=self.config.runtime.cleanup_worktrees,
             retain_failed_worktrees=self.config.runtime.retain_failed_worktrees,
             run_success=run_result.success,
+            run_has_failures=any(result.status == TaskStatus.FAILED for result in ordered_results),
         )
         for work_item in plan:
             self.artifact_store.write_workspace_manifest(context, work_item)

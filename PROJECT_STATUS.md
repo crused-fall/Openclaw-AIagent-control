@@ -1,84 +1,92 @@
-# OpenClaw 项目完成总结
+# OpenClaw Project Status
 
-## ✅ 已完成的功能
+更新时间：2026-03-18
 
-### 1. 核心功能实现
-- ✅ 真实 API 集成
-  - Anthropic Claude API (claude-sonnet-4-6)
-  - Google Gemini API (gemini-2.0-flash-exp)
-  - OpenAI GPT-4 API
-- ✅ 异步并行执行多个 Agent
-- ✅ 基于关键词的智能任务路由
-- ✅ 错误处理和异常捕获
-- ✅ 交互式命令行界面
+## 当前阶段
 
-### 2. 项目文件
-```
-.
-├── openclaw.py          # 主程序（真实 API 集成）
-├── demo.py              # 演示模式（无需 API Keys）
-├── config.yaml          # 配置文件
-├── requirements.txt     # Python 依赖
-├── start.sh            # 启动脚本（带环境检查）
-├── test_setup.py       # 环境配置测试
-├── .env.example        # 环境变量模板
-├── .gitignore          # Git 忽略文件
-├── README.md           # 项目文档
-└── CLAUDE.md           # Claude Code 指南
-```
+项目已经从“多模型 API 路由原型”进入“修改版方案四 Mission Control 骨架”阶段。
 
-### 3. 使用方式
+这意味着：
 
-#### 快速体验（无需 API Keys）
-```bash
-python3 demo.py
-```
+- `openclaw.py` 仍可运行，但只代表 v1 legacy
+- 核心演进方向已经转向 `main_v2.py` + `openclaw_v2/`
+- OpenClaw 已进入执行层与受控 agent 体系，但还没有成为默认统一总控入口
 
-#### 完整功能（需要 API Keys）
-```bash
-# 1. 设置环境变量
-export ANTHROPIC_API_KEY="your-key"
-export GOOGLE_API_KEY="your-key"
-export OPENAI_API_KEY="your-key"
+## 已完成
 
-# 2. 运行
-python3 openclaw.py
-# 或
-./start.sh
-```
+### Control Layer
 
-### 4. 架构特点
-- **主控 Agent (OpenClaw)**: 负责任务分解、路由和结果整合
-- **适配器模式**: 统一不同 AI 服务的接口
-- **并行执行**: 使用 asyncio.gather 实现真正的并发
-- **配置驱动**: 通过 config.yaml 灵活配置模型和路由规则
+- `main_v2.py` 已可作为统一入口
+- 支持 `--steps`、`--request`、`--live`、`--preflight-only`
+- 支持 `--list-managed-agents`、`--doctor-config`、`--diagnose-plan`
+- live 运行时会输出 step 级 progress
 
-### 5. 路由规则
-- "代码/code/编程/bug" → Claude
-- "搜索/search/查找" → Gemini
-- "图片/image/视频" → Gemini
-- "分析/优化" → GPT-4
-- 默认 → Claude
+### Orchestration Layer
 
-## 🎯 项目状态
+- 配置驱动 pipeline
+- assignment 分配层
+- managed-agent registry
+- capability / fallback 解析
+- assignment failure -> blocked policy
+- 依赖调度
+- worktree 隔离
+- artifacts 落盘
+- blocked / failed / skipped 区分
 
-**项目已完全可运行！**
+### Execution Layer
 
-- ✅ 所有依赖已安装
-- ✅ 代码无语法错误
-- ✅ 演示模式测试通过
-- ✅ 文档完整
-- ✅ 提供多种运行方式
+- CLI 执行层
+- OpenClaw 本地执行层
+- GitHub 执行层
+- 受控 agent 池：Claude / Gemini / Codex / Cursor / OpenClaw
+- GitHub issue / PR / workflow run refs 回流
+- `dispatch_review -> collect_review` workflow 状态回流已落地
+- `collect_review` 已支持 failed jobs 摘要回流
+- 新增 `github_bridge_smoke` pipeline，可绕过本地 `triage/implement/review` 单独验证 GitHub review workflow
+- `collect_review` 已支持短轮询等待，减少 workflow 刚触发时立即返回 `queued` 的手工重跑
+- 本地 CLI executor 已有超时护栏，`claude/codex` 长时间无响应时不会再无限挂住 run
+- GitHub 步骤 CLI 会打印 `github:` 摘要
+- GitHub bridge 的失败会分类为 auth / repository / workflow / reference / network / unknown
+- GitHub 失败结果会保留 `stderr`、retryability 和恢复提示
+- GitHub bridge 已支持显式配置的网络类自动重试
+- GitHub repo 已支持显式开启的 `origin` fallback
 
-## 📝 下一步建议
+### Supervision Layer
 
-如需进一步完善，可考虑：
-1. 添加重试机制和降级策略
-2. 实现更智能的任务分解算法
-3. 添加结果质量评估
-4. 支持流式输出
-5. 添加日志记录
-6. 实现会话历史管理
+- preflight
+- review step
+- run summary
+- blocked 原因透传
+- `first_blocked` 根因摘要
 
----
-生成时间: 2026-03-14
+## 部分完成
+
+- GitHub 协作链路可运行，但结果解析还比较保守
+- 任务拆分仍然是静态 pipeline，不是智能动态 planner
+- OpenClaw 接入骨架已落地，但目前只安全接到 `triage` 变体 pipeline
+- OpenClaw 已验证“仓库外 workspace + repo 绝对路径 handoff”可运行，当前已有 `mission_control_openclaw_triage` 和 `mission_control_openclaw_default` 两条变体 pipeline
+- `Gemini` 和 `Cursor` 已进入受控 agent 注册表，但还没进入默认 assignment
+- 当前 fallback 仍是静态配置回退，不是实时在线调度
+- live 模式下已默认禁止 fallback managed agent 静默执行
+- GitHub 当前仍是 `gh` bridge，不是 native agent / MCP 编排
+- GitHub 缺少 issue / PR / branch 引用时会被标记为 `blocked`
+- `workflow_dispatch` 已会在 preflight 检查本地 workflow 文件是否存在
+- GitHub 自动重试默认仍是关闭状态
+- GitHub repo 的 `origin` fallback 当前默认已开启
+- `doctor-config` 已覆盖 GitHub runtime retry 和 GitHub profile action / workflow 配置
+
+## 未完成
+
+- OpenClaw 成为默认统一总控入口
+- 自动重试和超时策略
+- 成本统计
+- 跨层自动 fallback
+- 更细的 review / merge 审核阶段
+
+## 建议优先级
+
+1. 继续稳定默认 `mission_control_default` pipeline
+2. 决定 OpenClaw 什么时候从变体执行器升级成默认控制入口
+3. 决定哪些 step 默认由 Claude / Codex 继续承担，哪些开始尝试切到 Gemini / Cursor / OpenClaw
+4. 继续补 GitHub bridge 的结果诊断、review 透传和失败恢复
+5. 再考虑动态 planner、fallback 和成本控制

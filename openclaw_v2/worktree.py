@@ -83,6 +83,7 @@ class WorktreeManager:
         cleanup_enabled: bool,
         retain_failed_worktrees: bool,
         run_success: bool,
+        run_has_failures: bool,
     ) -> None:
         for work_item in work_items:
             if work_item.mode != ExecutionMode.CLI:
@@ -99,7 +100,7 @@ class WorktreeManager:
                 work_item.metadata["workspace_cleanup_status"] = "disabled"
                 continue
 
-            if not run_success and retain_failed_worktrees:
+            if run_has_failures and not run_success and retain_failed_worktrees:
                 work_item.metadata["workspace_cleanup_status"] = "retained_on_failure"
                 continue
 
@@ -178,8 +179,9 @@ class WorktreeManager:
 
     @staticmethod
     def _branch_name(run_id: str, work_item_id: str) -> str:
-        raw = f"openclaw/{run_id.lower()}-{work_item_id.lower()}"
-        return re.sub(r"[^a-z0-9/_-]+", "-", raw)
+        # Keep orchestration branches flat to avoid git ref file/dir conflicts.
+        raw = f"openclaw-{run_id.lower()}-{work_item_id.lower()}"
+        return re.sub(r"[^a-z0-9_-]+", "-", raw).strip("-")
 
     @staticmethod
     def _default_base_ref() -> str:

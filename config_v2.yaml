@@ -1,19 +1,32 @@
 runtime:
-  pipeline: hybrid_default
+  pipeline: mission_control_default
   dry_run: true
   artifacts_dir: .openclaw/runs
   worktrees_dir: /tmp/openclaw-worktrees
   cleanup_worktrees: true
   retain_failed_worktrees: true
   require_step_selection_for_live: true
+  allow_fallback_in_live: false
+  cli_command_timeout_seconds: 180.0
+  github_retry_attempts: 1
+  github_retry_backoff_seconds: 1.0
+  github_workflow_view_poll_attempts: 6
+  github_workflow_view_poll_interval_seconds: 2.0
   allowed_live_steps:
     - triage
     - implement
+    - review
     - publish_branch
+    - sync_issue
+    - update_issue
+    - draft_pr
+    - dispatch_review
+    - collect_review
 
 github:
   repo: ${OPENCLAW_GITHUB_REPO}
   base_branch: main
+  use_origin_remote_fallback: true
   default_labels:
     - openclaw
     - ai-task
@@ -27,6 +40,32 @@ profiles:
       - -p
       - "{prompt}"
 
+  claude_local_isolated:
+    agent: claude
+    mode: cli
+    unset_env:
+      - ANTHROPIC_BASE_URL
+      - ANTHROPIC_AUTH_TOKEN
+    command:
+      - claude
+      - -p
+      - "{prompt}"
+
+  gemini_local:
+    agent: gemini
+    mode: cli
+    command:
+      - gemini
+      - -p
+      - "{prompt}"
+
+  openclaw_local:
+    agent: openclaw
+    mode: openclaw
+    openclaw_agent_id: ${OPENCLAW_AGENT_ID}
+    openclaw_profile: ${OPENCLAW_PROFILE}
+    openclaw_local: true
+
   codex_local:
     agent: codex
     mode: cli
@@ -34,6 +73,16 @@ profiles:
       - codex
       - exec
       - "{prompt}"
+
+  cursor_local:
+    agent: cursor
+    mode: cli
+    command:
+      - cursor-agent
+      - -p
+      - "{prompt}"
+      - --output-format
+      - text
 
   git_push_branch:
     agent: system
@@ -98,11 +147,187 @@ profiles:
     action: workflow_dispatch
     workflow_name: openclaw-review.yml
 
+  github_review_workflow_status:
+    agent: copilot
+    mode: github
+    action: workflow_view
+
+managed_agents:
+  claude_router:
+    kind: claude
+    profile: claude_local
+    capabilities:
+      - triage
+      - review
+    manager: openclaw
+
+  claude_router_isolated:
+    kind: claude
+    profile: claude_local_isolated
+    capabilities:
+      - triage
+      - review
+    manager: openclaw
+
+  gemini_researcher:
+    kind: gemini
+    profile: gemini_local
+    capabilities:
+      - research
+      - triage
+    manager: openclaw
+
+  codex_builder:
+    kind: codex
+    profile: codex_local
+    capabilities:
+      - implement
+    manager: openclaw
+
+  cursor_editor:
+    kind: cursor
+    profile: cursor_local
+    capabilities:
+      - editing
+      - implement
+    manager: openclaw
+
+  openclaw_router:
+    kind: openclaw
+    profile: openclaw_local
+    capabilities:
+      - triage
+      - review
+    manager: openclaw
+
+  git_branch_publisher:
+    kind: system
+    profile: git_push_branch
+    capabilities:
+      - publish_branch
+    manager: openclaw
+
+  github_issue_bridge:
+    kind: copilot
+    profile: copilot_issue
+    capabilities:
+      - sync_issue
+    manager: openclaw
+
+  github_issue_followup_bridge:
+    kind: copilot
+    profile: copilot_issue_followup
+    capabilities:
+      - update_issue
+    manager: openclaw
+
+  github_pr_bridge:
+    kind: copilot
+    profile: copilot_pr
+    capabilities:
+      - draft_pr
+    manager: openclaw
+
+  github_review_bridge:
+    kind: copilot
+    profile: github_review_workflow
+    capabilities:
+      - dispatch_review
+    manager: openclaw
+
+  github_review_followup_bridge:
+    kind: copilot
+    profile: github_review_workflow_status
+    capabilities:
+      - collect_review
+    manager: openclaw
+
+assignments:
+  triage_local:
+    agent: claude_router
+    manager: openclaw
+    required_capabilities:
+      - triage
+
+  triage_openclaw:
+    agent: openclaw_router
+    manager: openclaw
+    required_capabilities:
+      - triage
+
+  implement_local:
+    agent: codex_builder
+    manager: openclaw
+    required_capabilities:
+      - implement
+    fallback:
+      - cursor_editor
+
+  review_local:
+    agent: claude_router
+    manager: openclaw
+    required_capabilities:
+      - review
+
+  review_openclaw:
+    agent: openclaw_router
+    manager: openclaw
+    required_capabilities:
+      - review
+
+  research_local:
+    agent: gemini_researcher
+    manager: openclaw
+    required_capabilities:
+      - research
+
+  editing_local:
+    agent: cursor_editor
+    manager: openclaw
+    required_capabilities:
+      - editing
+
+  publish_branch_local:
+    agent: git_branch_publisher
+    manager: openclaw
+    required_capabilities:
+      - publish_branch
+
+  sync_issue_bridge:
+    agent: github_issue_bridge
+    manager: openclaw
+    required_capabilities:
+      - sync_issue
+
+  update_issue_bridge:
+    agent: github_issue_followup_bridge
+    manager: openclaw
+    required_capabilities:
+      - update_issue
+
+  draft_pr_bridge:
+    agent: github_pr_bridge
+    manager: openclaw
+    required_capabilities:
+      - draft_pr
+
+  dispatch_review_bridge:
+    agent: github_review_bridge
+    manager: openclaw
+    required_capabilities:
+      - dispatch_review
+
+  collect_review_bridge:
+    agent: github_review_followup_bridge
+    manager: openclaw
+    required_capabilities:
+      - collect_review
+
 pipelines:
-  hybrid_default:
+  mission_control_default:
     - id: triage
       title: Triage user request
-      profile: claude_local
+      assignment: triage_local
       metadata:
         export_branch: false
       prompt_template: |
@@ -114,6 +339,13 @@ pipelines:
         用户请求：
         {user_request}
 
+        如果请求与当前仓库不匹配、缺少关键文件或模块、或者信息不足以安全继续，请严格先输出两行，不要加粗、不要列表、不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
         请输出：
         1. 任务拆分
         2. 风险点
@@ -121,7 +353,7 @@ pipelines:
 
     - id: implement
       title: Implement main changes locally
-      profile: codex_local
+      assignment: implement_local
       depends_on:
         - triage
       metadata:
@@ -137,6 +369,208 @@ pipelines:
 
         {dependency_summaries}
 
+        请先确认用户请求对应的目标文件、模块或页面在当前仓库中确实存在。
+        如果请求与仓库不匹配、目标代码不存在、或关键信息缺失，请不要编造实现方案，严格先输出两行，不要加粗、不要列表、不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
+        请重点关注：
+        1. 需要修改的文件
+        2. 实施步骤
+        3. 验证方式
+
+    - id: review
+      title: Review implementation before publish
+      assignment: review_local
+      depends_on:
+        - implement
+      prompt_template: |
+        你是 OpenClaw 的本地审阅 agent。
+        请基于实现结果判断当前分支是否适合进入 GitHub 协作流程。
+
+        工作目录：
+        {workspace_path}
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        如果实现结果不足以继续、需求与仓库不匹配、或者必须先补充人工信息，请严格先输出两行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
+        请输出：
+        1. 主要风险
+        2. 建议补充验证
+        3. 是否建议发布到 GitHub 流程
+
+    - id: publish_branch
+      title: Publish implementation branch to origin
+      assignment: publish_branch_local
+      depends_on:
+        - implement
+        - review
+      metadata:
+        export_branch: true
+        requires_origin_remote: true
+      prompt_template: |
+        将当前实现分支推送到 origin，供 GitHub PR 和 workflow 使用。
+        工作目录：{workspace_path}
+        分支名：{branch_name}
+
+        用户请求：
+        {user_request}
+
+        来源分支：
+        {source_branch}
+
+    - id: sync_issue
+      title: Sync planning issue to GitHub
+      assignment: sync_issue_bridge
+      depends_on:
+        - triage
+      prompt_template: |
+        请把以下任务分析整理成 GitHub issue，便于异步跟踪。
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+    - id: update_issue
+      title: Update GitHub issue with implementation status
+      assignment: update_issue_bridge
+      depends_on:
+        - publish_branch
+        - review
+        - sync_issue
+      prompt_template: |
+        请把本地实现结果回写到现有 GitHub issue，作为阶段性进展更新。
+
+        用户请求：
+        {user_request}
+
+        当前实现分支：
+        {primary_branch_name}
+
+        目标 issue：
+        {primary_issue_ref}
+
+        {dependency_summaries}
+
+    - id: draft_pr
+      title: Prepare GitHub draft PR summary
+      assignment: draft_pr_bridge
+      depends_on:
+        - publish_branch
+        - review
+        - sync_issue
+        - update_issue
+      prompt_template: |
+        请把本地实现结果整理为 Draft PR 描述，便于后续人工审核和合并。
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        建议使用的实现分支：
+        {primary_branch_name}
+
+    - id: dispatch_review
+      title: Trigger GitHub review workflow
+      assignment: dispatch_review_bridge
+      depends_on:
+        - publish_branch
+        - review
+        - draft_pr
+      prompt_template: |
+        请触发 GitHub review workflow，对以下实现分支执行异步检查。
+
+        用户请求：
+        {user_request}
+
+        推荐分支：
+        {primary_branch_name}
+
+        {dependency_summaries}
+
+    - id: collect_review
+      title: Collect GitHub review workflow status
+      assignment: collect_review_bridge
+      depends_on:
+        - dispatch_review
+      prompt_template: |
+        请收集当前 GitHub review workflow 的最新状态，便于 OpenClaw 回流异步检查结果。
+
+        用户请求：
+        {user_request}
+
+        目标 workflow run：
+        {primary_workflow_run_ref}
+
+        {dependency_summaries}
+
+  hybrid_default:
+    - id: triage
+      title: Triage user request
+      assignment: triage_local
+      metadata:
+        export_branch: false
+      prompt_template: |
+        你是 OpenClaw 的需求拆解 agent。
+        运行编号：{run_id}
+        仓库路径：{repo_path}
+        Artifacts 目录：{artifacts_dir}
+
+        用户请求：
+        {user_request}
+
+        如果请求与当前仓库不匹配、缺少关键文件或模块、或者信息不足以安全继续，请严格先输出两行，不要加粗、不要列表、不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
+        请输出：
+        1. 任务拆分
+        2. 风险点
+        3. 实施顺序
+
+    - id: implement
+      title: Implement main changes locally
+      assignment: implement_local
+      depends_on:
+        - triage
+      metadata:
+        export_branch: true
+      prompt_template: |
+        你是 OpenClaw 的本地实现 agent。
+        基于以下用户请求和依赖结果，在本地工作区准备实现方案。
+        工作目录：{workspace_path}
+        分支名：{branch_name}
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        请先确认用户请求对应的目标文件、模块或页面在当前仓库中确实存在。
+        如果请求与仓库不匹配、目标代码不存在、或关键信息缺失，请不要编造实现方案，严格先输出两行，不要加粗、不要列表、不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
         请重点关注：
         1. 需要修改的文件
         2. 实施步骤
@@ -144,7 +578,7 @@ pipelines:
 
     - id: publish_branch
       title: Publish implementation branch to origin
-      profile: git_push_branch
+      assignment: publish_branch_local
       depends_on:
         - implement
       metadata:
@@ -163,7 +597,7 @@ pipelines:
 
     - id: sync_issue
       title: Sync planning issue to GitHub
-      profile: copilot_issue
+      assignment: sync_issue_bridge
       depends_on:
         - triage
       prompt_template: |
@@ -174,27 +608,9 @@ pipelines:
 
         {dependency_summaries}
 
-    - id: draft_pr
-      title: Prepare GitHub draft PR summary
-      profile: copilot_pr
-      depends_on:
-        - publish_branch
-        - sync_issue
-        - update_issue
-      prompt_template: |
-        请把本地实现结果整理为 Draft PR 描述，便于后续人工审核和合并。
-
-        用户请求：
-        {user_request}
-
-        {dependency_summaries}
-
-        建议使用的实现分支：
-        {primary_branch_name}
-
     - id: update_issue
       title: Update GitHub issue with implementation status
-      profile: copilot_issue_followup
+      assignment: update_issue_bridge
       depends_on:
         - publish_branch
         - sync_issue
@@ -212,9 +628,27 @@ pipelines:
 
         {dependency_summaries}
 
+    - id: draft_pr
+      title: Prepare GitHub draft PR summary
+      assignment: draft_pr_bridge
+      depends_on:
+        - publish_branch
+        - sync_issue
+        - update_issue
+      prompt_template: |
+        请把本地实现结果整理为 Draft PR 描述，便于后续人工审核和合并。
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        建议使用的实现分支：
+        {primary_branch_name}
+
     - id: dispatch_review
       title: Trigger GitHub review workflow
-      profile: github_review_workflow
+      assignment: dispatch_review_bridge
       depends_on:
         - publish_branch
         - draft_pr
@@ -226,5 +660,330 @@ pipelines:
 
         推荐分支：
         {primary_branch_name}
+
+        {dependency_summaries}
+
+    - id: collect_review
+      title: Collect GitHub review workflow status
+      assignment: collect_review_bridge
+      depends_on:
+        - dispatch_review
+      prompt_template: |
+        请收集当前 GitHub review workflow 的最新状态，便于 OpenClaw 回流异步检查结果。
+
+        用户请求：
+        {user_request}
+
+        目标 workflow run：
+        {primary_workflow_run_ref}
+
+        {dependency_summaries}
+
+  mission_control_openclaw_triage:
+    - id: triage
+      title: Triage user request with local OpenClaw
+      assignment: triage_openclaw
+      metadata:
+        export_branch: false
+      prompt_template: |
+        你是 OpenClaw 的需求拆解 agent。
+        运行编号：{run_id}
+        仓库路径：{repo_path}
+        Artifacts 目录：{artifacts_dir}
+
+        用户请求：
+        {user_request}
+
+        如果请求与当前仓库不匹配、缺少关键文件或模块、或者信息不足以安全继续，请严格先输出两行，不要加粗、不要列表、不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
+        请输出：
+        1. 任务拆分
+        2. 风险点
+        3. 实施顺序
+
+    - id: implement
+      title: Implement main changes locally
+      assignment: implement_local
+      depends_on:
+        - triage
+      metadata:
+        export_branch: true
+      prompt_template: |
+        你是 OpenClaw 的本地实现 agent。
+        基于以下用户请求和依赖结果，在本地工作区准备实现方案。
+        工作目录：{workspace_path}
+        分支名：{branch_name}
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        请先确认用户请求对应的目标文件、模块或页面在当前仓库中确实存在。
+        如果请求与仓库不匹配、目标代码不存在、或关键信息缺失，请不要编造实现方案，严格先输出两行，不要加粗、不要列表、不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
+        请重点关注：
+        1. 需要修改的文件
+        2. 实施步骤
+        3. 验证方式
+
+    - id: review
+      title: Review implementation before publish
+      assignment: review_local
+      depends_on:
+        - implement
+      prompt_template: |
+        你是 OpenClaw 的本地审阅 agent。
+        请基于实现结果判断当前分支是否适合进入 GitHub 协作流程。
+
+        工作目录：
+        {workspace_path}
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        如果实现结果不足以继续、需求与仓库不匹配、或者必须先补充人工信息，请严格先输出两行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
+        请输出：
+        1. 主要风险
+        2. 建议补充验证
+        3. 是否建议发布到 GitHub 流程
+
+  mission_control_openclaw_default:
+    - id: triage
+      title: Triage user request with local OpenClaw
+      assignment: triage_openclaw
+      metadata:
+        export_branch: false
+      prompt_template: |
+        你是 OpenClaw 的需求拆解 agent。
+        运行编号：{run_id}
+        仓库路径：{repo_path}
+        Artifacts 目录：{artifacts_dir}
+
+        用户请求：
+        {user_request}
+
+        如果请求与当前仓库不匹配、缺少关键文件或模块、或者信息不足以安全继续，请严格先输出两行，不要加粗、不要列表、不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
+        请输出：
+        1. 任务拆分
+        2. 风险点
+        3. 实施顺序
+
+    - id: implement
+      title: Implement main changes locally
+      assignment: implement_local
+      depends_on:
+        - triage
+      metadata:
+        export_branch: true
+      prompt_template: |
+        你是 OpenClaw 的本地实现 agent。
+        基于以下用户请求和依赖结果，在本地工作区准备实现方案。
+        工作目录：{workspace_path}
+        分支名：{branch_name}
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        请先确认用户请求对应的目标文件、模块或页面在当前仓库中确实存在。
+        如果请求与仓库不匹配、目标代码不存在、或关键信息缺失，请不要编造实现方案，严格先输出两行，不要加粗、不要列表、不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
+        请重点关注：
+        1. 需要修改的文件
+        2. 实施步骤
+        3. 验证方式
+
+    - id: review
+      title: Review implementation before publish with local OpenClaw
+      assignment: review_openclaw
+      depends_on:
+        - implement
+      prompt_template: |
+        你是 OpenClaw 的本地审阅 agent。
+        请基于实现结果判断当前分支是否适合进入 GitHub 协作流程。
+
+        工作目录：
+        {workspace_path}
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        如果实现结果不足以继续、需求与仓库不匹配、或者必须先补充人工信息，请严格先输出两行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
+        请输出：
+        1. 主要风险
+        2. 建议补充验证
+        3. 是否建议发布到 GitHub 流程
+
+    - id: publish_branch
+      title: Publish implementation branch to origin
+      assignment: publish_branch_local
+      depends_on:
+        - implement
+        - review
+      metadata:
+        export_branch: true
+        requires_origin_remote: true
+      prompt_template: |
+        将当前实现分支推送到 origin，供 GitHub PR 和 workflow 使用。
+        工作目录：{workspace_path}
+        分支名：{branch_name}
+
+        用户请求：
+        {user_request}
+
+        来源分支：
+        {source_branch}
+
+    - id: sync_issue
+      title: Sync planning issue to GitHub
+      assignment: sync_issue_bridge
+      depends_on:
+        - triage
+      prompt_template: |
+        请把以下任务分析整理成 GitHub issue，便于异步跟踪。
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+    - id: update_issue
+      title: Update GitHub issue with implementation status
+      assignment: update_issue_bridge
+      depends_on:
+        - publish_branch
+        - review
+        - sync_issue
+      prompt_template: |
+        请把本地实现结果回写到现有 GitHub issue，作为阶段性进展更新。
+
+        用户请求：
+        {user_request}
+
+        当前实现分支：
+        {primary_branch_name}
+
+        目标 issue：
+        {primary_issue_ref}
+
+        {dependency_summaries}
+
+    - id: draft_pr
+      title: Prepare GitHub draft PR summary
+      assignment: draft_pr_bridge
+      depends_on:
+        - publish_branch
+        - review
+        - sync_issue
+        - update_issue
+      prompt_template: |
+        请把本地实现结果整理为 Draft PR 描述，便于后续人工审核和合并。
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        建议使用的实现分支：
+        {primary_branch_name}
+
+    - id: dispatch_review
+      title: Trigger GitHub review workflow
+      assignment: dispatch_review_bridge
+      depends_on:
+        - publish_branch
+        - review
+        - draft_pr
+      prompt_template: |
+        请触发 GitHub review workflow，对以下实现分支执行异步检查。
+
+        用户请求：
+        {user_request}
+
+        推荐分支：
+        {primary_branch_name}
+
+        {dependency_summaries}
+
+    - id: collect_review
+      title: Collect GitHub review workflow status
+      assignment: collect_review_bridge
+      depends_on:
+        - dispatch_review
+      prompt_template: |
+        请收集当前 GitHub review workflow 的最新状态，便于 OpenClaw 回流异步检查结果。
+
+        用户请求：
+        {user_request}
+
+        目标 workflow run：
+        {primary_workflow_run_ref}
+
+        {dependency_summaries}
+
+  github_bridge_smoke:
+    - id: dispatch_review
+      title: Trigger GitHub review workflow smoke test
+      assignment: dispatch_review_bridge
+      prompt_template: |
+        请触发 GitHub review workflow 的最小 smoke test，用于单独验证 GitHub bridge 是否可用。
+
+        用户请求：
+        {user_request}
+
+        如果当前没有实现分支，请直接使用默认基线分支。
+
+    - id: collect_review
+      title: Collect GitHub review workflow smoke status
+      assignment: collect_review_bridge
+      depends_on:
+        - dispatch_review
+      prompt_template: |
+        请收集刚刚触发的 GitHub review workflow smoke test 的最新状态。
+
+        用户请求：
+        {user_request}
+
+        目标 workflow run：
+        {primary_workflow_run_ref}
 
         {dependency_summaries}

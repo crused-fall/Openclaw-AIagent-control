@@ -54,6 +54,16 @@ class ArtifactStore:
             "branch_name": work_item.branch_name,
             "mode": work_item.mode,
             "agent": work_item.agent,
+            "assignment": work_item.assignment,
+            "assignment_source": work_item.assignment_source,
+            "managed_agent": work_item.managed_agent,
+            "assignment_reason": work_item.assignment_reason,
+            "fallback_used": work_item.fallback_used,
+            "fallback_chain": work_item.fallback_chain,
+            "required_capabilities": work_item.required_capabilities,
+            "assignment_candidates": work_item.assignment_candidates,
+            "assignment_attempts": work_item.assignment_attempts,
+            "planning_blocked_reason": work_item.planning_blocked_reason,
             "metadata": work_item.metadata,
         }
         workspace_path = self._path(context, self.workspaces_dir_name, f"{work_item.id}.json")

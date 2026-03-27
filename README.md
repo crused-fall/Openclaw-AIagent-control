@@ -1,115 +1,273 @@
-# OpenClaw - 多 AI 协作系统
+# OpenClaw
 
-多 Agent 协作架构，支持 Claude、Gemini、GPT-4 并行处理任务。
+OpenClaw 是一个多 AI agent 的 Mission Control。
 
-## 架构
+项目目标不是简单聚合多个模型 API，而是把不同形态的 agent 接到同一个总控层里，并按“修改版方案四”编排：
 
+1. CLI / SDK 本地执行层
+2. GitHub / Issue / PR 异步协作层
+3. 审阅与监督层
+
+当前仓库同时保留两条实现线：
+
+- `openclaw.py`: v1 legacy，基于模型 API 的并行路由原型
+- `main_v2.py` + `openclaw_v2/`: 按修改版方案四演进的 Mission Control 框架
+
+当前实现和目标方向需要分开看：
+
+- 目标方向：让 OpenClaw 最终成为多 agent 的统一控制面
+- 当前落地：真正的控制层仍然是 `main_v2.py` + `openclaw_v2/`
+- 当前 OpenClaw 现状：已经接入执行层和受控 agent 体系，但还不是默认统一总控入口
+
+## 方案四定位
+
+方案来源见 `Solutions.md` 的“方案四：做混合式 Mission Control，分层接入”。
+
+OpenClaw 当前选定的方向是：
+
+- 目标上，用户最终只和 OpenClaw 交互
+- 目标上，OpenClaw 最终负责拆任务、调度、留痕、重试和审阅
+- Claude / Gemini / Codex / Cursor 这类工具只作为“受控 agent”
+- step 需要什么能力，由 OpenClaw 的 `assignment -> managed_agent -> profile` 链决定，不由 agent 名称硬编码决定
+- assignment 还可以声明 `required_capabilities` 和 `fallback`，用于静态选择和回退
+- assignment / profile 解析失败不会再直接抛异常，而是会被降成可追踪的 `blocked` 步骤
+- 优先使用 CLI / SDK
+- 保留 GitHub 工作流的异步协作优势
+- 当前版本不把 GUI 自动化放进主线实现
+- 当前代码里，这个控制面仍由 `main_v2.py` + `openclaw_v2/` 承担，OpenClaw 本身只在变体 pipeline 和受控 agent 体系里接入
+
+## 当前架构
+
+```text
+User
+  -> Control Layer
+     -> main_v2.py
+  -> Orchestration Layer
+     -> planner.py / orchestrator.py / preflight.py / worktree.py
+     -> assignment layer / managed-agent registry
+  -> Execution Layer
+     -> CLIExecutor
+     -> OpenClawExecutor
+     -> GitHubWorkflowExecutor
+  -> Supervision Layer
+     -> review step / artifacts / preflight / run summaries
 ```
-用户请求 → OpenClaw (主控) → 任务分解 → 并行执行 → 结果整合 → 返回
-                                    ↓
-                        ┌───────────┼───────────┐
-                        ↓           ↓           ↓
-                    Claude      Gemini      GPT-4
+
+## 仓库结构
+
+```text
+openclaw.py               v1 legacy 原型
+demo.py                   v1 演示模式
+main_v2.py                v2 Mission Control 入口
+config.yaml               v1 配置
+config_v2.yaml            v2 配置
+FRAMEWORK_V2.md           v2 架构说明
+PROJECT_STATUS.md         当前阶段状态
+SETUP_GUIDE.md            环境搭建与运行指南
+Solutions.md              方案分析与长期路线
+openclaw_v2/
+  config.py               配置与环境展开
+  models.py               数据模型与状态
+  planner.py              pipeline 规划
+  orchestrator.py         依赖调度与汇总
+  preflight.py            预检
+  worktree.py             独立工作区管理
+  artifacts.py            运行产物落盘
+  executors/
+    cli.py                本地 CLI / SDK 执行层
+    openclaw.py           本地 OpenClaw 执行层
+    github.py             GitHub 工作流执行层
+tests/
+  ...
 ```
+
+## 默认 pipeline
+
+默认 pipeline 是 `mission_control_default`，目标是体现 CLI + GitHub 双引擎加监督层：
+
+1. `triage`: 分析需求与仓库匹配度
+2. `implement`: 在独立 worktree 中本地实现
+3. `review`: 审阅实现结果，形成监督结论
+4. `publish_branch`: 推送实现分支
+5. `sync_issue`: 在 GitHub 建立异步跟踪
+6. `update_issue`: 回写实施状态
+7. `draft_pr`: 生成 Draft PR 描述
+8. `dispatch_review`: 触发 GitHub review workflow
+9. `collect_review`: 回流 GitHub review workflow 状态
+
+另有两条 OpenClaw 变体 pipeline：
+
+- `mission_control_openclaw_triage`：只把 `triage` 切到本机 `openclaw agent --local --json`
+- `mission_control_openclaw_default`：把 `triage + review` 都切到 OpenClaw，本地 `implement` 和后续 GitHub 步骤保持不变（适用于 Claude 不可用时）
+- 当前这样设计是为了先替换最容易受 Claude 环境影响的监督层，不把 gateway / ACP 问题一次性扩大
+- OpenClaw executor 会显式把 repo 绝对路径传给 agent，并要求它先读取 repo 内的 `AGENTS.md`
+
+另有一条 GitHub-only smoke pipeline：`github_bridge_smoke`
+
+- 只跑 `dispatch_review -> collect_review`
+- 用来单独验证 GitHub review workflow 的触发和状态回流
+- 适合在本地 `claude/codex` 环境不稳定时排除干扰
 
 ## 快速开始
 
-### 1. 安装依赖
+### v2 Mission Control
+
+1. 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 配置 API Keys
+2. 准备本地 agent 与 GitHub 环境
 
 ```bash
-export ANTHROPIC_API_KEY="your-anthropic-key"
-export GOOGLE_API_KEY="your-google-key"
-export OPENAI_API_KEY="your-openai-key"
+export OPENCLAW_GITHUB_REPO="owner/repo"
+gh auth login
 ```
 
-或创建 `.env` 文件（参考 `.env.example`）：
+需要时再准备：
+
+- `claude`
+- `gemini`
+- `codex`
+- `cursor-agent`
+- `openclaw`
+
+如果要验证本机 OpenClaw 接入，再额外准备：
 
 ```bash
-cp .env.example .env
-# 编辑 .env 填入你的 API keys
+openclaw agents add openclaw-control-ext \
+  --workspace ~/.openclaw/workspaces/openclaw-aiagent-control \
+  --non-interactive --json
+export OPENCLAW_AGENT_ID="your-openclaw-agent-id"
 ```
 
-### 3. 运行
+推荐把 OpenClaw agent 的 workspace 放在仓库外，再把仓库绝对路径交给 executor。
+不要长期把 workspace 直接指到 repo 根目录。
+
+如果你的 `claude` 依赖自定义 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`，当前默认 `claude_local` 会保留这些环境变量。
+仓库里还提供了一个隔离版 `claude_local_isolated`，只在你需要显式绕过这两个变量时使用。
+
+3. 预览 pipeline
 
 ```bash
-# 方式 1: 演示模式（无需 API Keys）
+python3 main_v2.py --list-steps
+python3 main_v2.py --preflight-only --steps publish_branch,draft_pr
+python3 main_v2.py --list-managed-agents
+python3 main_v2.py --doctor-config
+python3 main_v2.py --diagnose-plan --steps triage,implement
+```
+
+如果要临时改 agent 分配，不必改 pipeline step。本次运行前覆盖 assignment 即可，例如：
+
+```bash
+export OPENCLAW_ASSIGN_TRIAGE_LOCAL="gemini_researcher"
+python3 main_v2.py --list-steps --steps triage
+```
+
+4. dry-run 执行
+
+```bash
+python3 main_v2.py --request "修复登录页报错" --steps triage,implement,review
+```
+
+如果你只想验证 GitHub review workflow，不想先经过本地 `triage/implement/review`：
+
+```bash
+python3 main_v2.py --pipeline github_bridge_smoke --request "smoke test github bridge" --steps collect_review
+```
+
+5. live 执行
+
+```bash
+python3 main_v2.py --live --request "修复登录页报错" --steps triage,implement,review
+```
+
+当前默认策略下，live 模式不会静默接受 fallback managed agent。
+如果某一步只能靠 fallback 才能继续，live 会直接中止，并要求你显式检查 assignment 配置。
+运行中会输出 `[progress] preflight:start`、`[progress] step:start ...` 这类进度行，避免长步骤看起来像卡住。
+当前还启用了 `runtime.cli_command_timeout_seconds=180.0`，本地 `claude/codex` 长时间无响应时会明确超时失败，而不是无限挂住。
+CLI 失败结果现在也会带 `cli_failure_kind` 和 `cli_recovery_hint`。如果默认 `triage` 卡在 Claude，可以优先试 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`，或者直接切到 `mission_control_openclaw_triage` / `mission_control_openclaw_default`。
+如果 live 计划里包含隔离 CLI worktree，而仓库还有未提交改动，preflight 现在会直接拦下；这些 worktree 只基于已提交 `HEAD`，不会自动带上本地脏改动。
+
+如果要直接做 GitHub bridge live 验证：
+
+```bash
+python3 main_v2.py --pipeline github_bridge_smoke --live \
+  --request "smoke test github bridge" --steps collect_review
+```
+
+6. 验证 OpenClaw triage 接入
+
+```bash
+OPENCLAW_AGENT_ID=your-openclaw-agent-id python3 main_v2.py \
+  --pipeline mission_control_openclaw_triage \
+  --preflight-only --steps triage
+```
+
+### v1 legacy 原型
+
+```bash
 python3 demo.py
-
-# 方式 2: 真实 API 模式（需要 API Keys）
 python3 openclaw.py
-
-# 方式 3: 使用启动脚本（会检查环境变量）
 ./start.sh
-
-# 方式 4: 测试环境配置
 python3 test_setup.py
 ```
 
-## v2 混合编排框架
+## 当前状态
 
-仓库里还有一套新的 v2 骨架，入口是 `main_v2.py`，目标是把本地 CLI agent、GitHub 工作流、独立 worktree 和 artifacts 串成一条可控执行链。
+当前仓库已经不再把 `openclaw.py` 视为最终目标，而是把它当作早期原型保留。
 
-### v2 常用命令
+v2 已具备：
 
-```bash
-# 查看有效计划，会自动补齐依赖
-/usr/bin/python3 main_v2.py --list-steps --steps publish_branch
+- 配置驱动 pipeline
+- assignment 驱动的受控 agent 分配
+- managed-agent registry
+- assignment capability / fallback 规则
+- assignment failure -> system blocked step
+- CLI / OpenClaw / GitHub 三种执行接口
+- preflight 预检
+- worktree 隔离
+- artifacts 落盘
+- blocked / failed / skipped 状态区分
+- review 监督步骤
+- step 级 progress 输出
+- config doctor / plan diagnostics
 
-# 只做预检，不执行任务
-/usr/bin/python3 main_v2.py --preflight-only --steps publish_branch,draft_pr
+v2 已验证：
 
-# dry-run 执行最小链路
-/usr/bin/python3 main_v2.py --request "修复登录页报错" --steps publish_branch
+- `mission_control_openclaw_triage` 能通过 orchestrator 调起本机 `openclaw agent --local --json`
+- OpenClaw 的 `payloads/sessionId/model/usage/workspace` 已能落盘到 run artifacts
+- 已验证“仓库外 workspace + repo 绝对路径 handoff”可工作；只有 workspace 指到 repo 内部时才会 warning
+- 已验证可以通过 assignment override 在不改 pipeline 的情况下，把 `triage` 临时切到 `gemini_researcher`
+- 已验证 preflight 和 `--list-managed-agents` 会显示 managed agent、required_capabilities 和 fallback 信息
+- 已验证 assignment 解析失败会落成 `blocked` 结果，并把根因一路透传到下游 `skipped`
+- 已验证 `--diagnose-plan` 可以直接打印 step 的 assignment 候选、尝试链和 blocked 根因
+- 已验证 `dispatch_review -> collect_review` 可以把 workflow run 引用回流到后续 GitHub follow-up step
+- `collect_review` 现在还能回流 workflow status / conclusion，以及失败 job 摘要
+- `collect_review` 现在支持短轮询等待；如果 workflow 很快完成，同一次 live run 就能直接拿到最终状态
+- GitHub bridge 现在会稳定回流 issue / PR / workflow run 引用，便于下游步骤继续消费
+- GitHub 步骤在 CLI 结果里会直接打印 `github:` 摘要，包含 repo、action、issue / PR / workflow refs
+- GitHub bridge 失败时会区分 `auth / repository / workflow / reference / network / unknown`，并保留 `blocked_reason`、`github_error`、`github_retryable` 和 `github_recovery_hint`
+- `workflow_dispatch` 会在 preflight 检查本地 `.github/workflows/<workflow_name>` 是否存在，避免缺文件时到 live 阶段才失败
+- GitHub bridge 已支持可配置的网络类自动重试；默认关闭，需要显式设置 `runtime.github_retry_attempts > 1`
+- GitHub repo 现在默认允许从 `git remote origin` 推导；如果你显式配置了 `github.repo`，则以配置值为准
+- 已验证 live 路径会先打印 `preflight/start/done` 级别的 progress，而不是整段静默
+- `--doctor-config` 现在也会检查 GitHub runtime retry 配置和 GitHub profile action / workflow 配置是否自洽
 
-# live 模式默认只允许白名单步骤
-/usr/bin/python3 main_v2.py --live --request "修复登录页报错" --steps publish_branch
-```
+v2 仍未完成：
 
-### v2 额外环境要求
+- OpenClaw 尚未成为默认统一总控入口
+- `Gemini` 和 `Cursor` 还没有进入默认 assignment
+- GitHub 仍是 `gh issue/pr/workflow` 桥接层，不是 native agent 接入
+- GitHub bridge 已开始做失败分类，但仍不是 native agent 编排
+- GitHub 层更深的结果解析与恢复策略
+- 统一成本统计
+- 长任务调度与超时重试
 
-- `OPENCLAW_GITHUB_REPO=owner/repo`
-- `gh auth login`
-- `git remote origin` 已配置
+## 文档导航
 
-更详细的结构说明见 `FRAMEWORK_V2.md`。
-
-## 使用示例
-
-```
-用户: 帮我写一段 Python 代码实现快速排序
-
-用户: 搜索最新的 AI 技术趋势
-
-用户: 分析这段代码的性能瓶颈
-```
-
-输入 `quit`、`exit` 或 `q` 退出程序。
-
-## 核心组件
-
-- **OpenClaw**: 主控 Agent，负责任务分解和结果整���
-- **ClaudeAdapter**: Anthropic Claude API 适配器
-- **GeminiAdapter**: Google Gemini API 适配器
-- **CodexAdapter**: OpenAI GPT-4 API 适配器
-- **Task/Result**: 数据模型
-
-## 配置说明
-
-编辑 `config.yaml` 自定义：
-
-- 模型参数（model、max_tokens）
-- 路由规则（关键词匹配）
-
-## 特性
-
-- ✅ 真实 API 集成（Claude、Gemini、GPT-4）
-- ✅ 基于关键词的智能任务路由
-- ✅ 并行执行多个 Agent
-- ✅ 错误处理和异常捕获
-- ✅ 交互式命令行界面
+- `Solutions.md`: 为什么最后要走方案四
+- `FRAMEWORK_V2.md`: v2 的结构和模块职责
+- `SETUP_GUIDE.md`: 环境搭建和运行方式
+- `PROJECT_STATUS.md`: 当前阶段做到了什么、还缺什么

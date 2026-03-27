@@ -1,63 +1,79 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This repository is no longer just a multi-model demo. Its main direction is a modified scheme-four Mission Control architecture built around CLI plus GitHub workflows.
 
 ## Project Overview
 
-OpenClaw is a multi-AI collaboration system that orchestrates multiple AI agents (Codex, Gemini, Codex) to handle user requests in parallel. The main controller decomposes tasks based on keywords and routes them to appropriate agents, then merges results.
+OpenClaw orchestrates multiple AI agents through layered execution:
+
+- CLI / SDK local execution
+- GitHub async collaboration
+- review / supervision
+
+The repository still contains a legacy v1 prototype in `openclaw.py`, but active work should treat `main_v2.py` and `openclaw_v2/` as the primary path.
 
 ## Architecture
 
-- **OpenClaw**: Main controller class that handles task decomposition, parallel execution, and result merging
-- **AgentAdapter**: Base class for AI service adapters (ClaudeAdapter, GeminiAdapter, CodexAdapter)
-- **Task/Result**: Data models using dataclasses for task representation and execution results
-- **AgentType**: Enum defining available agent types
+### v1 legacy
 
-The system uses asyncio for concurrent task execution with `asyncio.gather()` for parallel agent calls.
+- `openclaw.py`
+- direct model API routing
+- keyword-based task decomposition
+
+### v2 mission control
+
+- `main_v2.py`: control layer entrypoint
+- `config_v2.yaml`: profiles / managed_agents / assignments / pipelines
+- `planner.py`: pipeline planning
+- `orchestrator.py`: dependency scheduling and result merging
+- `executors/cli.py`: local agent layer
+- `executors/openclaw.py`: local OpenClaw layer
+- `executors/github.py`: GitHub layer
+- `preflight.py`: supervision and environment checks
+- `worktree.py`: isolated workspace management
+
+## Default Pipeline
+
+The default pipeline is `mission_control_default`:
+
+- `triage`
+- `implement`
+- `review`
+- `publish_branch`
+- `sync_issue`
+- `update_issue`
+- `draft_pr`
+- `dispatch_review`
+- `collect_review`
 
 ## Development Commands
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
 
-# Run demo mode (no API keys needed)
-python3 demo.py
-
-# Run with real APIs (requires API keys)
-python3 openclaw.py
-
-# Use startup script with environment check
-./start.sh
-
-# Test environment setup
-python3 test_setup.py
-
-# Set required environment variables
-export ANTHROPIC_API_KEY="your-key"
-export GOOGLE_API_KEY="your-key"
-export OPENAI_API_KEY="your-key"
+python3 main_v2.py --list-steps
+python3 main_v2.py --list-managed-agents
+python3 main_v2.py --diagnose-plan --steps triage,implement
+python3 main_v2.py --doctor-config
+python3 main_v2.py --preflight-only --steps review,publish_branch
+python3 main_v2.py --request "修复登录页报错" --steps triage,implement,review
+python3 main_v2.py --live --request "修复登录页报错" --steps triage,implement,review
 ```
 
-## Configuration
+Legacy commands still exist:
 
-`config.yaml` defines:
-- Agent configurations (API keys via environment variables, models, parameters)
-- Routing rules with keyword-based task assignment
-- Model specifications: Codex-sonnet-4-6, gemini-2.0-flash-exp, gpt-4
+```bash
+python3 demo.py
+python3 openclaw.py
+python3 test_setup.py
+```
 
-## Current Implementation Status
+## Working Rules
 
-The adapters currently use mock implementations with `asyncio.sleep()`. Real API integration is marked with TODO comments in:
-- `ClaudeAdapter.execute()` - line 33
-- `GeminiAdapter.execute()` - line 39
-- `CodexAdapter.execute()` - line 45
-
-## Task Routing Logic
-
-Tasks are assigned based on keyword matching in `decompose_task()`:
-- "代码"/"code"/"编程"/"bug" → Codex
-- "搜索"/"search"/"查找" → Gemini
-- "图片"/"image"/"视频" → Gemini
-- "分析"/"优化" → Codex
-- Default fallback → Codex
+- Preserve `openclaw.py` as legacy unless explicitly asked to remove it.
+- Prefer improving `openclaw_v2/` rather than extending the v1 keyword router.
+- Treat blocked requests as first-class outcomes, not generic failures.
+- Treat controlled agents as registry entries, not hard-coded step owners.
+- Prefer diagnosing `assignment -> managed_agent -> profile` resolution before changing pipeline structure.
+- Live mode should not silently rely on fallback managed agents unless config explicitly opts in.
+- Keep the main architecture centered on local CLI execution plus GitHub workflow collaboration.

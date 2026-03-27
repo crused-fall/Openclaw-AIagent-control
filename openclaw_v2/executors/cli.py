@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 from ..config import ProfileConfig
-from ..models import AgentResult, ExecutionContext, TaskStatus, WorkItem
+from ..models import AgentResult, AgentType, ExecutionContext, TaskStatus, WorkItem, parse_control_output
 from .base import Executor
 
 
@@ -25,6 +26,92 @@ class CLIExecutor(Executor):
             "branch_name": work_item.branch_name,
         }
         return [token.format(**values) for token in template]
+
+    @staticmethod
+    def _artifacts(
+        work_item: WorkItem,
+        workspace_path: str,
+        exports_branch: bool,
+        blocked_reason: str = "",
+    ) -> dict[str, object]:
+        artifacts: dict[str, object] = {
+            "workspace_path": workspace_path,
+            "branch_name": work_item.branch_name,
+            "exports_branch": exports_branch,
+            "source_branch": work_item.branch_name if exports_branch else "",
+            "workspace_prepare_command": work_item.metadata.get("workspace_prepare_command", []),
+        }
+        if blocked_reason:
+            artifacts["blocked_reason"] = blocked_reason
+        return artifacts
+
+    @staticmethod
+    def _build_env(profile: ProfileConfig) -> dict[str, str]:
+        env = os.environ.copy()
+        for key in profile.unset_env:
+            env.pop(key, None)
+        return env
+
+    @staticmethod
+    def _timeout_recovery_hint(work_item: WorkItem) -> str:
+        hint = "Rerun the printed command manually to inspect whether the agent is hanging or waiting for input."
+        if work_item.agent != AgentType.CLAUDE:
+            return hint
+        if work_item.id == "triage":
+            return (
+                "Verify Claude connectivity or custom ANTHROPIC_* settings. "
+                "For triage, retry with `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated` "
+                "to isolate ANTHROPIC_* env, or switch to `--pipeline mission_control_openclaw_triage`."
+            )
+        return (
+            "Verify Claude connectivity or custom ANTHROPIC_* settings, then rerun the printed command manually."
+        )
+
+    @classmethod
+    def _failure_artifacts(
+        cls,
+        work_item: WorkItem,
+        stderr: str,
+        *,
+        timed_out: bool = False,
+    ) -> dict[str, object]:
+        stderr_text = stderr.strip()
+        if timed_out:
+            return {
+                "cli_failure_kind": "timeout",
+                "cli_recovery_hint": cls._timeout_recovery_hint(work_item),
+            }
+
+        if work_item.agent == AgentType.CLAUDE:
+            lowered = stderr_text.lower()
+            if "not logged in" in lowered or "/login" in lowered:
+                return {
+                    "cli_failure_kind": "auth_required",
+                    "cli_recovery_hint": "Run `claude auth login` in the same shell, then retry the step.",
+                }
+            if "invalid bearer token" in lowered or "401" in lowered:
+                hint = (
+                    "Verify your `ANTHROPIC_AUTH_TOKEN` or remove invalid custom `ANTHROPIC_*` overrides."
+                )
+                if work_item.id == "triage":
+                    hint += " For triage, `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated` is the safest comparison path."
+                return {
+                    "cli_failure_kind": "invalid_token",
+                    "cli_recovery_hint": hint,
+                }
+            if "connection error" in lowered or "econnrefused" in lowered or ":3010" in lowered:
+                hint = "Check your configured `ANTHROPIC_BASE_URL` or upstream proxy reachability."
+                if work_item.id == "triage":
+                    hint += " If the proxy is optional, retry with `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`."
+                return {
+                    "cli_failure_kind": "connectivity_error",
+                    "cli_recovery_hint": hint,
+                }
+
+        return {
+            "cli_failure_kind": "nonzero_exit",
+            "cli_recovery_hint": "Inspect `stderr` and rerun the printed command manually if needed.",
+        }
 
     async def execute(
         self,
@@ -69,35 +156,81 @@ class CLIExecutor(Executor):
         process = await asyncio.create_subprocess_exec(
             *command,
             cwd=workspace_path,
+            env=self._build_env(profile),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        timeout_seconds = max(0.0, float(self.app_config.runtime.cli_command_timeout_seconds))
+        timed_out = False
+        try:
+            if timeout_seconds > 0:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
+            else:
+                stdout, stderr = await process.communicate()
+        except asyncio.TimeoutError:
+            timed_out = True
+            process.kill()
+            stdout, stderr = await process.communicate()
         output = stdout.decode("utf-8", errors="replace").strip()
         error_output = stderr.decode("utf-8", errors="replace").strip()
 
-        if process.returncode == 0:
+        if timed_out:
+            artifacts = self._artifacts(
+                work_item,
+                workspace_path,
+                exports_branch=False,
+            )
+            artifacts["cli_timeout_seconds"] = timeout_seconds
+            artifacts["cli_timed_out"] = True
+            artifacts.update(self._failure_artifacts(work_item, error_output, timed_out=True))
             return AgentResult(
                 work_item_id=work_item.id,
                 profile=work_item.profile,
                 agent=work_item.agent,
                 mode=work_item.mode,
-                status=TaskStatus.SUCCEEDED,
-                summary=f"CLI task {work_item.title} finished successfully.",
-                output=output,
+                status=TaskStatus.FAILED,
+                summary=(
+                    f"CLI task {work_item.title} timed out after {timeout_seconds} seconds."
+                ),
+                output=error_output or output,
                 stdout=output,
                 stderr=error_output,
                 exit_code=process.returncode,
                 command=command,
-                artifacts={
-                    "workspace_path": workspace_path,
-                    "branch_name": work_item.branch_name,
-                    "exports_branch": bool(work_item.metadata.get("export_branch", False)),
-                    "source_branch": work_item.branch_name if bool(work_item.metadata.get("export_branch", False)) else "",
-                },
+                artifacts=artifacts,
             )
 
-        return AgentResult(
+        if process.returncode == 0:
+            control_signal = parse_control_output(output)
+            status = control_signal.status or TaskStatus.SUCCEEDED
+            blocked_reason = control_signal.block_reason
+            exports_branch = bool(work_item.metadata.get("export_branch", False)) and status == TaskStatus.SUCCEEDED
+            cleaned_output = control_signal.cleaned_output or output
+            return AgentResult(
+                work_item_id=work_item.id,
+                profile=work_item.profile,
+                agent=work_item.agent,
+                mode=work_item.mode,
+                status=status,
+                summary=(
+                    f"CLI task {work_item.title} blocked: {blocked_reason}"
+                    if status == TaskStatus.BLOCKED
+                    else f"CLI task {work_item.title} finished successfully."
+                ),
+                output=cleaned_output,
+                stdout=output,
+                stderr=error_output,
+                exit_code=process.returncode,
+                command=command,
+                artifacts=self._artifacts(
+                    work_item,
+                    workspace_path,
+                    exports_branch=exports_branch,
+                    blocked_reason=blocked_reason,
+                ),
+            )
+
+        result = AgentResult(
             work_item_id=work_item.id,
             profile=work_item.profile,
             agent=work_item.agent,
@@ -109,10 +242,11 @@ class CLIExecutor(Executor):
             stderr=error_output,
             exit_code=process.returncode,
             command=command,
-            artifacts={
-                "workspace_path": workspace_path,
-                "branch_name": work_item.branch_name,
-                "exports_branch": bool(work_item.metadata.get("export_branch", False)),
-                "source_branch": work_item.branch_name if bool(work_item.metadata.get("export_branch", False)) else "",
-            },
+            artifacts=self._artifacts(
+                work_item,
+                workspace_path,
+                exports_branch=bool(work_item.metadata.get("export_branch", False)),
+            ),
         )
+        result.artifacts.update(self._failure_artifacts(work_item, error_output))
+        return result

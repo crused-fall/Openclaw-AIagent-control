@@ -1,105 +1,40 @@
-# OpenClaw 完整安装和使用指南
+# OpenClaw Setup Guide
 
-本指南将带你一步一步完成 OpenClaw 的安装、配置和使用。
+本指南以“修改版方案四”为目标，说明如何把当前仓库跑成一个最小的 Mission Control。
 
----
+## 1. 你要先理解两条入口
 
-## 📋 前置要求
+### v1 legacy
 
-- Python 3.9 或更高版本
-- pip（Python 包管理器）
-- 至少一个 AI 服务的 API Key（Claude、Gemini 或 OpenAI）
+- 入口：`openclaw.py`
+- 作用：验证多模型 API 路由
 
----
+### v2 mission control
 
-## 🚀 第一步：安装依赖
+- 入口：`main_v2.py`
+- 作用：验证 CLI / GitHub / supervision 分层编排
 
-### 1.1 克隆或下载项目
+注意：当前真正的控制层仍是 `main_v2.py` + `openclaw_v2/`。
+OpenClaw 已经接入执行层和受控 agent 体系，但还不是默认统一总控入口。
 
-如果你还没有项目文件，请先获取项目代码。
+如果你准备继续做项目，请优先使用 v2。
 
-### 1.2 进入项目目录
-
-```bash
-cd /path/to/Claude-basement
-```
-
-### 1.3 安装 Python 依赖包
+## 2. 基础依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-**预期输出：** 你会看到一系列包被下载和安装，包括 `anthropic`、`google-generativeai`、`openai`、`pyyaml` 等。
+需要的 Python 包：
 
-**可能的问题：**
-- 如果遇到权限错误，使用 `pip install --user -r requirements.txt`
-- 如果 pip 版本过旧，先运行 `pip install --upgrade pip`
+- `anthropic`
+- `google-generativeai`
+- `openai`
+- `pyyaml`
 
----
+如果当前 Python 环境没有 `pyyaml`，v2 也可以通过系统 Ruby 做配置加载 fallback，但仍建议装齐依赖。
 
-## 🔑 第二步：配置 API Keys
-
-你需要至少一个 AI 服务的 API Key。以下是获取方式：
-
-### 2.1 获取 API Keys
-
-**Anthropic Claude:**
-1. 访问 https://console.anthropic.com/
-2. 注册/登录账号
-3. 进入 API Keys 页面
-4. 创建新的 API Key
-5. 复制保存（只显示一次）
-
-**Google Gemini:**
-1. 访问 https://makersuite.google.com/app/apikey
-2. 登录 Google 账号
-3. 点击 "Create API Key"
-4. 复制保存
-
-**OpenAI:**
-1. 访问 https://platform.openai.com/api-keys
-2. 注册/登录账号
-3. 点击 "Create new secret key"
-4. 复制保存（只显示一次）
-
-### 2.2 设置环境变量
-
-**方式 A：临时设置（推荐用于测试）**
-
-在终端中运行：
-
-```bash
-export ANTHROPIC_API_KEY="your-anthropic-key-here"
-export GOOGLE_API_KEY="your-google-key-here"
-export OPENAI_API_KEY="your-openai-key-here"
-```
-
-**注意：** 这种方式只在当前终端会话有效，关闭终端后需要重新设置。
-
-**方式 B：永久设置（推荐用于长期使用）**
-
-创建 `.env` 文件：
-
-```bash
-cp .env.example .env
-```
-
-编辑 `.env` 文件，填入你的 API Keys：
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxx
-GOOGLE_API_KEY=AIzaSyxxxxxxxxxxxxx
-OPENAI_API_KEY=sk-xxxxxxxxxxxxx
-```
-
-然后在使用前加载环境变量：
-
-```bash
-source .env
-```
-
-或者将以下内容添加到 `~/.bashrc` 或 `~/.zshrc`：
+## 3. v1 legacy 环境
 
 ```bash
 export ANTHROPIC_API_KEY="your-key"
@@ -107,284 +42,225 @@ export GOOGLE_API_KEY="your-key"
 export OPENAI_API_KEY="your-key"
 ```
 
----
-
-## ✅ 第三步：验证安装
-
-运行环境检查脚本：
+验证：
 
 ```bash
 python3 test_setup.py
-```
-
-**预期输出：**
-
-```
-OpenClaw 环境检查
-==================================================
-
-✓ 配置文件存在
-✓ 所有依赖包已安装
-✓ 所有环境变量已设置
-
-==================================================
-✓ 环境配置完成，可以运行: python openclaw.py
-```
-
-**如果出现错误：**
-- `❌ 缺少依赖包` → 重新运行步骤 1.3
-- `❌ 缺少环境变量` → 检查步骤 2.2 是否正确设置
-- `❌ 找不到 config.yaml` → 确认你在正确的项目目录中
-
----
-
-## 🎮 第四步：运行程序
-
-### 4.1 演示模式（无需 API Keys）
-
-如果你想先体验系统工作流程，可以运行演示模式：
-
-```bash
 python3 demo.py
-```
-
-**演示模式特点：**
-- 不需要真实的 API Keys
-- 模拟多 Agent 协作流程
-- 返回模拟响应
-
-**示例交互：**
-
-```
-用户: 帮我写一段 Python 代码
-  → 分配给 1 个 Agent: ['claude']
-
-结果:
-Claude 回复: 我已收到您的请求「帮我写一段 Python 代码」并进行了处理。
-```
-
-### 4.2 真实 API 模式
-
-使用真实的 AI 服务：
-
-```bash
 python3 openclaw.py
 ```
 
-或使用启动脚本（会自动检查环境变量）：
+## 4. v2 mission control 环境
+
+### 本地 agent
+
+至少准备：
+
+- `claude`
+- `gemini`（如果要把它纳入受控 agent 池）
+- `codex`
+- `cursor-agent`（如果要把 Cursor 纳入受控 agent 池）
+- `git`
+- `openclaw`（如果要验证本机 OpenClaw 接入）
+
+建议先确认：
 
 ```bash
-./start.sh
+claude --version
+gemini --version
+codex --version
+cursor-agent --version
+git --version
 ```
 
-**首次运行输出：**
-
-```
-OpenClaw 已启动，输入 'quit' 退出
-
-用户:
-```
-
----
-
-## 💬 第五步：使用系统
-
-### 5.1 基本使用
-
-在提示符后输入你的请求，系统会自动分配给合适的 Agent 处理。
-
-**示例 1：代码相关请求**
-
-```
-用户: 帮我写一段 Python 快速排序代码
-
-处理中...
-
-结果:
-[Claude 的详细代码实现]
-```
-
-**示例 2：搜索相关请求**
-
-```
-用户: 搜索最新的 AI 技术趋势
-
-处理中...
-
-结果:
-[Gemini 的搜索结果]
-```
-
-**示例 3：分析相关请求**
-
-```
-用户: 分析这段代码的性能瓶颈
-
-处理中...
-
-结果:
-[GPT-4 的分析结果]
-```
-
-### 5.2 多 Agent 协作
-
-如果你的请求包含多个关键词，系统会同时调用多个 Agent：
-
-```
-用户: 帮我写代码并搜索相关文档
-
-处理中...
-
-结果:
-Claude 回复: [代码实现]
-Gemini 回复: [文档搜索结果]
-```
-
-### 5.3 退出程序
-
-输入以下任一命令退出：
-- `quit`
-- `exit`
-- `q`
-
-或按 `Ctrl+C` 强制退出。
-
----
-
-## ⚙️ 第六步：自定义配置
-
-### 6.1 修改路由规则
-
-编辑 `config.yaml` 文件：
-
-```yaml
-routing_rules:
-  - keywords: ["代码", "code", "编程", "bug"]
-    agent: claude
-  - keywords: ["搜索", "search", "查找"]
-    agent: gemini
-  - keywords: ["分析", "优化"]
-    agent: codex
-```
-
-**添加新规则：**
-
-```yaml
-  - keywords: ["翻译", "translate"]
-    agent: gemini
-```
-
-### 6.2 修改模型参数
-
-在 `config.yaml` 中调整：
-
-```yaml
-agents:
-  claude:
-    model: claude-sonnet-4-6
-    max_tokens: 4096  # 增加到 8192 以获得更长的响应
-```
-
----
-
-## 🔧 故障排除
-
-### 问题 1：API Key 无效
-
-**错误信息：** `Error: Invalid API key`
-
-**解决方案：**
-1. 检查 API Key 是否正确复制（没有多余空格）
-2. 确认 API Key 没有过期
-3. 验证账户是否有足够的配额
-
-### 问题 2：网络连接失败
-
-**错误信息：** `Error: Connection timeout`
-
-**解决方案：**
-1. 检查网络连接
-2. 如果在中国大陆，可能需要配置代理
-3. 尝试使用 VPN
-
-### 问题 3：依赖包冲突
-
-**错误信息：** `ImportError` 或版本冲突
-
-**解决方案：**
-```bash
-# 创建虚拟环境
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### 问题 4：Python 版本过低
-
-**错误信息：** `SyntaxError` 或不支持的特性
-
-**解决方案：**
-```bash
-# 检查 Python 版本
-python3 --version
-
-# 如果低于 3.9，请升级 Python
-```
-
----
-
-## 📚 进阶使用
-
-### 使用特定 Agent
-
-修改 `openclaw.py` 中的 `decompose_task` 方法，强制使用特定 Agent：
-
-```python
-def decompose_task(self, user_input: str) -> List[Task]:
-    # 强制使用 Claude
-    return [Task("0", user_input, AgentType.CLAUDE, 0)]
-```
-
-### 添加日志记录
-
-在 `openclaw.py` 开头添加：
-
-```python
-import logging
-logging.basicConfig(level=logging.INFO)
-```
-
-### 批量处理
-
-创建一个包含多个请求的文件 `requests.txt`，然后：
+### GitHub 层
 
 ```bash
-while IFS= read -r line; do
-    echo "$line" | python3 openclaw.py
-done < requests.txt
+export OPENCLAW_GITHUB_REPO="owner/repo"
+gh auth login
 ```
 
----
+并确保当前仓库有 `origin` remote。
 
-## 🎯 快速参考
+### OpenClaw 本地接入
 
-| 命令 | 用途 |
-|------|------|
-| `python3 demo.py` | 演示模式（无需 API Keys） |
-| `python3 openclaw.py` | 真实 API 模式 |
-| `./start.sh` | 带环境检查的启动 |
-| `python3 test_setup.py` | 验证环境配置 |
-| `quit` / `exit` / `q` | 退出程序 |
+如果要走 `mission_control_openclaw_triage` 或 `mission_control_openclaw_default`，至少准备一个本地 OpenClaw agent：
 
----
+```bash
+openclaw agents list --json
+openclaw agents add openclaw-control-ext \
+  --workspace ~/.openclaw/workspaces/openclaw-aiagent-control \
+  --non-interactive --json
+export OPENCLAW_AGENT_ID="your-agent-id"
+```
 
-## 📞 获取帮助
+更稳的做法是为这个仓库单独建一个 agent，而不是复用个人 `main`。
+更稳的 workspace 做法是放在仓库外，例如 `~/.openclaw/workspaces/openclaw-aiagent-control`。
 
-- 查看 `README.md` 了解项目概述
-- 查看 `CLAUDE.md` 了解架构细节
-- 查看 `PROJECT_STATUS.md` 了解项目状态
-- 遇到问题请检查本文档的"故障排除"部分
+注意：
 
----
+- 不建议长期把 OpenClaw agent 的 workspace 直接指到仓库根目录
+- 否则 OpenClaw 可能会在仓库里生成 `IDENTITY.md`、`SOUL.md`、`TOOLS.md`、`USER.md`、`HEARTBEAT.md` 这类运行态文件
+- 当前版本会在 preflight 里对这种情况给出 warning
+- 当前 OpenClaw executor 会显式传入 repo 绝对路径，并要求 agent 先读取 repo 内的 `AGENTS.md`
+- 如果你的 `claude` 依赖自定义 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`，默认 `claude_local` 会保留这些变量；`claude_local_isolated` 只作为显式备选
 
-**祝使用愉快！** 🎉
+## 5. 推荐运行顺序
+
+### 先理解 assignment 层
+
+当前 v2 不再推荐把 step 直接理解成“Claude 步骤”或“Codex 步骤”。
+
+正确理解是：
+
+- step 只表达 `triage / implement / review` 这类逻辑角色
+- 具体用哪个受控 agent，由 `config_v2.yaml` 的 `assignments + managed_agents` 决定
+- `assignments` 还可以声明 `required_capabilities` 和 `fallback`
+- 如果 assignment / profile 解析失败，这一步会在计划阶段直接变成 `blocked`，而不是让整个 planner 直接崩掉
+- 如果要临时切换，也可以用环境变量覆盖，例如 `OPENCLAW_ASSIGN_TRIAGE_LOCAL`
+
+示例：
+
+```bash
+OPENCLAW_ASSIGN_TRIAGE_LOCAL=gemini_researcher python3 main_v2.py --list-steps --steps triage
+```
+
+如需查看当前受控 agent 注册表：
+
+```bash
+python3 main_v2.py --list-managed-agents
+python3 main_v2.py --doctor-config
+```
+
+如需直接诊断 step 是怎么解析到具体 managed agent 的：
+
+```bash
+python3 main_v2.py --diagnose-plan --steps triage,implement
+python3 main_v2.py --diagnose-plan --steps collect_review
+```
+
+### 第一步：只看计划
+
+```bash
+python3 main_v2.py --list-steps
+python3 main_v2.py --list-steps --steps review,publish_branch
+```
+
+### 第二步：只看预检
+
+```bash
+python3 main_v2.py --preflight-only
+python3 main_v2.py --preflight-only --steps draft_pr,dispatch_review
+```
+
+如果你计划跑 `dispatch_review`，当前 preflight 还会检查本地是否存在
+`.github/workflows/openclaw-review.yml`。缺失时 dry-run 会 warning，live 会直接失败。
+如果你计划跑 `collect_review`，它会依赖 `dispatch_review` 先产出 workflow run id 或 URL。
+成功接通后，`collect_review` 会把 workflow status / conclusion 和 failed jobs 摘要回流到结果 artifacts。
+当前默认还会对 `workflow_view` 做一个很短的轮询等待，配置项是
+`runtime.github_workflow_view_poll_attempts` 和 `runtime.github_workflow_view_poll_interval_seconds`。
+如果你只想单独验证 GitHub review workflow，而不想先经过本地 `triage/implement/review`，可以改用 `github_bridge_smoke` pipeline。
+
+### 第三步：dry-run
+
+```bash
+python3 main_v2.py --request "修复登录页报错" --steps triage,implement,review
+```
+
+### 第四步：live
+
+```bash
+python3 main_v2.py --live --request "修复登录页报错" --steps triage,implement,review
+```
+
+注意：当前默认 live 策略下，如果某一步已经静态解析到 fallback managed agent，live 会直接中止。
+要允许这种行为，需要显式把 `runtime.allow_fallback_in_live` 设为 `true`。
+另外，live 运行中会先输出 `[progress] preflight:start`、`[progress] step:start ...` 之类的进度行。
+当前默认还启用了 `runtime.cli_command_timeout_seconds=180.0`，本地 CLI 长时间无响应时会明确超时退出。
+如果 GitHub bridge 失败，CLI 还会直接打印 `stderr`、`github_failure_kind`、`github_retryable` 和 `github_recovery_hint`。
+如果本地 CLI 失败，结果里也会直接打印 `cli_failure_kind` 和 `cli_recovery_hint`。默认 `triage` 卡在 Claude 时，优先试 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`；如果想整体绕过 Claude 的前后监督步骤，直接改用 `mission_control_openclaw_default`；如果只想替换 `triage`，用 `mission_control_openclaw_triage`。
+如果 live 计划里包含隔离 CLI worktree，而仓库仍有未提交改动，preflight 现在会直接失败；这些 worktree 只基于已提交 `HEAD`，不会自动带上本地改动。
+如果你希望网络类 GitHub 失败自动重试，可以把 `runtime.github_retry_attempts` 调到大于 `1`，并用 `runtime.github_retry_backoff_seconds` 控制间隔；默认是关闭的。
+当前默认已经允许在没填 `github.repo` 时从 `git remote origin` 推导仓库；如果你想固定目标仓库，可以显式设置 `github.repo` 或 `OPENCLAW_GITHUB_REPO`。
+`--doctor-config` 现在还会检查这些 GitHub runtime 配置和 GitHub profile action / workflow 配置是否自洽。
+
+如果当前 live 总是被本地 `claude/codex` 环境挡住，可以先单独做 GitHub smoke test：
+
+```bash
+python3 main_v2.py --pipeline github_bridge_smoke --preflight-only --steps collect_review
+python3 main_v2.py --pipeline github_bridge_smoke --live --request "smoke test github bridge" --steps collect_review
+```
+
+### 第五步：走完整链路
+
+```bash
+python3 main_v2.py --live --request "修复登录页报错" --steps publish_branch,draft_pr
+```
+
+### 第六步：验证 OpenClaw 接入
+
+```bash
+OPENCLAW_AGENT_ID="openclaw-control-ext" \
+python3 main_v2.py --pipeline mission_control_openclaw_triage --preflight-only --steps triage
+```
+
+```bash
+OPENCLAW_AGENT_ID="openclaw-control-ext" \
+python3 main_v2.py --live --pipeline mission_control_openclaw_triage --steps triage \
+  --request "概括这个仓库的主入口"
+```
+
+如果你想在 Claude 当前不可用时继续跑主线，可以改成：
+
+```bash
+OPENCLAW_AGENT_ID="openclaw-control-ext" \
+python3 main_v2.py --pipeline mission_control_openclaw_default --preflight-only --steps triage,implement,review
+```
+
+## 6. 结果怎么查看
+
+每次 v2 运行都会落盘到：
+
+```text
+.openclaw/runs/<run-id>/
+```
+
+主要文件：
+
+- `context.json`
+- `plan.json`
+- `summary.json`
+- `prompts/*.txt`
+- `results/*.json`
+- `workspaces/*.json`
+- `logs/*.stdout.txt`
+- `metadata/preflight.json`
+
+## 7. 常见问题
+
+### `PyYAML` 缺失
+
+先装：
+
+```bash
+pip install pyyaml
+```
+
+如果暂时没装，v2 会尝试用系统 Ruby 加载 YAML。
+
+### `git worktree` 建分支失败
+
+先确认当前环境允许写 `.git/refs/heads`。
+
+如果是在受限沙箱里运行，live 模式可能需要额外权限。
+
+### 请求和仓库不匹配
+
+这是预期路径的一部分。
+
+当前 v2 会把这种情况标记为：
+
+- `triage: blocked`
+- 下游实现步骤 `skipped`
+
+这正是修改版方案四里监督层应该做的事情。

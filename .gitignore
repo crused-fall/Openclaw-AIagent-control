@@ -10,3 +10,8 @@ __pycache__/
 dist/
 build/
 .openclaw/
+/HEARTBEAT.md
+/IDENTITY.md
+/SOUL.md
+/TOOLS.md
+/USER.md
