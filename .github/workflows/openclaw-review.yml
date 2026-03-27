@@ -1,0 +1,11 @@
+name: OpenClaw Review
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Smoke test
+        run: echo "OpenClaw GitHub review smoke test"
