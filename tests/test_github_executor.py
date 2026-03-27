@@ -111,6 +111,48 @@ class GitHubExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.artifacts["repo"], "owner/repo")
         self.assertEqual(result.artifacts["repo_source"], "git_origin")
 
+    async def test_live_issue_create_missing_label_retries_without_labels(self) -> None:
+        context = ExecutionContext(
+            run_id="run-1",
+            user_request="test",
+            repo_path="/tmp/repo",
+            dry_run=False,
+            artifacts_dir="/tmp/artifacts",
+            worktrees_dir="/tmp/worktrees",
+        )
+        work_item = WorkItem(
+            id="sync_issue",
+            title="Sync issue",
+            profile="copilot_issue",
+            agent=AgentType.COPILOT,
+            mode=ExecutionMode.GITHUB,
+            prompt_template="",
+        )
+        profile = self.config.profiles["copilot_issue"]
+        create_process = mock.AsyncMock(
+            side_effect=[
+                _FakeProcess(1, "", "could not add label: 'openclaw' not found"),
+                _FakeProcess(0, "https://github.com/owner/repo/issues/12"),
+            ]
+        )
+
+        with mock.patch(
+            "openclaw_v2.executors.github.asyncio.create_subprocess_exec",
+            new=create_process,
+        ):
+            result = await self.executor.execute(work_item, profile, context, "hello")
+
+        self.assertEqual(result.status, TaskStatus.SUCCEEDED)
+        self.assertEqual(result.artifacts["github_attempt_count"], 2)
+        self.assertTrue(result.artifacts["github_retried"])
+        self.assertTrue(result.artifacts["github_label_fallback_used"])
+        self.assertEqual(result.artifacts["github_requested_labels"], "openclaw, planning")
+        self.assertEqual(result.artifacts["github_ignored_labels"], "openclaw, planning")
+        self.assertEqual(result.artifacts["issue_number"], "12")
+        self.assertNotIn("--label", result.command)
+        self.assertIn("Retried without labels", result.summary)
+        self.assertEqual(create_process.await_count, 2)
+
     async def test_live_issue_comment_without_issue_reference_is_blocked(self) -> None:
         context = ExecutionContext(
             run_id="run-1",

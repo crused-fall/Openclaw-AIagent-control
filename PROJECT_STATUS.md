@@ -50,6 +50,7 @@
 - GitHub 失败结果会保留 `stderr`、retryability 和恢复提示
 - GitHub bridge 已支持显式配置的网络类自动重试
 - GitHub repo 已支持显式开启的 `origin` fallback
+- `gh issue create` 如果因为仓库里缺少 labels 失败，会自动去掉 labels 重试一次，并把被忽略的 labels 回写到结果
 
 ### Supervision Layer
 

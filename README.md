@@ -250,6 +250,7 @@ v2 已验证：
 - GitHub bridge 现在会稳定回流 issue / PR / workflow run 引用，便于下游步骤继续消费
 - GitHub 步骤在 CLI 结果里会直接打印 `github:` 摘要，包含 repo、action、issue / PR / workflow refs
 - GitHub bridge 失败时会区分 `auth / repository / workflow / reference / network / unknown`，并保留 `blocked_reason`、`github_error`、`github_retryable` 和 `github_recovery_hint`
+- `gh issue create` 如果因为仓库里缺少预设 labels 而失败，现在会自动去掉 labels 重试一次，并把被忽略的 labels 回写到结果 artifacts
 - `workflow_dispatch` 会在 preflight 检查本地 `.github/workflows/<workflow_name>` 是否存在，避免缺文件时到 live 阶段才失败
 - GitHub bridge 已支持可配置的网络类自动重试；默认关闭，需要显式设置 `runtime.github_retry_attempts > 1`
 - GitHub repo 现在默认允许从 `git remote origin` 推导；如果你显式配置了 `github.repo`，则以配置值为准

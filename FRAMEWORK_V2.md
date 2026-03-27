@@ -207,6 +207,7 @@ preflight 是修改版方案四里监督层的一部分，不是附加脚本。
 - GitHub 当前仍是 `gh` bridge，而不是 native coding agent 编排
 - GitHub 缺少 issue / PR / branch 引用时会被降成 `blocked`，CLI 会直接打印 GitHub artifact 摘要
 - GitHub bridge 的失败会分类为 auth / repository / workflow / reference / network / unknown，并保留 retryability、恢复提示和原始 stderr
+- `gh issue create` 如果只是因为仓库里还没有预设 labels 失败，会自动去掉 labels 重试一次，并把 `github_label_fallback_used` / `github_ignored_labels` 落到 artifacts
 - `workflow_dispatch` 会在 preflight 检查本地 `.github/workflows/<workflow_name>` 是否存在
 - GitHub bridge 的自动重试当前只对可重试失败生效，并且默认关闭，需要通过 runtime 配置显式开启
 - GitHub repo 默认允许从 `origin` remote 推导；如果 `github.repo` 已配置，则仍优先使用显式配置

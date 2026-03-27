@@ -30,15 +30,19 @@ class GitHubWorkflowExecutor(Executor):
             return profile.body_template.format(prompt=rendered_prompt, title=work_item.title)
         return rendered_prompt
 
+    def _issue_labels(self, profile: ProfileConfig) -> list[str]:
+        return list(profile.labels or self.app_config.github.default_labels)
+
     def _build_issue_command(
         self,
         work_item: WorkItem,
         profile: ProfileConfig,
         rendered_prompt: str,
         repo: str,
+        labels: list[str] | None = None,
     ) -> list[str]:
         title = self._build_title(work_item, profile)
-        labels = profile.labels or self.app_config.github.default_labels
+        requested_labels = self._issue_labels(profile) if labels is None else list(labels)
         command = [
             "gh",
             "issue",
@@ -50,7 +54,7 @@ class GitHubWorkflowExecutor(Executor):
             "--body",
             self._body(work_item, profile, rendered_prompt),
         ]
-        for label in labels:
+        for label in requested_labels:
             command.extend(["--label", label])
         return command
 
@@ -371,6 +375,11 @@ class GitHubWorkflowExecutor(Executor):
         }
 
     @staticmethod
+    def _is_missing_label_error(output: str, error_output: str) -> bool:
+        combined = "\n".join(part for part in [output, error_output] if part).lower()
+        return "could not add label" in combined or bool(re.search(r"\blabels?\b.*\bnot found\b", combined))
+
+    @staticmethod
     def _normalize_issue_ref(ref: str) -> dict[str, str]:
         ref = ref.strip()
         if not ref:
@@ -676,6 +685,10 @@ class GitHubWorkflowExecutor(Executor):
             )
 
         is_workflow_view = profile.action == "workflow_view"
+        configured_issue_labels = self._issue_labels(profile) if profile.action == "issue" else []
+        label_fallback_used = False
+        ignored_labels: list[str] = []
+
         if is_workflow_view:
             max_attempts = max(1, int(self.app_config.runtime.github_workflow_view_poll_attempts))
             retry_backoff_seconds = max(
@@ -685,12 +698,17 @@ class GitHubWorkflowExecutor(Executor):
         else:
             max_attempts = max(1, int(self.app_config.runtime.github_retry_attempts))
             retry_backoff_seconds = max(0.0, float(self.app_config.runtime.github_retry_backoff_seconds))
+
+        max_command_attempts = max_attempts + (1 if configured_issue_labels else 0)
+        retryable_failures_used = 0
         last_failure: dict[str, object] | None = None
         last_output = ""
         last_error_output = ""
         last_returncode = 0
 
-        for attempt in range(1, max_attempts + 1):
+        attempt = 0
+        while attempt < max_command_attempts:
+            attempt += 1
             returncode, output, error_output = await self._run_command(command, context.repo_path)
             combined_output = "\n".join(part for part in [output, error_output] if part)
             last_output = output
@@ -759,6 +777,10 @@ class GitHubWorkflowExecutor(Executor):
                 artifacts["github_attempt_count"] = attempt
                 if attempt > 1:
                     artifacts["github_retried"] = True
+                if label_fallback_used:
+                    artifacts["github_label_fallback_used"] = True
+                    artifacts["github_requested_labels"] = ", ".join(configured_issue_labels)
+                    artifacts["github_ignored_labels"] = ", ".join(ignored_labels)
                 return AgentResult(
                     work_item_id=work_item.id,
                     profile=work_item.profile,
@@ -766,7 +788,12 @@ class GitHubWorkflowExecutor(Executor):
                     mode=work_item.mode,
                     status=TaskStatus.SUCCEEDED,
                     summary=(
-                        f"GitHub workflow task {work_item.title} finished successfully after {attempt} attempts."
+                        (
+                            f"GitHub workflow task {work_item.title} finished successfully after {attempt} attempts."
+                            f" Retried without labels: {', '.join(ignored_labels)}."
+                        )
+                        if label_fallback_used and attempt > 1
+                        else f"GitHub workflow task {work_item.title} finished successfully after {attempt} attempts."
                         if attempt > 1
                         else f"GitHub workflow task {work_item.title} finished successfully."
                     ),
@@ -778,14 +805,26 @@ class GitHubWorkflowExecutor(Executor):
                     artifacts=artifacts,
                 )
 
+            if (
+                profile.action == "issue"
+                and configured_issue_labels
+                and not label_fallback_used
+                and self._is_missing_label_error(output, error_output)
+            ):
+                label_fallback_used = True
+                ignored_labels = list(configured_issue_labels)
+                command = self._build_issue_command(work_item, profile, rendered_prompt, repo, labels=[])
+                continue
+
             failure = self._classify_execution_failure(output, error_output)
             last_failure = failure
             should_retry = (
                 failure["status"] == TaskStatus.FAILED
                 and bool(failure["retryable"])
-                and attempt < max_attempts
+                and retryable_failures_used < max(0, max_attempts - 1)
             )
             if should_retry:
+                retryable_failures_used += 1
                 await asyncio.sleep(retry_backoff_seconds)
                 continue
 
@@ -811,6 +850,10 @@ class GitHubWorkflowExecutor(Executor):
             artifacts["github_retried"] = True
         if is_workflow_view:
             artifacts["workflow_poll_attempt_count"] = attempts_taken
+        if label_fallback_used:
+            artifacts["github_label_fallback_used"] = True
+            artifacts["github_requested_labels"] = ", ".join(configured_issue_labels)
+            artifacts["github_ignored_labels"] = ", ".join(ignored_labels)
 
         return AgentResult(
             work_item_id=work_item.id,

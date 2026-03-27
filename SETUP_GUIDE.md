@@ -178,6 +178,7 @@ python3 main_v2.py --live --request "修复登录页报错" --steps triage,imple
 另外，live 运行中会先输出 `[progress] preflight:start`、`[progress] step:start ...` 之类的进度行。
 当前默认还启用了 `runtime.cli_command_timeout_seconds=180.0`，本地 CLI 长时间无响应时会明确超时退出。
 如果 GitHub bridge 失败，CLI 还会直接打印 `stderr`、`github_failure_kind`、`github_retryable` 和 `github_recovery_hint`。
+如果 `gh issue create` 只是因为仓库里还没有预设 labels 失败，系统现在会自动去掉 labels 重试一次，并在结果里打印 `github_label_fallback_used` 和 `github_ignored_labels`。
 如果本地 CLI 失败，结果里也会直接打印 `cli_failure_kind` 和 `cli_recovery_hint`。默认 `triage` 卡在 Claude 时，优先试 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`；如果想整体绕过 Claude 的前后监督步骤，直接改用 `mission_control_openclaw_default`；如果只想替换 `triage`，用 `mission_control_openclaw_triage`。
 如果 live 计划里包含隔离 CLI worktree，而仓库仍有未提交改动，preflight 现在会直接失败；这些 worktree 只基于已提交 `HEAD`，不会自动带上本地改动。
 如果 `implement` 最终判断“请求已满足、无需改动”，结果会被显式标成 no-op，后续 `publish_branch` 会因为没有可发布文件变化而跳过。

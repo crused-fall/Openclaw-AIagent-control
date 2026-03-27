@@ -243,6 +243,9 @@ class MainV2PrintTests(unittest.TestCase):
                         "workflow_run_url": "https://github.com/owner/repo/actions/runs/123456789",
                         "github_attempt_count": 2,
                         "github_retried": True,
+                        "github_label_fallback_used": True,
+                        "github_requested_labels": "openclaw, planning",
+                        "github_ignored_labels": "openclaw, planning",
                         "github_failure_kind": "unknown",
                         "github_retryable": False,
                         "github_recovery_hint": "Inspect `github_error` and rerun the printed `gh` command manually if needed.",
@@ -265,6 +268,9 @@ class MainV2PrintTests(unittest.TestCase):
         self.assertIn("workflow_run_url: https://github.com/owner/repo/actions/runs/123456789", output)
         self.assertIn("github_attempt_count: 2", output)
         self.assertIn("github_retried: True", output)
+        self.assertIn("github_label_fallback_used: True", output)
+        self.assertIn("github_requested_labels: openclaw, planning", output)
+        self.assertIn("github_ignored_labels: openclaw, planning", output)
         self.assertIn("github_failure_kind: unknown", output)
         self.assertIn("github_retryable: False", output)
         self.assertIn("github_recovery_hint: Inspect `github_error` and rerun the printed `gh` command manually if needed.", output)
