@@ -106,7 +106,7 @@ class HybridOrchestrator:
                 workflow_refs.append(workflow_ref)
 
         return {
-            "primary_branch_name": branches[0] if branches else "",
+            "primary_branch_name": branches[0] if branches else (source_branches[0] if source_branches else ""),
             "dependency_branches": ", ".join(branches),
             "source_branch": source_branches[0] if source_branches else (branches[0] if branches else ""),
             "primary_issue_ref": issue_refs[0] if issue_refs else "",
@@ -211,6 +211,32 @@ class HybridOrchestrator:
             return f"Skipped because dependency {dependency['id']} produced no file changes."
         noop_ids = ", ".join(item["id"] for item in noops)
         return f"Skipped because dependencies produced no file changes: {noop_ids}"
+
+    @staticmethod
+    def _allow_noop_skipped_dependencies(work_item: WorkItem) -> set[str]:
+        configured = work_item.metadata.get("allow_noop_skipped_dependencies", [])
+        if not isinstance(configured, list):
+            return set()
+        return {str(item).strip() for item in configured if str(item).strip()}
+
+    @classmethod
+    def _dependency_is_satisfied(
+        cls,
+        work_item: WorkItem,
+        dependency_id: str,
+        completed: dict[str, AgentResult],
+    ) -> bool:
+        result = completed.get(dependency_id)
+        if result is None:
+            return False
+        if result.success:
+            return True
+        allowed_noop_dependencies = cls._allow_noop_skipped_dependencies(work_item)
+        return (
+            dependency_id in allowed_noop_dependencies
+            and result.status == TaskStatus.SKIPPED
+            and bool(result.artifacts.get("noop_dependencies"))
+        )
 
     def _render_prompt(
         self,
@@ -417,6 +443,7 @@ class HybridOrchestrator:
                         artifacts={
                             "workspace_path": item.workspace_path,
                             "branch_name": item.branch_name,
+                            **self._collect_dependency_values(item, completed),
                             "noop_dependencies": self._noop_dependencies(item, completed),
                             **self._trace_artifacts(item),
                         },
@@ -436,7 +463,7 @@ class HybridOrchestrator:
                 item
                 for item in pending.values()
                 if all(
-                    dependency_id in completed and completed[dependency_id].success
+                    self._dependency_is_satisfied(item, dependency_id, completed)
                     for dependency_id in item.depends_on
                 )
             ]

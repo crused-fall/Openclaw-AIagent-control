@@ -123,6 +123,36 @@ class OrchestratorDependencyTests(unittest.TestCase):
 
         self.assertEqual(values["primary_workflow_run_ref"], "123456789")
 
+    def test_collect_dependency_values_falls_back_to_source_branch_when_no_exported_branch_exists(self) -> None:
+        work_item = WorkItem(
+            id="update_issue",
+            title="Update issue",
+            profile="copilot_issue_followup",
+            agent=AgentType.COPILOT,
+            mode=ExecutionMode.GITHUB,
+            prompt_template="",
+            depends_on=["publish_branch"],
+        )
+        completed = {
+            "publish_branch": AgentResult(
+                work_item_id="publish_branch",
+                profile="git_push_branch",
+                agent=AgentType.SYSTEM,
+                mode=ExecutionMode.CLI,
+                status=TaskStatus.SKIPPED,
+                summary="Skipped because dependency implement produced no file changes.",
+                artifacts={
+                    "source_branch": "openclaw-run-1-implement",
+                    "noop_dependencies": [{"id": "implement", "summary": "noop"}],
+                },
+            )
+        }
+
+        values = HybridOrchestrator._collect_dependency_values(work_item, completed)
+
+        self.assertEqual(values["primary_branch_name"], "openclaw-run-1-implement")
+        self.assertEqual(values["source_branch"], "openclaw-run-1-implement")
+
     def test_noop_summary_includes_dependency_id(self) -> None:
         work_item = WorkItem(
             id="publish_branch",
@@ -149,6 +179,55 @@ class OrchestratorDependencyTests(unittest.TestCase):
         summary = HybridOrchestrator._noop_summary(work_item, completed)
 
         self.assertEqual(summary, "Skipped because dependency implement produced no file changes.")
+
+    def test_dependency_is_satisfied_by_allowed_noop_skipped_dependency(self) -> None:
+        work_item = WorkItem(
+            id="update_issue",
+            title="Update issue",
+            profile="copilot_issue_followup",
+            agent=AgentType.COPILOT,
+            mode=ExecutionMode.GITHUB,
+            prompt_template="",
+            depends_on=["publish_branch"],
+            metadata={"allow_noop_skipped_dependencies": ["publish_branch"]},
+        )
+        completed = {
+            "publish_branch": AgentResult(
+                work_item_id="publish_branch",
+                profile="git_push_branch",
+                agent=AgentType.SYSTEM,
+                mode=ExecutionMode.CLI,
+                status=TaskStatus.SKIPPED,
+                summary="Skipped because dependency implement produced no file changes.",
+                artifacts={"noop_dependencies": [{"id": "implement", "summary": "noop"}]},
+            )
+        }
+
+        self.assertTrue(HybridOrchestrator._dependency_is_satisfied(work_item, "publish_branch", completed))
+
+    def test_dependency_is_not_satisfied_by_unallowed_noop_skipped_dependency(self) -> None:
+        work_item = WorkItem(
+            id="draft_pr",
+            title="Draft PR",
+            profile="copilot_pr",
+            agent=AgentType.COPILOT,
+            mode=ExecutionMode.GITHUB,
+            prompt_template="",
+            depends_on=["publish_branch"],
+        )
+        completed = {
+            "publish_branch": AgentResult(
+                work_item_id="publish_branch",
+                profile="git_push_branch",
+                agent=AgentType.SYSTEM,
+                mode=ExecutionMode.CLI,
+                status=TaskStatus.SKIPPED,
+                summary="Skipped because dependency implement produced no file changes.",
+                artifacts={"noop_dependencies": [{"id": "implement", "summary": "noop"}]},
+            )
+        }
+
+        self.assertFalse(HybridOrchestrator._dependency_is_satisfied(work_item, "publish_branch", completed))
 
 
 class OrchestratorExecutionTests(unittest.IsolatedAsyncioTestCase):

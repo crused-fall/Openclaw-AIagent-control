@@ -51,6 +51,7 @@
 - GitHub bridge 已支持显式配置的网络类自动重试
 - GitHub repo 已支持显式开启的 `origin` fallback
 - `gh issue create` 如果因为仓库里缺少 labels 失败，会自动去掉 labels 重试一次，并把被忽略的 labels 回写到结果
+- `implement` 为 no-op 且 `sync_issue` 已成功时，`update_issue` 现在允许继续执行 issue 收尾；PR / workflow 尾链仍保持跳过
 
 ### Supervision Layer
 

@@ -38,6 +38,10 @@ class PipelineConfigTests(unittest.TestCase):
         self.assertEqual(work_items["review"].managed_agent, "claude_router")
         self.assertEqual(sorted(work_items["publish_branch"].depends_on), ["implement", "review"])
         self.assertEqual(sorted(work_items["update_issue"].depends_on), ["publish_branch", "review", "sync_issue"])
+        self.assertEqual(
+            work_items["update_issue"].metadata["allow_noop_skipped_dependencies"],
+            ["publish_branch"],
+        )
         self.assertEqual(sorted(work_items["draft_pr"].depends_on), ["publish_branch", "review", "sync_issue", "update_issue"])
         self.assertEqual(work_items["dispatch_review"].depends_on, ["publish_branch", "review", "draft_pr"])
         self.assertEqual(work_items["collect_review"].depends_on, ["dispatch_review"])

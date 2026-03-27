@@ -453,6 +453,9 @@ pipelines:
         - publish_branch
         - review
         - sync_issue
+      metadata:
+        allow_noop_skipped_dependencies:
+          - publish_branch
       prompt_template: |
         请把本地实现结果回写到现有 GitHub issue，作为阶段性进展更新。
 
@@ -618,6 +621,9 @@ pipelines:
       depends_on:
         - publish_branch
         - sync_issue
+      metadata:
+        allow_noop_skipped_dependencies:
+          - publish_branch
       prompt_template: |
         请把本地实现结果回写到现有 GitHub issue，作为阶段性进展更新。
 
@@ -900,6 +906,9 @@ pipelines:
         - publish_branch
         - review
         - sync_issue
+      metadata:
+        allow_noop_skipped_dependencies:
+          - publish_branch
       prompt_template: |
         请把本地实现结果回写到现有 GitHub issue，作为阶段性进展更新。
 
