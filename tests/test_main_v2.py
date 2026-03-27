@@ -151,6 +151,35 @@ class MainV2PrintTests(unittest.TestCase):
         self.assertIn("cli_failure_kind: timeout", output)
         self.assertIn("cli_recovery_hint: Retry with `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`.", output)
 
+    def test_print_result_includes_noop_fields(self) -> None:
+        run_result = RunResult(
+            run_id="run-noop",
+            plan=[],
+            results=[
+                AgentResult(
+                    work_item_id="implement",
+                    profile="codex_local",
+                    agent=AgentType.CODEX,
+                    mode=ExecutionMode.CLI,
+                    status=TaskStatus.SUCCEEDED,
+                    summary="CLI task Implement main changes locally finished successfully with no file changes required.",
+                    artifacts={
+                        "noop_result": True,
+                        "workspace_has_changes": False,
+                    },
+                )
+            ],
+            success=True,
+            artifacts_dir="/tmp/run-noop",
+        )
+
+        with io.StringIO() as buffer, redirect_stdout(buffer):
+            _print_result(run_result)
+            output = buffer.getvalue()
+
+        self.assertIn("noop_result: true", output)
+        self.assertIn("workspace_has_changes: False", output)
+
     def test_print_result_includes_planning_block_reason(self) -> None:
         run_result = RunResult(
             run_id="run-3",

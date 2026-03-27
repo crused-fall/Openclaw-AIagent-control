@@ -123,6 +123,33 @@ class OrchestratorDependencyTests(unittest.TestCase):
 
         self.assertEqual(values["primary_workflow_run_ref"], "123456789")
 
+    def test_noop_summary_includes_dependency_id(self) -> None:
+        work_item = WorkItem(
+            id="publish_branch",
+            title="Publish implementation branch to origin",
+            profile="git_push_branch",
+            agent=AgentType.SYSTEM,
+            mode=ExecutionMode.CLI,
+            prompt_template="",
+            depends_on=["implement"],
+            metadata={"requires_workspace_changes": True},
+        )
+        completed = {
+            "implement": AgentResult(
+                work_item_id="implement",
+                profile="codex_local",
+                agent=AgentType.CODEX,
+                mode=ExecutionMode.CLI,
+                status=TaskStatus.SUCCEEDED,
+                summary="CLI task Implement main changes locally finished successfully with no file changes required.",
+                artifacts={"noop_result": True},
+            )
+        }
+
+        summary = HybridOrchestrator._noop_summary(work_item, completed)
+
+        self.assertEqual(summary, "Skipped because dependency implement produced no file changes.")
+
 
 class OrchestratorExecutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_execute_ready_items_blocks_planning_errors_without_preparation(self) -> None:

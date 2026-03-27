@@ -183,6 +183,35 @@ class HybridOrchestrator:
 
         return "Skipped because one or more dependencies did not succeed."
 
+    @staticmethod
+    def _noop_dependencies(
+        work_item: WorkItem,
+        completed: dict[str, AgentResult],
+    ) -> list[dict[str, str]]:
+        noops: list[dict[str, str]] = []
+        for dependency_id in work_item.depends_on:
+            result = completed.get(dependency_id)
+            if result is None or not result.artifacts.get("noop_result"):
+                continue
+            noops.append(
+                {
+                    "id": dependency_id,
+                    "summary": result.summary,
+                }
+            )
+        return noops
+
+    @classmethod
+    def _noop_summary(cls, work_item: WorkItem, completed: dict[str, AgentResult]) -> str:
+        noops = cls._noop_dependencies(work_item, completed)
+        if not noops:
+            return ""
+        if len(noops) == 1:
+            dependency = noops[0]
+            return f"Skipped because dependency {dependency['id']} produced no file changes."
+        noop_ids = ", ".join(item["id"] for item in noops)
+        return f"Skipped because dependencies produced no file changes: {noop_ids}"
+
     def _render_prompt(
         self,
         work_item: WorkItem,
@@ -368,6 +397,41 @@ class HybridOrchestrator:
             return run_result
 
         while pending:
+            noop_blocked_items = [
+                item
+                for item in pending.values()
+                if bool(item.metadata.get("requires_workspace_changes", False))
+                and self._noop_dependencies(item, completed)
+            ]
+            if noop_blocked_items:
+                skipped_results = []
+                for item in noop_blocked_items:
+                    item.status = TaskStatus.SKIPPED
+                    result = AgentResult(
+                        work_item_id=item.id,
+                        profile=item.profile,
+                        agent=item.agent,
+                        mode=item.mode,
+                        status=TaskStatus.SKIPPED,
+                        summary=self._noop_summary(item, completed),
+                        artifacts={
+                            "workspace_path": item.workspace_path,
+                            "branch_name": item.branch_name,
+                            "noop_dependencies": self._noop_dependencies(item, completed),
+                            **self._trace_artifacts(item),
+                        },
+                    )
+                    self.artifact_store.write_result(context, result)
+                    completed[item.id] = result
+                    skipped_results.append(result)
+                    pending.pop(item.id, None)
+                    self._emit_progress(
+                        progress_callback,
+                        f"step:skip {item.id} -> dependency produced no file changes",
+                    )
+                ordered_results.extend(skipped_results)
+                continue
+
             ready_items = [
                 item
                 for item in pending.values()

@@ -90,6 +90,33 @@ class CLIExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.artifacts["cli_failure_kind"], "auth_required")
         self.assertIn("claude auth login", result.artifacts["cli_recovery_hint"])
 
+    async def test_cli_marks_noop_when_workspace_has_no_file_changes(self) -> None:
+        process = _FakeProcess(stdout="OPENCLAW_STATUS: ready\nNo changes required.")
+        status_process = _FakeProcess(stdout="")
+        work_item = WorkItem(
+            id="implement",
+            title="Implement main changes locally",
+            profile="codex_local",
+            agent=AgentType.CODEX,
+            mode=ExecutionMode.CLI,
+            prompt_template="hello",
+            metadata={"expects_file_changes": True},
+        )
+        profile = self.config.profiles["codex_local"]
+
+        create_process = mock.AsyncMock(side_effect=[process, status_process])
+        with mock.patch(
+            "openclaw_v2.executors.cli.asyncio.create_subprocess_exec",
+            new=create_process,
+        ):
+            result = await self.executor.execute(work_item, profile, self.context, "hello")
+
+        self.assertEqual(result.status, TaskStatus.SUCCEEDED)
+        self.assertTrue(result.artifacts["noop_result"])
+        self.assertFalse(result.artifacts["workspace_has_changes"])
+        self.assertEqual(result.artifacts["workspace_changed_files"], [])
+        self.assertIn("no file changes required", result.summary)
+
     async def test_cli_profile_unset_env_is_removed_from_spawned_process(self) -> None:
         process = _FakeProcess(stdout="ok")
         work_item = WorkItem(

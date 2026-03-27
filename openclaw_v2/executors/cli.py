@@ -53,6 +53,34 @@ class CLIExecutor(Executor):
         return env
 
     @staticmethod
+    async def _workspace_change_artifacts(workspace_path: str) -> dict[str, object]:
+        process = await asyncio.create_subprocess_exec(
+            "git",
+            "-C",
+            workspace_path,
+            "status",
+            "--porcelain",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await process.communicate()
+        if process.returncode != 0:
+            return {}
+
+        raw_output = stdout.decode("utf-8", errors="replace")
+        changed_paths = [line[3:] for line in raw_output.splitlines() if len(line) > 3]
+        if not changed_paths:
+            return {
+                "workspace_has_changes": False,
+                "workspace_changed_files": [],
+                "noop_result": True,
+            }
+        return {
+            "workspace_has_changes": True,
+            "workspace_changed_files": changed_paths,
+        }
+
+    @staticmethod
     def _timeout_recovery_hint(work_item: WorkItem) -> str:
         hint = "Rerun the printed command manually to inspect whether the agent is hanging or waiting for input."
         if work_item.agent != AgentType.CLAUDE:
@@ -206,28 +234,34 @@ class CLIExecutor(Executor):
             blocked_reason = control_signal.block_reason
             exports_branch = bool(work_item.metadata.get("export_branch", False)) and status == TaskStatus.SUCCEEDED
             cleaned_output = control_signal.cleaned_output or output
+            artifacts = self._artifacts(
+                work_item,
+                workspace_path,
+                exports_branch=exports_branch,
+                blocked_reason=blocked_reason,
+            )
+            if status == TaskStatus.SUCCEEDED and bool(work_item.metadata.get("expects_file_changes", False)):
+                artifacts.update(await self._workspace_change_artifacts(workspace_path))
+            summary = (
+                f"CLI task {work_item.title} blocked: {blocked_reason}"
+                if status == TaskStatus.BLOCKED
+                else f"CLI task {work_item.title} finished successfully."
+            )
+            if status == TaskStatus.SUCCEEDED and artifacts.get("noop_result"):
+                summary = f"CLI task {work_item.title} finished successfully with no file changes required."
             return AgentResult(
                 work_item_id=work_item.id,
                 profile=work_item.profile,
                 agent=work_item.agent,
                 mode=work_item.mode,
                 status=status,
-                summary=(
-                    f"CLI task {work_item.title} blocked: {blocked_reason}"
-                    if status == TaskStatus.BLOCKED
-                    else f"CLI task {work_item.title} finished successfully."
-                ),
+                summary=summary,
                 output=cleaned_output,
                 stdout=output,
                 stderr=error_output,
                 exit_code=process.returncode,
                 command=command,
-                artifacts=self._artifacts(
-                    work_item,
-                    workspace_path,
-                    exports_branch=exports_branch,
-                    blocked_reason=blocked_reason,
-                ),
+                artifacts=artifacts,
             )
 
         result = AgentResult(

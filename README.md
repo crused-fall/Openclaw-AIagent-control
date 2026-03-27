@@ -189,6 +189,7 @@ python3 main_v2.py --live --request "修复登录页报错" --steps triage,imple
 当前还启用了 `runtime.cli_command_timeout_seconds=180.0`，本地 `claude/codex` 长时间无响应时会明确超时失败，而不是无限挂住。
 CLI 失败结果现在也会带 `cli_failure_kind` 和 `cli_recovery_hint`。如果默认 `triage` 卡在 Claude，可以优先试 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`，或者直接切到 `mission_control_openclaw_triage` / `mission_control_openclaw_default`。
 如果 live 计划里包含隔离 CLI worktree，而仓库还有未提交改动，preflight 现在会直接拦下；这些 worktree 只基于已提交 `HEAD`，不会自动带上本地脏改动。
+如果 `implement` 判断“请求已满足、无需改动”，结果会显式标成 no-op；后续 `publish_branch` 会因为没有可发布文件变化而跳过。
 
 如果要直接做 GitHub bridge live 验证：
 

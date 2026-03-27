@@ -358,6 +358,7 @@ pipelines:
         - triage
       metadata:
         export_branch: true
+        expects_file_changes: true
       prompt_template: |
         你是 OpenClaw 的本地实现 agent。
         基于以下用户请求和依赖结果，在本地工作区准备实现方案。
@@ -420,6 +421,7 @@ pipelines:
       metadata:
         export_branch: true
         requires_origin_remote: true
+        requires_workspace_changes: true
       prompt_template: |
         将当前实现分支推送到 origin，供 GitHub PR 和 workflow 使用。
         工作目录：{workspace_path}
@@ -552,6 +554,7 @@ pipelines:
         - triage
       metadata:
         export_branch: true
+        expects_file_changes: true
       prompt_template: |
         你是 OpenClaw 的本地实现 agent。
         基于以下用户请求和依赖结果，在本地工作区准备实现方案。
@@ -584,6 +587,7 @@ pipelines:
       metadata:
         export_branch: true
         requires_origin_remote: true
+        requires_workspace_changes: true
       prompt_template: |
         将当前实现分支推送到 origin，供 GitHub PR 和 workflow 使用。
         工作目录：{workspace_path}
@@ -713,6 +717,7 @@ pipelines:
         - triage
       metadata:
         export_branch: true
+        expects_file_changes: true
       prompt_template: |
         你是 OpenClaw 的本地实现 agent。
         基于以下用户请求和依赖结果，在本地工作区准备实现方案。
@@ -800,6 +805,7 @@ pipelines:
         - triage
       metadata:
         export_branch: true
+        expects_file_changes: true
       prompt_template: |
         你是 OpenClaw 的本地实现 agent。
         基于以下用户请求和依赖结果，在本地工作区准备实现方案。
@@ -862,6 +868,7 @@ pipelines:
       metadata:
         export_branch: true
         requires_origin_remote: true
+        requires_workspace_changes: true
       prompt_template: |
         将当前实现分支推送到 origin，供 GitHub PR 和 workflow 使用。
         工作目录：{workspace_path}

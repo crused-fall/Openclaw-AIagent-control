@@ -63,6 +63,7 @@ def _print_dependency_outcomes(artifacts: dict[str, Any]) -> None:
     blocked = dependency_outcomes.get("blocked", [])
     failed = dependency_outcomes.get("failed", [])
     skipped = dependency_outcomes.get("skipped", [])
+    noop_dependencies = artifacts.get("noop_dependencies", [])
 
     for item in blocked:
         dependency_id = item.get("id", "unknown")
@@ -78,6 +79,11 @@ def _print_dependency_outcomes(artifacts: dict[str, Any]) -> None:
         dependency_id = item.get("id", "unknown")
         summary = item.get("summary", "")
         print(f"  skipped_dependency: {dependency_id} -> {summary}")
+
+    for item in noop_dependencies:
+        dependency_id = item.get("id", "unknown")
+        summary = item.get("summary", "")
+        print(f"  noop_dependency: {dependency_id} -> {summary}")
 
 
 def _print_github_artifacts(artifacts: dict[str, Any]) -> None:
@@ -203,6 +209,12 @@ def _print_result(result) -> None:
             print("  cli_timed_out: true")
         if "cli_timeout_seconds" in item.artifacts:
             print(f"  cli_timeout_seconds: {item.artifacts['cli_timeout_seconds']}")
+        if item.artifacts.get("noop_result"):
+            print("  noop_result: true")
+        if "workspace_has_changes" in item.artifacts:
+            print(f"  workspace_has_changes: {item.artifacts['workspace_has_changes']}")
+        if item.artifacts.get("workspace_changed_files"):
+            print(f"  workspace_changed_files: {item.artifacts['workspace_changed_files']}")
         if item.artifacts.get("cli_failure_kind"):
             print(f"  cli_failure_kind: {item.artifacts['cli_failure_kind']}")
         if item.artifacts.get("cli_recovery_hint"):
