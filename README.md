@@ -253,7 +253,7 @@ v2 已验证：
 - GitHub bridge 现在会稳定回流 issue / PR / workflow run 引用，便于下游步骤继续消费
 - GitHub 步骤在 CLI 结果里会直接打印 `github:` 摘要，包含 repo、action、issue / PR / workflow refs
 - GitHub bridge 失败时会区分 `auth / repository / workflow / reference / network / unknown`，并保留 `blocked_reason`、`github_error`、`github_retryable` 和 `github_recovery_hint`
-- 例如，如果 `gh workflow run` 返回 403 'Resource not accessible by personal access token'，可以改用 `gh auth login --web` 重新认证，或确保 token 具有 `repo` 和 `workflow` scope（使用 `gh auth refresh -h github.com -s repo,workflow`）。
+- 例如，如果 `gh workflow run` 返回 403 'Resource not accessible by personal access token'，可以改用 `gh auth login --web` 重新认证，或确保 token 具有 `repo` 和 `workflow` scope（使用 `gh auth refresh -h github.com -s repo,workflow`；在 headless 环境中，可使用 `gh auth login --with-token` 作为 `--web` 的替代方式）。
 - `gh issue create` 如果因为仓库里缺少预设 labels 而失败，现在会自动去掉 labels 重试一次，并把被忽略的 labels 回写到结果 artifacts
 - 如果 `implement` 是 no-op 但前面已经成功 `sync_issue`，`update_issue` 现在仍可继续执行，用来把“无需代码改动”的终态回写到已有 issue；PR / workflow 尾链仍会保持跳过
 - `workflow_dispatch` 会在 preflight 检查本地 `.github/workflows/<workflow_name>` 是否存在，避免缺文件时到 live 阶段才失败

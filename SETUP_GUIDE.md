@@ -178,6 +178,7 @@ python3 main_v2.py --live --request "修复登录页报错" --steps triage,imple
 另外，live 运行中会先输出 `[progress] preflight:start`、`[progress] step:start ...` 之类的进度行。
 当前默认还启用了 `runtime.cli_command_timeout_seconds=180.0`，本地 CLI 长时间无响应时会明确超时退出。
 如果 GitHub bridge 失败，CLI 还会直接打印 `stderr`、`github_failure_kind`、`github_retryable` 和 `github_recovery_hint`。
+如果 `gh workflow run` 返回 403 `Resource not accessible by personal access token`，优先改用 `gh auth login --web` 重新认证，或执行 `gh auth refresh -h github.com -s repo,workflow`；在 headless 环境中，可用 `gh auth login --with-token` 作为 `--web` 的替代方式。
 如果 `gh issue create` 只是因为仓库里还没有预设 labels 失败，系统现在会自动去掉 labels 重试一次，并在结果里打印 `github_label_fallback_used` 和 `github_ignored_labels`。
 如果本地 CLI 失败，结果里也会直接打印 `cli_failure_kind` 和 `cli_recovery_hint`。默认 `triage` 卡在 Claude 时，优先试 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`；如果想整体绕过 Claude 的前后监督步骤，直接改用 `mission_control_openclaw_default`；如果只想替换 `triage`，用 `mission_control_openclaw_triage`。
 `codex_local` 现在默认带 `--ephemeral`，用于降低本机 `~/.codex` 状态库迁移冲突对 live run 的影响；如果结果里出现 `cli_failure_kind=usage_limit`，则需要等待 Codex 配额恢复或提升账号额度。
