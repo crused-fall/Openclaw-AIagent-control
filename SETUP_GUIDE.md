@@ -184,7 +184,7 @@ python3 main_v2.py --live --request "修复登录页报错" --steps triage,imple
 `codex_local` 现在默认带 `--ephemeral`，用于降低本机 `~/.codex` 状态库迁移冲突对 live run 的影响；如果结果里出现 `cli_failure_kind=usage_limit`，则需要等待 Codex 配额恢复或提升账号额度。
 如果 Codex 当前不可用，但你本机 OpenClaw agent 已具备仓库写权限，也可以临时绕过 Codex：`OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`。这会把 `implement` 这一步显式切到 `openclaw_local`，而不改变默认 pipeline 结构。
 这条 `openclaw_builder` 路径当前更适合本地 `triage/implement/review` 校验；如果实现结果没有导出可推送分支，`publish_branch` 现在会明确 `blocked`，不会再误继续到 GitHub 尾链。
-即使实现器已经给出分支名，只要修改还停留在未提交工作区里，`publish_branch` 现在也会明确 `blocked`；当前主线还没有自动 `commit` 改动这一步。
+当前主线已经补了显式的 `commit_changes` 步骤：只有当实现工作区里的改动被提交为干净 commit 后，`publish_branch` 才会继续；如果提交后工作区仍不干净，链路会继续明确 `blocked`。
 如果 live 计划里包含隔离 CLI worktree，而仓库仍有未提交改动，preflight 现在会直接失败；这些 worktree 只基于已提交 `HEAD`，不会自动带上本地改动。
 如果 `implement` 最终判断“请求已满足、无需改动”，结果会被显式标成 no-op，后续 `publish_branch` 会因为没有可发布文件变化而跳过。
 如果这时前面已经成功 `sync_issue`，`update_issue` 现在仍会继续，把“无需代码改动”的结果回写到现有 issue；但 `draft_pr / dispatch_review / collect_review` 仍会保持跳过。

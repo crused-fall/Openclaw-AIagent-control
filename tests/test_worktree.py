@@ -14,7 +14,5 @@ class WorktreeManagerTests(unittest.TestCase):
         branch_name = WorktreeManager._branch_name("Run 1", "Implement:Fix")
 
         self.assertEqual(branch_name, "openclaw-run-1-implement-fix")
-
-
 if __name__ == "__main__":
     unittest.main()

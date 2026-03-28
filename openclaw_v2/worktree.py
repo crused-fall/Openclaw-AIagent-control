@@ -19,7 +19,16 @@ class WorktreeManager:
             work_item.metadata["workspace_strategy"] = "shared"
             return
 
+        source_workspace_path = str(work_item.metadata.get("source_workspace_path", "")).strip()
         source_branch = str(work_item.metadata.get("source_branch", "")).strip()
+        if bool(work_item.metadata.get("reuse_source_workspace", False)) and source_branch and source_workspace_path:
+            work_item.workspace_path = source_workspace_path
+            work_item.branch_name = source_branch
+            work_item.metadata["workspace_strategy"] = "reuse-source-workspace"
+            work_item.metadata["workspace_repo_root"] = context.repo_path
+            work_item.metadata["workspace_prepared"] = True
+            return
+
         if source_branch:
             work_item.workspace_path = context.repo_path
             work_item.branch_name = source_branch
@@ -92,7 +101,7 @@ class WorktreeManager:
             if not work_item.workspace_path:
                 continue
 
-            if work_item.metadata.get("workspace_strategy") == "reuse-source-branch":
+            if work_item.metadata.get("workspace_strategy") in {"reuse-source-branch", "reuse-source-workspace"}:
                 work_item.metadata["workspace_cleanup_status"] = "skipped_reused_branch"
                 continue
 

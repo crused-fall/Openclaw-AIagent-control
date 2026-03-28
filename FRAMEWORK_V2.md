@@ -104,12 +104,13 @@ request
 1. `triage`
 2. `implement`
 3. `review`
-4. `publish_branch`
-5. `sync_issue`
-6. `update_issue`
-7. `draft_pr`
-8. `dispatch_review`
-9. `collect_review`
+4. `commit_changes`
+5. `publish_branch`
+6. `sync_issue`
+7. `update_issue`
+8. `draft_pr`
+9. `dispatch_review`
+10. `collect_review`
 
 另有一条专门用于 GitHub bridge 排障的最小 pipeline：
 

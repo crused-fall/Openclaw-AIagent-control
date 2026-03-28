@@ -69,6 +69,7 @@ class HybridOrchestrator:
         pr_refs: list[str] = []
         workflow_refs: list[str] = []
         source_branches: list[str] = []
+        source_workspace_paths: list[str] = []
 
         for dependency_id in work_item.depends_on:
             result = completed.get(dependency_id)
@@ -82,6 +83,9 @@ class HybridOrchestrator:
             source_branch = str(result.artifacts.get("source_branch", "")).strip()
             if source_branch:
                 source_branches.append(source_branch)
+                source_workspace_path = str(result.artifacts.get("workspace_path", "")).strip()
+                if source_workspace_path:
+                    source_workspace_paths.append(source_workspace_path)
 
             issue_ref = str(
                 result.artifacts.get("issue_number")
@@ -111,6 +115,7 @@ class HybridOrchestrator:
             "primary_branch_name": branches[0] if branches else (source_branches[0] if source_branches else ""),
             "dependency_branches": ", ".join(branches),
             "source_branch": source_branches[0] if source_branches else (branches[0] if branches else ""),
+            "source_workspace_path": source_workspace_paths[0] if source_workspace_paths else "",
             "primary_issue_ref": issue_refs[0] if issue_refs else "",
             "primary_pr_ref": pr_refs[0] if pr_refs else "",
             "primary_workflow_run_ref": workflow_refs[0] if workflow_refs else "",
@@ -193,7 +198,11 @@ class HybridOrchestrator:
         noops: list[dict[str, str]] = []
         for dependency_id in work_item.depends_on:
             result = completed.get(dependency_id)
-            if result is None or not result.artifacts.get("noop_result"):
+            if result is None:
+                continue
+            is_direct_noop = bool(result.artifacts.get("noop_result"))
+            is_transitive_noop_skip = result.status == TaskStatus.SKIPPED and bool(result.artifacts.get("noop_dependencies"))
+            if not is_direct_noop and not is_transitive_noop_skip:
                 continue
             noops.append(
                 {

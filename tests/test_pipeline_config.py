@@ -37,7 +37,11 @@ class PipelineConfigTests(unittest.TestCase):
         self.assertEqual(work_items["implement"].fallback_chain, ["cursor_editor"])
         self.assertEqual(work_items["review"].assignment, "review_local")
         self.assertEqual(work_items["review"].managed_agent, "claude_router")
-        self.assertEqual(sorted(work_items["publish_branch"].depends_on), ["implement", "review"])
+        self.assertIn("commit_changes", work_items)
+        self.assertEqual(sorted(work_items["commit_changes"].depends_on), ["implement", "review"])
+        self.assertEqual(work_items["commit_changes"].assignment, "commit_changes_local")
+        self.assertEqual(work_items["commit_changes"].managed_agent, "git_change_committer")
+        self.assertEqual(sorted(work_items["publish_branch"].depends_on), ["commit_changes", "review"])
         self.assertEqual(sorted(work_items["update_issue"].depends_on), ["publish_branch", "review", "sync_issue"])
         self.assertEqual(
             work_items["update_issue"].metadata["allow_noop_skipped_dependencies"],

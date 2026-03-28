@@ -1,6 +1,6 @@
 # OpenClaw Project Status
 
-更新时间：2026-03-18
+更新时间：2026-03-28
 
 ## 当前阶段
 
@@ -52,6 +52,10 @@
 - GitHub repo 已支持显式开启的 `origin` fallback
 - `gh issue create` 如果因为仓库里缺少 labels 失败，会自动去掉 labels 重试一次，并把被忽略的 labels 回写到结果
 - `implement` 为 no-op 且 `sync_issue` 已成功时，`update_issue` 现在允许继续执行 issue 收尾；PR / workflow 尾链仍保持跳过
+- 主线已新增显式 `commit_changes` 步骤，用于在 `review` 后、`publish_branch` 前提交实现工作区里的改动
+- `commit_changes` 会复用实现步骤的 workspace 和分支，而不是回落到仓库根目录
+- `commit_changes` 现在会保留提交前的变更文件列表，并明确记录 `changes_committed` / `head_commit`
+- 只有当改动被提交为干净 commit 后，`publish_branch` 才会继续；否则继续明确 `blocked`
 
 ### Supervision Layer
 
@@ -63,7 +67,6 @@
 
 ## 部分完成
 
-- GitHub 协作链路可运行，但结果解析还比较保守
 - 任务拆分仍然是静态 pipeline，不是智能动态 planner
 - OpenClaw 接入骨架已落地，但目前只安全接到 `triage` 变体 pipeline
 - OpenClaw 已验证“仓库外 workspace + repo 绝对路径 handoff”可运行，当前已有 `mission_control_openclaw_triage` 和 `mission_control_openclaw_default` 两条变体 pipeline
@@ -76,11 +79,11 @@
 - GitHub 自动重试默认仍是关闭状态
 - GitHub repo 的 `origin` fallback 当前默认已开启
 - `doctor-config` 已覆盖 GitHub runtime retry 和 GitHub profile action / workflow 配置
+- 真实正向 live 闭环仍取决于外部 agent 环境是否可用，例如 Claude/Codex/OpenClaw/GitHub 权限与配额
 
 ## 未完成
 
 - OpenClaw 成为默认统一总控入口
-- 自动重试和超时策略
 - 成本统计
 - 跨层自动 fallback
 - 更细的 review / merge 审核阶段

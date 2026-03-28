@@ -88,12 +88,13 @@ tests/
 1. `triage`: 分析需求与仓库匹配度
 2. `implement`: 在独立 worktree 中本地实现
 3. `review`: 审阅实现结果，形成监督结论
-4. `publish_branch`: 推送实现分支
-5. `sync_issue`: 在 GitHub 建立异步跟踪
-6. `update_issue`: 回写实施状态
-7. `draft_pr`: 生成 Draft PR 描述
-8. `dispatch_review`: 触发 GitHub review workflow
-9. `collect_review`: 回流 GitHub review workflow 状态
+4. `commit_changes`: 将实现工作区里的改动提交到实现分支
+5. `publish_branch`: 推送实现分支
+6. `sync_issue`: 在 GitHub 建立异步跟踪
+7. `update_issue`: 回写实施状态
+8. `draft_pr`: 生成 Draft PR 描述
+9. `dispatch_review`: 触发 GitHub review workflow
+10. `collect_review`: 回流 GitHub review workflow 状态
 
 另有两条 OpenClaw 变体 pipeline：
 
@@ -191,7 +192,7 @@ CLI 失败结果现在也会带 `cli_failure_kind` 和 `cli_recovery_hint`。如
 `codex_local` 现在默认用 `codex exec --ephemeral`，尽量避开本机 `~/.codex/state_*.sqlite` 迁移冲突；如果仍然返回 `cli_failure_kind=usage_limit`，说明是 Codex 账号配额问题，不是项目编排问题。
 如果 Codex 当前不可用，但你本机 OpenClaw agent 可写仓库，可以显式覆盖实现层：`OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`。这样 `mission_control_openclaw_default` 会让 OpenClaw 承担 `implement`，而不是继续卡在 Codex。
 这条 `openclaw_builder` 路径目前主要用于本地 `triage/implement/review`；如果实现结果没有导出可推送分支，`publish_branch` 现在会直接 `blocked`，而不是假装还能继续 GitHub 尾链。
-即使是 `codex_local` 这类会导出分支名的实现器，只要改动还停留在未提交工作区里，`publish_branch` 现在也会明确 `blocked`；当前框架还没有自动 `commit` 这一步。
+当前主线已经补了显式的 `commit_changes` 步骤：只有实现工作区中的改动被提交为干净 commit 后，`publish_branch` 才会继续；如果提交后工作区仍不干净，链路会继续明确 `blocked`。
 如果 live 计划里包含隔离 CLI worktree，而仓库还有未提交改动，preflight 现在会直接拦下；这些 worktree 只基于已提交 `HEAD`，不会自动带上本地脏改动。
 如果 `implement` 判断“请求已满足、无需改动”，结果会显式标成 no-op；后续 `publish_branch` 会因为没有可发布文件变化而跳过。
 

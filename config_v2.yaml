@@ -16,6 +16,7 @@ runtime:
     - triage
     - implement
     - review
+    - commit_changes
     - publish_branch
     - sync_issue
     - update_issue
@@ -94,6 +95,16 @@ profiles:
       - -u
       - origin
       - "{branch_name}"
+
+  git_commit_changes:
+    agent: system
+    mode: cli
+    command:
+      - /bin/sh
+      - -c
+      - git add -A && git commit -m "$1"
+      - sh
+      - "{prompt}"
 
   copilot_issue:
     agent: copilot
@@ -215,6 +226,13 @@ managed_agents:
       - publish_branch
     manager: openclaw
 
+  git_change_committer:
+    kind: system
+    profile: git_commit_changes
+    capabilities:
+      - commit_changes
+    manager: openclaw
+
   github_issue_bridge:
     kind: copilot
     profile: copilot_issue
@@ -300,6 +318,12 @@ assignments:
     manager: openclaw
     required_capabilities:
       - publish_branch
+
+  commit_changes_local:
+    agent: git_change_committer
+    manager: openclaw
+    required_capabilities:
+      - commit_changes
 
   sync_issue_bridge:
     agent: github_issue_bridge
@@ -420,11 +444,26 @@ pipelines:
         2. 建议补充验证
         3. 是否建议发布到 GitHub 流程
 
+    - id: commit_changes
+      title: Commit implementation changes locally
+      assignment: commit_changes_local
+      depends_on:
+        - implement
+        - review
+      metadata:
+        export_branch: true
+        requires_workspace_changes: true
+        requires_dependency_branch: true
+        reuse_source_workspace: true
+        commits_workspace_changes: true
+      prompt_template: |
+        OpenClaw: apply requested changes
+
     - id: publish_branch
       title: Publish implementation branch to origin
       assignment: publish_branch_local
       depends_on:
-        - implement
+        - commit_changes
         - review
       metadata:
         export_branch: true
@@ -592,11 +631,25 @@ pipelines:
         2. 实施步骤
         3. 验证方式
 
+    - id: commit_changes
+      title: Commit implementation changes locally
+      assignment: commit_changes_local
+      depends_on:
+        - implement
+      metadata:
+        export_branch: true
+        requires_workspace_changes: true
+        requires_dependency_branch: true
+        reuse_source_workspace: true
+        commits_workspace_changes: true
+      prompt_template: |
+        OpenClaw: apply requested changes
+
     - id: publish_branch
       title: Publish implementation branch to origin
       assignment: publish_branch_local
       depends_on:
-        - implement
+        - commit_changes
       metadata:
         export_branch: true
         requires_origin_remote: true
@@ -789,6 +842,134 @@ pipelines:
         2. 建议补充验证
         3. 是否建议发布到 GitHub 流程
 
+    - id: commit_changes
+      title: Commit implementation changes locally
+      assignment: commit_changes_local
+      depends_on:
+        - implement
+        - review
+      metadata:
+        export_branch: true
+        requires_workspace_changes: true
+        requires_dependency_branch: true
+        reuse_source_workspace: true
+        commits_workspace_changes: true
+      prompt_template: |
+        OpenClaw: apply requested changes
+
+    - id: publish_branch
+      title: Publish implementation branch to origin
+      assignment: publish_branch_local
+      depends_on:
+        - commit_changes
+        - review
+      metadata:
+        export_branch: true
+        requires_origin_remote: true
+        requires_workspace_changes: true
+        requires_dependency_branch: true
+        requires_committed_dependency_changes: true
+      prompt_template: |
+        将当前实现分支推送到 origin，供 GitHub PR 和 workflow 使用。
+        工作目录：{workspace_path}
+        分支名：{branch_name}
+
+        用户请求：
+        {user_request}
+
+        来源分支：
+        {source_branch}
+
+    - id: sync_issue
+      title: Sync planning issue to GitHub
+      assignment: sync_issue_bridge
+      depends_on:
+        - triage
+      prompt_template: |
+        请把以下任务分析整理成 GitHub issue，便于异步跟踪。
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+    - id: update_issue
+      title: Update GitHub issue with implementation status
+      assignment: update_issue_bridge
+      depends_on:
+        - publish_branch
+        - review
+        - sync_issue
+      metadata:
+        allow_noop_skipped_dependencies:
+          - publish_branch
+      prompt_template: |
+        请把本地实现结果回写到现有 GitHub issue，作为阶段性进展更新。
+
+        用户请求：
+        {user_request}
+
+        当前实现分支：
+        {primary_branch_name}
+
+        目标 issue：
+        {primary_issue_ref}
+
+        {dependency_summaries}
+
+    - id: draft_pr
+      title: Prepare GitHub draft PR summary
+      assignment: draft_pr_bridge
+      depends_on:
+        - publish_branch
+        - review
+        - sync_issue
+        - update_issue
+      prompt_template: |
+        请把本地实现结果整理为 Draft PR 描述，便于后续人工审核和合并。
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        建议使用的实现分支：
+        {primary_branch_name}
+
+    - id: dispatch_review
+      title: Trigger GitHub review workflow
+      assignment: dispatch_review_bridge
+      depends_on:
+        - publish_branch
+        - review
+        - draft_pr
+      prompt_template: |
+        请触发 GitHub review workflow，对以下实现分支执行异步检查。
+
+        用户请求：
+        {user_request}
+
+        推荐分支：
+        {primary_branch_name}
+
+        {dependency_summaries}
+
+    - id: collect_review
+      title: Collect GitHub review workflow status
+      assignment: collect_review_bridge
+      depends_on:
+        - dispatch_review
+      prompt_template: |
+        请收集当前 GitHub review workflow 的最新状态，便于 OpenClaw 回流异步检查结果。
+
+        用户请求：
+        {user_request}
+
+        目标 workflow run：
+        {primary_workflow_run_ref}
+
+        {dependency_summaries}
+
   mission_control_openclaw_default:
     - id: triage
       title: Triage user request with local OpenClaw
@@ -877,11 +1058,26 @@ pipelines:
         2. 建议补充验证
         3. 是否建议发布到 GitHub 流程
 
+    - id: commit_changes
+      title: Commit implementation changes locally
+      assignment: commit_changes_local
+      depends_on:
+        - implement
+        - review
+      metadata:
+        export_branch: true
+        requires_workspace_changes: true
+        requires_dependency_branch: true
+        reuse_source_workspace: true
+        commits_workspace_changes: true
+      prompt_template: |
+        OpenClaw: apply requested changes
+
     - id: publish_branch
       title: Publish implementation branch to origin
       assignment: publish_branch_local
       depends_on:
-        - implement
+        - commit_changes
         - review
       metadata:
         export_branch: true

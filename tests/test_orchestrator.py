@@ -902,6 +902,192 @@ class OrchestratorExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results_by_id["publish_branch"].status, TaskStatus.BLOCKED)
         self.assertIn("requires dependency changes to be committed before push", results_by_id["publish_branch"].summary)
 
+    async def test_run_allows_publish_after_commit_changes_succeeds(self) -> None:
+        orchestrator = HybridOrchestrator(load_app_config("config_v2.yaml"))
+        repo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+        implement = WorkItem(
+            id="implement",
+            title="Implement main changes locally",
+            profile="codex_local",
+            agent=AgentType.CODEX,
+            mode=ExecutionMode.CLI,
+            prompt_template="",
+            assignment="implement_local",
+            managed_agent="codex_builder",
+            depends_on=[],
+            workspace_path="/tmp/worktrees/implement",
+            branch_name="openclaw-run-1-implement",
+        )
+        review = WorkItem(
+            id="review",
+            title="Review implementation before publish with local OpenClaw",
+            profile="openclaw_local",
+            agent=AgentType.OPENCLAW,
+            mode=ExecutionMode.OPENCLAW,
+            prompt_template="",
+            assignment="review_openclaw",
+            managed_agent="openclaw_router",
+            depends_on=["implement"],
+            workspace_path=repo_path,
+        )
+        commit_changes = WorkItem(
+            id="commit_changes",
+            title="Commit implementation changes locally",
+            profile="git_commit_changes",
+            agent=AgentType.SYSTEM,
+            mode=ExecutionMode.CLI,
+            prompt_template="",
+            assignment="commit_changes_local",
+            managed_agent="git_change_committer",
+            depends_on=["implement", "review"],
+            metadata={
+                "requires_workspace_changes": True,
+                "requires_dependency_branch": True,
+                "reuse_source_workspace": True,
+                "commits_workspace_changes": True,
+                "export_branch": True,
+            },
+            workspace_path="/tmp/worktrees/implement",
+            branch_name="openclaw-run-1-implement",
+        )
+        publish_branch = WorkItem(
+            id="publish_branch",
+            title="Publish implementation branch to origin",
+            profile="git_push_branch",
+            agent=AgentType.SYSTEM,
+            mode=ExecutionMode.CLI,
+            prompt_template="",
+            assignment="publish_branch_local",
+            managed_agent="git_branch_publisher",
+            depends_on=["commit_changes", "review"],
+            metadata={
+                "requires_dependency_branch": True,
+                "requires_committed_dependency_changes": True,
+            },
+            workspace_path=repo_path,
+        )
+        plan = [implement, review, commit_changes, publish_branch]
+
+        async def execute_cli(
+            work_item: WorkItem,
+            profile,
+            context: ExecutionContext,
+            rendered_prompt: str,
+        ) -> AgentResult:
+            if work_item.id == "implement":
+                return AgentResult(
+                    work_item_id="implement",
+                    profile=work_item.profile,
+                    agent=work_item.agent,
+                    mode=work_item.mode,
+                    status=TaskStatus.SUCCEEDED,
+                    summary="Implemented locally.",
+                    artifacts={
+                        "branch_name": "openclaw-run-1-implement",
+                        "exports_branch": True,
+                        "source_branch": "openclaw-run-1-implement",
+                        "workspace_path": "/tmp/worktrees/implement",
+                        "workspace_has_changes": True,
+                        "workspace_changed_files": ["README.md"],
+                    },
+                )
+            if work_item.id == "commit_changes":
+                return AgentResult(
+                    work_item_id="commit_changes",
+                    profile=work_item.profile,
+                    agent=work_item.agent,
+                    mode=work_item.mode,
+                    status=TaskStatus.SUCCEEDED,
+                    summary="Committed local changes.",
+                    artifacts={
+                        "branch_name": "openclaw-run-1-implement",
+                        "exports_branch": True,
+                        "source_branch": "openclaw-run-1-implement",
+                        "workspace_path": "/tmp/worktrees/implement",
+                        "workspace_has_changes": True,
+                        "workspace_changed_files": ["README.md"],
+                        "changes_committed": True,
+                        "head_commit": "abc123",
+                    },
+                )
+            if work_item.id == "publish_branch":
+                return AgentResult(
+                    work_item_id="publish_branch",
+                    profile=work_item.profile,
+                    agent=work_item.agent,
+                    mode=work_item.mode,
+                    status=TaskStatus.SUCCEEDED,
+                    summary="Published branch.",
+                    artifacts={
+                        "branch_name": "openclaw-run-1-implement",
+                        "exports_branch": True,
+                        "source_branch": "openclaw-run-1-implement",
+                    },
+                )
+            raise AssertionError(f"unexpected CLI execution for {work_item.id}")
+
+        async def execute_openclaw(
+            work_item: WorkItem,
+            profile,
+            context: ExecutionContext,
+            rendered_prompt: str,
+        ) -> AgentResult:
+            if work_item.id == "review":
+                return AgentResult(
+                    work_item_id="review",
+                    profile=work_item.profile,
+                    agent=work_item.agent,
+                    mode=work_item.mode,
+                    status=TaskStatus.SUCCEEDED,
+                    summary="Reviewed locally.",
+                )
+            raise AssertionError(f"unexpected OpenClaw execution for {work_item.id}")
+
+        preflight_report = mock.Mock(ok=True, checks=[])
+        with mock.patch.object(orchestrator, "build_plan", return_value=plan), mock.patch.object(
+            orchestrator.preflight_runner,
+            "run",
+            new=mock.AsyncMock(return_value=preflight_report),
+        ), mock.patch.object(
+            orchestrator.worktree_manager,
+            "prepare",
+            new=mock.AsyncMock(),
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "initialize_run",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_preflight_report",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_workspace_manifest",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_prompt",
+            return_value="/tmp/prompt.txt",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_result",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_run_summary",
+        ):
+            orchestrator.executors[ExecutionMode.CLI].execute = mock.AsyncMock(side_effect=execute_cli)
+            orchestrator.executors[ExecutionMode.OPENCLAW].execute = mock.AsyncMock(side_effect=execute_openclaw)
+            result = await orchestrator.run(
+                "test request",
+                repo_path,
+                selected_steps=["publish_branch"],
+            )
+
+        results_by_id = {item.work_item_id: item for item in result.results}
+
+        self.assertEqual(results_by_id["implement"].status, TaskStatus.SUCCEEDED)
+        self.assertEqual(results_by_id["review"].status, TaskStatus.SUCCEEDED)
+        self.assertEqual(results_by_id["commit_changes"].status, TaskStatus.SUCCEEDED)
+        self.assertEqual(results_by_id["publish_branch"].status, TaskStatus.SUCCEEDED)
+
 
 if __name__ == "__main__":
     unittest.main()

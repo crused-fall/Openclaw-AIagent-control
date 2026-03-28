@@ -39,6 +39,7 @@ The default pipeline is `mission_control_default`:
 - `triage`
 - `implement`
 - `review`
+- `commit_changes`
 - `publish_branch`
 - `sync_issue`
 - `update_issue`
@@ -55,7 +56,7 @@ python3 main_v2.py --list-steps
 python3 main_v2.py --list-managed-agents
 python3 main_v2.py --diagnose-plan --steps triage,implement
 python3 main_v2.py --doctor-config
-python3 main_v2.py --preflight-only --steps review,publish_branch
+python3 main_v2.py --preflight-only --steps review,commit_changes,publish_branch
 python3 main_v2.py --request "修复登录页报错" --steps triage,implement,review
 python3 main_v2.py --live --request "修复登录页报错" --steps triage,implement,review
 ```

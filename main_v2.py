@@ -218,6 +218,14 @@ def _print_result(result) -> None:
             print(f"  workspace_has_changes: {item.artifacts['workspace_has_changes']}")
         if item.artifacts.get("workspace_changed_files"):
             print(f"  workspace_changed_files: {item.artifacts['workspace_changed_files']}")
+        if item.artifacts.get("changes_committed"):
+            print("  changes_committed: true")
+        if item.artifacts.get("workspace_has_uncommitted_changes"):
+            print("  workspace_has_uncommitted_changes: true")
+        if item.artifacts.get("workspace_uncommitted_files"):
+            print(f"  workspace_uncommitted_files: {item.artifacts['workspace_uncommitted_files']}")
+        if item.artifacts.get("head_commit"):
+            print(f"  head_commit: {item.artifacts['head_commit']}")
         if item.artifacts.get("cli_failure_kind"):
             print(f"  cli_failure_kind: {item.artifacts['cli_failure_kind']}")
         if item.artifacts.get("cli_recovery_hint"):
