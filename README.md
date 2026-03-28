@@ -190,6 +190,7 @@ python3 main_v2.py --live --request "修复登录页报错" --steps triage,imple
 CLI 失败结果现在也会带 `cli_failure_kind` 和 `cli_recovery_hint`。如果默认 `triage` 卡在 Claude，可以优先试 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`，或者直接切到 `mission_control_openclaw_triage` / `mission_control_openclaw_default`。
 `codex_local` 现在默认用 `codex exec --ephemeral`，尽量避开本机 `~/.codex/state_*.sqlite` 迁移冲突；如果仍然返回 `cli_failure_kind=usage_limit`，说明是 Codex 账号配额问题，不是项目编排问题。
 如果 Codex 当前不可用，但你本机 OpenClaw agent 可写仓库，可以显式覆盖实现层：`OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`。这样 `mission_control_openclaw_default` 会让 OpenClaw 承担 `implement`，而不是继续卡在 Codex。
+这条 `openclaw_builder` 路径目前主要用于本地 `triage/implement/review`；如果实现结果没有导出可推送分支，`publish_branch` 现在会直接 `blocked`，而不是假装还能继续 GitHub 尾链。
 如果 live 计划里包含隔离 CLI worktree，而仓库还有未提交改动，preflight 现在会直接拦下；这些 worktree 只基于已提交 `HEAD`，不会自动带上本地脏改动。
 如果 `implement` 判断“请求已满足、无需改动”，结果会显式标成 no-op；后续 `publish_branch` 会因为没有可发布文件变化而跳过。
 
@@ -252,6 +253,7 @@ v2 已验证：
 - GitHub bridge 现在会稳定回流 issue / PR / workflow run 引用，便于下游步骤继续消费
 - GitHub 步骤在 CLI 结果里会直接打印 `github:` 摘要，包含 repo、action、issue / PR / workflow refs
 - GitHub bridge 失败时会区分 `auth / repository / workflow / reference / network / unknown`，并保留 `blocked_reason`、`github_error`、`github_retryable` 和 `github_recovery_hint`
+- 例如，如果 `gh workflow run` 返回 403 'Resource not accessible by personal access token'，可以改用 `gh auth login --web` 重新认证，或确保 token 具有 `repo` 和 `workflow` scope（使用 `gh auth refresh -h github.com -s repo,workflow`）。
 - `gh issue create` 如果因为仓库里缺少预设 labels 而失败，现在会自动去掉 labels 重试一次，并把被忽略的 labels 回写到结果 artifacts
 - 如果 `implement` 是 no-op 但前面已经成功 `sync_issue`，`update_issue` 现在仍可继续执行，用来把“无需代码改动”的终态回写到已有 issue；PR / workflow 尾链仍会保持跳过
 - `workflow_dispatch` 会在 preflight 检查本地 `.github/workflows/<workflow_name>` 是否存在，避免缺文件时到 live 阶段才失败

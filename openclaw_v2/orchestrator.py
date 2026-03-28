@@ -222,6 +222,24 @@ class HybridOrchestrator:
         return {str(item).strip() for item in configured if str(item).strip()}
 
     @classmethod
+    def _required_dependency_branch_reason(
+        cls,
+        work_item: WorkItem,
+        completed: dict[str, AgentResult],
+    ) -> str:
+        if not bool(work_item.metadata.get("requires_dependency_branch", False)):
+            return ""
+        dependency_values = cls._collect_dependency_values(work_item, completed)
+        if str(dependency_values.get("source_branch", "")).strip():
+            return ""
+        if str(dependency_values.get("primary_branch_name", "")).strip():
+            return ""
+        return (
+            f"Step {work_item.title} requires an exported dependency branch, "
+            "but no dependency produced one."
+        )
+
+    @classmethod
     def _dependency_is_satisfied(
         cls,
         work_item: WorkItem,
@@ -459,6 +477,46 @@ class HybridOrchestrator:
                         f"step:skip {item.id} -> dependency produced no file changes",
                     )
                 ordered_results.extend(skipped_results)
+                continue
+
+            branch_blocked_items = [
+                item
+                for item in pending.values()
+                if all(
+                    self._dependency_is_satisfied(item, dependency_id, completed)
+                    for dependency_id in item.depends_on
+                )
+                and self._required_dependency_branch_reason(item, completed)
+            ]
+            if branch_blocked_items:
+                blocked_results = []
+                for item in branch_blocked_items:
+                    blocked_reason = self._required_dependency_branch_reason(item, completed)
+                    item.status = TaskStatus.BLOCKED
+                    result = AgentResult(
+                        work_item_id=item.id,
+                        profile=item.profile,
+                        agent=item.agent,
+                        mode=item.mode,
+                        status=TaskStatus.BLOCKED,
+                        summary=f"Blocked because {blocked_reason}",
+                        artifacts={
+                            "workspace_path": item.workspace_path,
+                            "branch_name": item.branch_name,
+                            "blocked_reason": blocked_reason,
+                            "dependency_outcomes": self._dependency_outcomes(item, completed),
+                            **self._trace_artifacts(item),
+                        },
+                    )
+                    self.artifact_store.write_result(context, result)
+                    completed[item.id] = result
+                    blocked_results.append(result)
+                    pending.pop(item.id, None)
+                    self._emit_progress(
+                        progress_callback,
+                        f"step:block {item.id} -> {blocked_reason}",
+                    )
+                ordered_results.extend(blocked_results)
                 continue
 
             ready_items = [

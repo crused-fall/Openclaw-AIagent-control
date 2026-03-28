@@ -430,6 +430,7 @@ pipelines:
         export_branch: true
         requires_origin_remote: true
         requires_workspace_changes: true
+        requires_dependency_branch: true
       prompt_template: |
         将当前实现分支推送到 origin，供 GitHub PR 和 workflow 使用。
         工作目录：{workspace_path}
@@ -599,6 +600,7 @@ pipelines:
         export_branch: true
         requires_origin_remote: true
         requires_workspace_changes: true
+        requires_dependency_branch: true
       prompt_template: |
         将当前实现分支推送到 origin，供 GitHub PR 和 workflow 使用。
         工作目录：{workspace_path}
@@ -883,6 +885,7 @@ pipelines:
         export_branch: true
         requires_origin_remote: true
         requires_workspace_changes: true
+        requires_dependency_branch: true
       prompt_template: |
         将当前实现分支推送到 origin，供 GitHub PR 和 workflow 使用。
         工作目录：{workspace_path}
