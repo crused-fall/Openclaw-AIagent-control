@@ -149,6 +149,42 @@ class OpenClawExecutorTests(unittest.TestCase):
 
 
 class OpenClawExecutorExecutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_execute_dry_run_preserves_export_branch_artifacts(self) -> None:
+        executor = OpenClawExecutor(load_app_config("config_v2.yaml"))
+        context = ExecutionContext(
+            run_id="run-1",
+            user_request="update readme",
+            repo_path="/tmp/repo",
+            dry_run=True,
+            artifacts_dir="/tmp/artifacts",
+            worktrees_dir="/tmp/worktrees",
+        )
+        work_item = WorkItem(
+            id="implement",
+            title="Implement main changes locally",
+            profile="openclaw_local",
+            agent=AgentType.OPENCLAW,
+            mode=ExecutionMode.OPENCLAW,
+            prompt_template="hello",
+            workspace_path="/tmp/worktrees/implement",
+            metadata={"export_branch": True},
+            branch_name="openclaw-run-1-implement",
+        )
+        profile = ProfileConfig(
+            name="openclaw_local",
+            agent=AgentType.OPENCLAW,
+            mode=ExecutionMode.OPENCLAW,
+            openclaw_agent_id="repo-agent",
+            openclaw_local=True,
+        )
+
+        result = await executor.execute(work_item, profile, context, "hello")
+
+        self.assertEqual(result.status, TaskStatus.SUCCEEDED)
+        self.assertTrue(result.artifacts["exports_branch"])
+        self.assertEqual(result.artifacts["source_branch"], "openclaw-run-1-implement")
+        self.assertEqual(result.artifacts["workspace_path"], "/tmp/worktrees/implement")
+
     async def test_execute_marks_noop_when_expected_changes_are_missing(self) -> None:
         executor = OpenClawExecutor(load_app_config("config_v2.yaml"))
         context = ExecutionContext(

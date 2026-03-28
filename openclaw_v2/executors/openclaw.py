@@ -159,6 +159,20 @@ class OpenClawExecutor(Executor):
             )
 
         if context.dry_run:
+            dry_run_workspace = work_item.workspace_path or context.repo_path
+            dry_run_exports_branch = bool(work_item.metadata.get("export_branch", False))
+            artifacts = self._artifacts(
+                work_item,
+                dry_run_workspace,
+                dry_run_exports_branch,
+            )
+            artifacts.update(
+                {
+                    "openclaw_agent_id": profile.openclaw_agent_id,
+                    "openclaw_profile": profile.openclaw_profile,
+                    "openclaw_prepared_prompt": prepared_prompt,
+                }
+            )
             return AgentResult(
                 work_item_id=work_item.id,
                 profile=work_item.profile,
@@ -170,12 +184,7 @@ class OpenClawExecutor(Executor):
                 stdout=prepared_prompt,
                 exit_code=0,
                 command=command,
-                artifacts={
-                    "openclaw_agent_id": profile.openclaw_agent_id,
-                    "openclaw_profile": profile.openclaw_profile,
-                    "workspace_path": work_item.workspace_path or context.repo_path,
-                    "openclaw_prepared_prompt": prepared_prompt,
-                },
+                artifacts=artifacts,
             )
 
         process = await asyncio.create_subprocess_exec(
