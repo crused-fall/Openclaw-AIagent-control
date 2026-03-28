@@ -13,7 +13,14 @@ class WorktreeManager:
         self._base_ref_cache: dict[str, str] = {}
 
     async def prepare(self, work_item: WorkItem, context: ExecutionContext) -> None:
-        if work_item.mode != ExecutionMode.CLI:
+        uses_isolated_workspace = (
+            work_item.mode == ExecutionMode.CLI
+            or (
+                work_item.mode == ExecutionMode.OPENCLAW
+                and bool(work_item.metadata.get("export_branch", False))
+            )
+        )
+        if not uses_isolated_workspace:
             work_item.workspace_path = context.repo_path
             work_item.branch_name = ""
             work_item.metadata["workspace_strategy"] = "shared"
@@ -95,7 +102,14 @@ class WorktreeManager:
         run_has_failures: bool,
     ) -> None:
         for work_item in work_items:
-            if work_item.mode != ExecutionMode.CLI:
+            uses_isolated_workspace = (
+                work_item.mode == ExecutionMode.CLI
+                or (
+                    work_item.mode == ExecutionMode.OPENCLAW
+                    and bool(work_item.metadata.get("export_branch", False))
+                )
+            )
+            if not uses_isolated_workspace:
                 continue
 
             if not work_item.workspace_path:

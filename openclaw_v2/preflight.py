@@ -34,7 +34,14 @@ class PreflightRunner:
 
     @staticmethod
     def _uses_isolated_cli_workspace(item: WorkItem) -> bool:
-        return item.mode == ExecutionMode.CLI and not str(item.metadata.get("source_branch", "")).strip()
+        source_branch = str(item.metadata.get("source_branch", "")).strip()
+        if item.mode == ExecutionMode.CLI:
+            return not source_branch
+        return (
+            item.mode == ExecutionMode.OPENCLAW
+            and bool(item.metadata.get("export_branch", False))
+            and not source_branch
+        )
 
     async def _check_repo_dirty_for_isolated_cli_steps(
         self,
@@ -70,7 +77,7 @@ class PreflightRunner:
                 name="git_dirty_worktree_base",
                 status=CheckStatus.PASSED,
                 message=(
-                    "Repository working tree is clean; isolated CLI worktree steps will run from the current committed base."
+                    "Repository working tree is clean; isolated worktree steps will run from the current committed base."
                 ),
                 details={"affected_steps": affected_steps},
             )
@@ -80,7 +87,7 @@ class PreflightRunner:
             name="git_dirty_worktree_base",
             status=CheckStatus.WARNING if self.config.runtime.dry_run else CheckStatus.FAILED,
             message=(
-                "Repository has uncommitted changes. Isolated CLI worktree steps run from committed HEAD and "
+                "Repository has uncommitted changes. Isolated worktree steps run from committed HEAD and "
                 "will not see local edits; commit or stash changes before live runs."
             ),
             details={

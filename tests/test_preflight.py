@@ -275,6 +275,32 @@ class PreflightOpenClawTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(check.status, CheckStatus.PASSED)
         self.assertIn("working tree is clean", check.message)
 
+    async def test_openclaw_export_step_participates_in_dirty_check(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        config.runtime.dry_run = False
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="implement",
+                title="Implement main changes with OpenClaw",
+                profile="openclaw_local",
+                agent=AgentType.OPENCLAW,
+                mode=ExecutionMode.OPENCLAW,
+                prompt_template="",
+                metadata={"export_branch": True},
+            )
+        ]
+
+        with mock.patch(
+            "openclaw_v2.preflight.asyncio.create_subprocess_exec",
+            new=mock.AsyncMock(return_value=_FakeProcess(0, " M README.md\n")),
+        ):
+            check = await runner._check_repo_dirty_for_isolated_cli_steps("/tmp/repo", plan)
+
+        assert check is not None
+        self.assertEqual(check.status, CheckStatus.FAILED)
+        self.assertEqual(check.details["affected_steps"], ["implement"])
+
     async def test_github_repo_can_resolve_from_origin_when_fallback_is_enabled(self) -> None:
         config = load_app_config("config_v2.yaml")
         config.github.repo = ""
