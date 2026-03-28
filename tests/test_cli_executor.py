@@ -155,6 +155,34 @@ class CLIExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("ANTHROPIC_BASE_URL", spawn_env)
         self.assertNotIn("ANTHROPIC_AUTH_TOKEN", spawn_env)
 
+    async def test_codex_usage_limit_sets_recovery_hint(self) -> None:
+        process = _FakeProcess(returncode=1, stderr="ERROR: You've hit your usage limit.")
+        work_item = WorkItem(
+            id="implement",
+            title="Implement main changes locally",
+            profile="codex_local",
+            agent=AgentType.CODEX,
+            mode=ExecutionMode.CLI,
+            prompt_template="hello",
+        )
+        profile = self.config.profiles["codex_local"]
+
+        with mock.patch(
+            "openclaw_v2.executors.cli.asyncio.create_subprocess_exec",
+            new=mock.AsyncMock(return_value=process),
+        ):
+            result = await self.executor.execute(work_item, profile, self.context, "hello")
+
+        self.assertEqual(result.status, TaskStatus.FAILED)
+        self.assertEqual(result.artifacts["cli_failure_kind"], "usage_limit")
+        self.assertIn("usage limit", result.artifacts["cli_recovery_hint"])
+
+    def test_codex_profile_uses_ephemeral_mode(self) -> None:
+        self.assertEqual(
+            self.config.profiles["codex_local"].command[:3],
+            ["codex", "exec", "--ephemeral"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

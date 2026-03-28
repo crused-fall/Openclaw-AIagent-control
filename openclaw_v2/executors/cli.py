@@ -136,6 +136,17 @@ class CLIExecutor(Executor):
                     "cli_recovery_hint": hint,
                 }
 
+        if work_item.agent == AgentType.CODEX:
+            lowered = stderr_text.lower()
+            if "usage limit" in lowered or "more access now" in lowered:
+                return {
+                    "cli_failure_kind": "usage_limit",
+                    "cli_recovery_hint": (
+                        "Codex is authenticated but the current account has hit its usage limit. "
+                        "Retry after the reported reset time or request more access."
+                    ),
+                }
+
         return {
             "cli_failure_kind": "nonzero_exit",
             "cli_recovery_hint": "Inspect `stderr` and rerun the printed command manually if needed.",
