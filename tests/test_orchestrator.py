@@ -318,6 +318,269 @@ class OrchestratorExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(message.startswith("step:start triage ") for message in messages))
         self.assertIn("step:done triage -> succeeded", messages)
 
+    async def test_run_allows_issue_followup_after_noop_publish_in_openclaw_default_flow(self) -> None:
+        orchestrator = HybridOrchestrator(load_app_config("config_v2.yaml"))
+        repo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+        triage = WorkItem(
+            id="triage",
+            title="Triage user request with local OpenClaw",
+            profile="openclaw_local",
+            agent=AgentType.OPENCLAW,
+            mode=ExecutionMode.OPENCLAW,
+            prompt_template="",
+            assignment="triage_openclaw",
+            managed_agent="openclaw_router",
+            depends_on=[],
+            workspace_path=repo_path,
+        )
+        implement = WorkItem(
+            id="implement",
+            title="Implement main changes locally",
+            profile="codex_local",
+            agent=AgentType.CODEX,
+            mode=ExecutionMode.CLI,
+            prompt_template="",
+            assignment="implement_local",
+            managed_agent="codex_builder",
+            depends_on=["triage"],
+            workspace_path="/tmp/worktrees/implement",
+            branch_name="openclaw-run-1-implement",
+        )
+        review = WorkItem(
+            id="review",
+            title="Review implementation before publish with local OpenClaw",
+            profile="openclaw_local",
+            agent=AgentType.OPENCLAW,
+            mode=ExecutionMode.OPENCLAW,
+            prompt_template="",
+            assignment="review_openclaw",
+            managed_agent="openclaw_router",
+            depends_on=["implement"],
+            workspace_path=repo_path,
+        )
+        publish_branch = WorkItem(
+            id="publish_branch",
+            title="Publish implementation branch to origin",
+            profile="git_push_branch",
+            agent=AgentType.SYSTEM,
+            mode=ExecutionMode.CLI,
+            prompt_template="",
+            assignment="publish_branch_local",
+            managed_agent="git_branch_publisher",
+            depends_on=["implement", "review"],
+            metadata={"requires_workspace_changes": True},
+            workspace_path=repo_path,
+            branch_name="openclaw-run-1-implement",
+        )
+        sync_issue = WorkItem(
+            id="sync_issue",
+            title="Sync planning issue to GitHub",
+            profile="copilot_issue",
+            agent=AgentType.COPILOT,
+            mode=ExecutionMode.GITHUB,
+            prompt_template="",
+            assignment="sync_issue_bridge",
+            managed_agent="github_issue_bridge",
+            depends_on=["triage"],
+            workspace_path=repo_path,
+        )
+        update_issue = WorkItem(
+            id="update_issue",
+            title="Update GitHub issue with implementation status",
+            profile="copilot_issue_followup",
+            agent=AgentType.COPILOT,
+            mode=ExecutionMode.GITHUB,
+            prompt_template="",
+            assignment="update_issue_bridge",
+            managed_agent="github_issue_followup_bridge",
+            depends_on=["publish_branch", "review", "sync_issue"],
+            metadata={"allow_noop_skipped_dependencies": ["publish_branch"]},
+            workspace_path=repo_path,
+        )
+        draft_pr = WorkItem(
+            id="draft_pr",
+            title="Prepare GitHub draft PR summary",
+            profile="copilot_pr",
+            agent=AgentType.COPILOT,
+            mode=ExecutionMode.GITHUB,
+            prompt_template="",
+            assignment="draft_pr_bridge",
+            managed_agent="github_pr_bridge",
+            depends_on=["publish_branch", "review", "sync_issue", "update_issue"],
+            workspace_path=repo_path,
+        )
+        dispatch_review = WorkItem(
+            id="dispatch_review",
+            title="Trigger GitHub review workflow",
+            profile="github_review_workflow",
+            agent=AgentType.COPILOT,
+            mode=ExecutionMode.GITHUB,
+            prompt_template="",
+            assignment="dispatch_review_bridge",
+            managed_agent="github_review_bridge",
+            depends_on=["publish_branch", "review", "draft_pr"],
+            workspace_path=repo_path,
+        )
+        collect_review = WorkItem(
+            id="collect_review",
+            title="Collect GitHub review workflow status",
+            profile="github_review_workflow_status",
+            agent=AgentType.COPILOT,
+            mode=ExecutionMode.GITHUB,
+            prompt_template="",
+            assignment="collect_review_bridge",
+            managed_agent="github_review_followup_bridge",
+            depends_on=["dispatch_review"],
+            workspace_path=repo_path,
+        )
+        plan = [
+            triage,
+            implement,
+            review,
+            publish_branch,
+            sync_issue,
+            update_issue,
+            draft_pr,
+            dispatch_review,
+            collect_review,
+        ]
+
+        async def execute_openclaw(
+            work_item: WorkItem,
+            profile,
+            context: ExecutionContext,
+            rendered_prompt: str,
+        ) -> AgentResult:
+            if work_item.id == "triage":
+                return AgentResult(
+                    work_item_id="triage",
+                    profile=work_item.profile,
+                    agent=work_item.agent,
+                    mode=work_item.mode,
+                    status=TaskStatus.SUCCEEDED,
+                    summary="Triage ok.",
+                )
+            if work_item.id == "review":
+                return AgentResult(
+                    work_item_id="review",
+                    profile=work_item.profile,
+                    agent=work_item.agent,
+                    mode=work_item.mode,
+                    status=TaskStatus.SUCCEEDED,
+                    summary="Review ok.",
+                )
+            raise AssertionError(f"unexpected OpenClaw execution for {work_item.id}")
+
+        async def execute_cli(
+            work_item: WorkItem,
+            profile,
+            context: ExecutionContext,
+            rendered_prompt: str,
+        ) -> AgentResult:
+            if work_item.id == "implement":
+                return AgentResult(
+                    work_item_id="implement",
+                    profile=work_item.profile,
+                    agent=work_item.agent,
+                    mode=work_item.mode,
+                    status=TaskStatus.SUCCEEDED,
+                    summary="Implement finished with no file changes required.",
+                    artifacts={
+                        "noop_result": True,
+                        "source_branch": "openclaw-run-1-implement",
+                    },
+                )
+            raise AssertionError(f"unexpected CLI execution for {work_item.id}")
+
+        async def execute_github(
+            work_item: WorkItem,
+            profile,
+            context: ExecutionContext,
+            rendered_prompt: str,
+        ) -> AgentResult:
+            if work_item.id == "sync_issue":
+                return AgentResult(
+                    work_item_id="sync_issue",
+                    profile=work_item.profile,
+                    agent=work_item.agent,
+                    mode=work_item.mode,
+                    status=TaskStatus.SUCCEEDED,
+                    summary="Issue synced.",
+                    artifacts={"issue_number": "42"},
+                )
+            if work_item.id == "update_issue":
+                return AgentResult(
+                    work_item_id="update_issue",
+                    profile=work_item.profile,
+                    agent=work_item.agent,
+                    mode=work_item.mode,
+                    status=TaskStatus.SUCCEEDED,
+                    summary="Issue updated.",
+                    artifacts={"issue_number": "42"},
+                )
+            raise AssertionError(f"unexpected GitHub execution for {work_item.id}")
+
+        preflight_report = mock.Mock(ok=True, checks=[])
+
+        with mock.patch.object(orchestrator, "build_plan", return_value=plan), mock.patch.object(
+            orchestrator.preflight_runner,
+            "run",
+            new=mock.AsyncMock(return_value=preflight_report),
+        ), mock.patch.object(
+            orchestrator.worktree_manager,
+            "prepare",
+            new=mock.AsyncMock(),
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "initialize_run",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_preflight_report",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_workspace_manifest",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_prompt",
+            return_value="/tmp/prompt.txt",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_result",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_run_summary",
+        ):
+            orchestrator.executors[ExecutionMode.OPENCLAW].execute = mock.AsyncMock(side_effect=execute_openclaw)
+            orchestrator.executors[ExecutionMode.CLI].execute = mock.AsyncMock(side_effect=execute_cli)
+            orchestrator.executors[ExecutionMode.GITHUB].execute = mock.AsyncMock(side_effect=execute_github)
+
+            result = await orchestrator.run(
+                "在 README 中补一行，说明 GitHub bridge 的 403 token 权限不足恢复方式",
+                repo_path,
+                selected_steps=["collect_review"],
+            )
+
+        results_by_id = {item.work_item_id: item for item in result.results}
+
+        self.assertTrue(result.success)
+        self.assertEqual(results_by_id["triage"].status, TaskStatus.SUCCEEDED)
+        self.assertEqual(results_by_id["implement"].status, TaskStatus.SUCCEEDED)
+        self.assertTrue(results_by_id["implement"].artifacts["noop_result"])
+        self.assertEqual(results_by_id["sync_issue"].status, TaskStatus.SUCCEEDED)
+        self.assertEqual(results_by_id["publish_branch"].status, TaskStatus.SKIPPED)
+        self.assertEqual(
+            results_by_id["publish_branch"].artifacts["source_branch"],
+            "openclaw-run-1-implement",
+        )
+        self.assertEqual(results_by_id["review"].status, TaskStatus.SUCCEEDED)
+        self.assertEqual(results_by_id["update_issue"].status, TaskStatus.SUCCEEDED)
+        self.assertEqual(results_by_id["draft_pr"].status, TaskStatus.SKIPPED)
+        self.assertEqual(results_by_id["dispatch_review"].status, TaskStatus.SKIPPED)
+        self.assertEqual(results_by_id["collect_review"].status, TaskStatus.SKIPPED)
+        self.assertIn("publish_branch", results_by_id["draft_pr"].summary)
+        self.assertEqual(results_by_id["update_issue"].artifacts["issue_number"], "42")
+
 
 if __name__ == "__main__":
     unittest.main()
