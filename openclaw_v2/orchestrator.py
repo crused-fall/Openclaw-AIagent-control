@@ -239,6 +239,38 @@ class HybridOrchestrator:
             "but no dependency produced one."
         )
 
+    @staticmethod
+    def _required_dependency_commit_reason(
+        work_item: WorkItem,
+        completed: dict[str, AgentResult],
+    ) -> str:
+        if not bool(work_item.metadata.get("requires_committed_dependency_changes", False)):
+            return ""
+        for dependency_id in work_item.depends_on:
+            result = completed.get(dependency_id)
+            if result is None:
+                continue
+            if not bool(result.artifacts.get("workspace_has_changes")):
+                continue
+            if bool(result.artifacts.get("changes_committed")):
+                continue
+            return (
+                f"Step {work_item.title} requires dependency changes to be committed before push, "
+                f"but dependency {dependency_id} still has uncommitted workspace changes."
+            )
+        return ""
+
+    @classmethod
+    def _pre_execution_block_reason(
+        cls,
+        work_item: WorkItem,
+        completed: dict[str, AgentResult],
+    ) -> str:
+        branch_reason = cls._required_dependency_branch_reason(work_item, completed)
+        if branch_reason:
+            return branch_reason
+        return cls._required_dependency_commit_reason(work_item, completed)
+
     @classmethod
     def _dependency_is_satisfied(
         cls,
@@ -486,12 +518,12 @@ class HybridOrchestrator:
                     self._dependency_is_satisfied(item, dependency_id, completed)
                     for dependency_id in item.depends_on
                 )
-                and self._required_dependency_branch_reason(item, completed)
+                and self._pre_execution_block_reason(item, completed)
             ]
             if branch_blocked_items:
                 blocked_results = []
                 for item in branch_blocked_items:
-                    blocked_reason = self._required_dependency_branch_reason(item, completed)
+                    blocked_reason = self._pre_execution_block_reason(item, completed)
                     item.status = TaskStatus.BLOCKED
                     result = AgentResult(
                         work_item_id=item.id,
