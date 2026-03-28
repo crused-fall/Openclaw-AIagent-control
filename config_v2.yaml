@@ -201,6 +201,13 @@ managed_agents:
       - review
     manager: openclaw
 
+  openclaw_builder:
+    kind: openclaw
+    profile: openclaw_local
+    capabilities:
+      - implement
+    manager: openclaw
+
   git_branch_publisher:
     kind: system
     profile: git_push_branch

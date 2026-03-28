@@ -1,9 +1,24 @@
 import json
+import asyncio
 import unittest
+from unittest import mock
 
-from openclaw_v2.config import ProfileConfig
+from openclaw_v2.config import ProfileConfig, load_app_config
 from openclaw_v2.executors.openclaw import OpenClawExecutor
-from openclaw_v2.models import AgentType, ExecutionContext, ExecutionMode, WorkItem, parse_control_output
+from openclaw_v2.models import AgentType, ExecutionContext, ExecutionMode, TaskStatus, WorkItem, parse_control_output
+
+
+class _FakeProcess:
+    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "", delay: float = 0.0) -> None:
+        self.returncode = returncode
+        self._stdout = stdout.encode("utf-8")
+        self._stderr = stderr.encode("utf-8")
+        self._delay = delay
+
+    async def communicate(self):
+        if self._delay:
+            await asyncio.sleep(self._delay)
+        return self._stdout, self._stderr
 
 
 class OpenClawExecutorTests(unittest.TestCase):
@@ -131,6 +146,61 @@ class OpenClawExecutorTests(unittest.TestCase):
         self.assertEqual(signal.status.value, "blocked")
         self.assertEqual(signal.block_reason, "仓库中不存在登录页")
         self.assertEqual(signal.cleaned_output, "目标页面缺失")
+
+
+class OpenClawExecutorExecutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_execute_marks_noop_when_expected_changes_are_missing(self) -> None:
+        executor = OpenClawExecutor(load_app_config("config_v2.yaml"))
+        context = ExecutionContext(
+            run_id="run-1",
+            user_request="update readme",
+            repo_path="/tmp/repo",
+            dry_run=False,
+            artifacts_dir="/tmp/artifacts",
+            worktrees_dir="/tmp/worktrees",
+        )
+        work_item = WorkItem(
+            id="implement",
+            title="Implement main changes locally",
+            profile="openclaw_local",
+            agent=AgentType.OPENCLAW,
+            mode=ExecutionMode.OPENCLAW,
+            prompt_template="hello",
+            workspace_path="/tmp/repo",
+            metadata={"expects_file_changes": True, "export_branch": True},
+            branch_name="openclaw-run-1-implement",
+        )
+        profile = ProfileConfig(
+            name="openclaw_local",
+            agent=AgentType.OPENCLAW,
+            mode=ExecutionMode.OPENCLAW,
+            openclaw_agent_id="repo-agent",
+            openclaw_local=True,
+        )
+        openclaw_output = json.dumps(
+            {
+                "payloads": [{"text": "OPENCLAW_STATUS: ready\nImplemented."}],
+                "meta": {"agentMeta": {}, "systemPromptReport": {}},
+            }
+        )
+        process = _FakeProcess(stdout=openclaw_output)
+        status_process = _FakeProcess(stdout="")
+
+        create_process = mock.AsyncMock(side_effect=[process, status_process])
+        with mock.patch(
+            "openclaw_v2.executors.openclaw.asyncio.create_subprocess_exec",
+            new=create_process,
+        ):
+            result = await executor.execute(work_item, profile, context, "hello")
+
+        self.assertEqual(result.status, TaskStatus.SUCCEEDED)
+        self.assertTrue(result.artifacts["noop_result"])
+        self.assertFalse(result.artifacts["workspace_has_changes"])
+        self.assertEqual(result.artifacts["workspace_changed_files"], [])
+        self.assertEqual(result.artifacts["branch_name"], "openclaw-run-1-implement")
+        self.assertTrue(result.artifacts["exports_branch"])
+        self.assertEqual(result.artifacts["source_branch"], "openclaw-run-1-implement")
+        self.assertIn("no file changes required", result.summary)
 
 
 if __name__ == "__main__":

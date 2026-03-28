@@ -14,6 +14,24 @@ class OpenClawExecutor(Executor):
     """Run local OpenClaw agent turns and normalize their JSON output."""
 
     @staticmethod
+    def _artifacts(
+        work_item: WorkItem,
+        workspace_path: str,
+        exports_branch: bool,
+        blocked_reason: str = "",
+    ) -> dict[str, object]:
+        artifacts: dict[str, object] = {
+            "workspace_path": workspace_path,
+            "branch_name": work_item.branch_name,
+            "exports_branch": exports_branch,
+            "source_branch": work_item.branch_name if exports_branch else "",
+            "workspace_prepare_command": work_item.metadata.get("workspace_prepare_command", []),
+        }
+        if blocked_reason:
+            artifacts["blocked_reason"] = blocked_reason
+        return artifacts
+
+    @staticmethod
     def _prepare_prompt(
         rendered_prompt: str,
         context: ExecutionContext,
@@ -55,6 +73,34 @@ class OpenClawExecutor(Executor):
             if isinstance(payload, dict) and str(payload.get("text", "")).strip()
         ]
         return "\n\n".join(texts).strip()
+
+    @staticmethod
+    async def _workspace_change_artifacts(workspace_path: str) -> dict[str, object]:
+        process = await asyncio.create_subprocess_exec(
+            "git",
+            "-C",
+            workspace_path,
+            "status",
+            "--porcelain",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await process.communicate()
+        if process.returncode != 0:
+            return {}
+
+        raw_output = stdout.decode("utf-8", errors="replace")
+        changed_paths = [line[3:] for line in raw_output.splitlines() if len(line) > 3]
+        if not changed_paths:
+            return {
+                "workspace_has_changes": False,
+                "workspace_changed_files": [],
+                "noop_result": True,
+            }
+        return {
+            "workspace_has_changes": True,
+            "workspace_changed_files": changed_paths,
+        }
 
     @classmethod
     def _parse_response_output(cls, output: str) -> tuple[str, dict[str, object]]:
@@ -180,11 +226,25 @@ class OpenClawExecutor(Executor):
         status = control_signal.status or TaskStatus.SUCCEEDED
         cleaned_output = control_signal.cleaned_output or response_text
         blocked_reason = control_signal.block_reason
+        workspace_path = work_item.workspace_path or context.repo_path
+        exports_branch = bool(work_item.metadata.get("export_branch", False)) and status == TaskStatus.SUCCEEDED
+        artifacts.update(self._artifacts(work_item, workspace_path, exports_branch, blocked_reason))
         artifacts["openclaw_agent_id"] = profile.openclaw_agent_id
         artifacts["openclaw_profile"] = profile.openclaw_profile
         artifacts["openclaw_prepared_prompt"] = prepared_prompt
         if blocked_reason:
             artifacts["blocked_reason"] = blocked_reason
+        if status == TaskStatus.SUCCEEDED and bool(work_item.metadata.get("expects_file_changes", False)):
+            change_artifacts = await self._workspace_change_artifacts(workspace_path)
+            artifacts.update(change_artifacts)
+
+        summary = (
+            f"OpenClaw task {work_item.title} blocked: {blocked_reason}"
+            if status == TaskStatus.BLOCKED
+            else f"OpenClaw task {work_item.title} finished successfully."
+        )
+        if status == TaskStatus.SUCCEEDED and artifacts.get("noop_result"):
+            summary = f"OpenClaw task {work_item.title} finished successfully with no file changes required."
 
         return AgentResult(
             work_item_id=work_item.id,
@@ -192,11 +252,7 @@ class OpenClawExecutor(Executor):
             agent=work_item.agent,
             mode=work_item.mode,
             status=status,
-            summary=(
-                f"OpenClaw task {work_item.title} blocked: {blocked_reason}"
-                if status == TaskStatus.BLOCKED
-                else f"OpenClaw task {work_item.title} finished successfully."
-            ),
+            summary=summary,
             output=cleaned_output,
             stdout=output,
             stderr=error_output,

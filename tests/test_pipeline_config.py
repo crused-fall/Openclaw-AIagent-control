@@ -1,3 +1,4 @@
+import os
 import tempfile
 import textwrap
 import unittest
@@ -80,6 +81,26 @@ class PipelineConfigTests(unittest.TestCase):
         self.assertEqual(work_items["review"].assignment, "review_openclaw")
         self.assertEqual(work_items["review"].managed_agent, "openclaw_router")
         self.assertEqual(work_items["review"].mode, ExecutionMode.OPENCLAW)
+
+    def test_openclaw_default_pipeline_can_override_implement_to_openclaw_builder(self) -> None:
+        previous = os.environ.get("OPENCLAW_ASSIGN_IMPLEMENT_LOCAL")
+        os.environ["OPENCLAW_ASSIGN_IMPLEMENT_LOCAL"] = "openclaw_builder"
+        try:
+            config = load_app_config("config_v2.yaml")
+        finally:
+            if previous is None:
+                os.environ.pop("OPENCLAW_ASSIGN_IMPLEMENT_LOCAL", None)
+            else:
+                os.environ["OPENCLAW_ASSIGN_IMPLEMENT_LOCAL"] = previous
+        config.runtime.pipeline = "mission_control_openclaw_default"
+        planner = PipelinePlanner(config)
+
+        plan = planner.build_plan()
+        work_items = {item.id: item for item in plan}
+
+        self.assertEqual(work_items["implement"].managed_agent, "openclaw_builder")
+        self.assertEqual(work_items["implement"].profile, "openclaw_local")
+        self.assertEqual(work_items["implement"].mode, ExecutionMode.OPENCLAW)
 
     def test_github_bridge_smoke_pipeline_only_contains_review_workflow_steps(self) -> None:
         config = load_app_config("config_v2.yaml")
