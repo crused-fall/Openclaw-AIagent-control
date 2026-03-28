@@ -71,7 +71,9 @@ class HybridOrchestrator:
         source_branches: list[str] = []
 
         for dependency_id in work_item.depends_on:
-            result = completed[dependency_id]
+            result = completed.get(dependency_id)
+            if result is None:
+                continue
             branch = str(result.artifacts.get("branch_name", "")).strip()
             exports_branch = bool(result.artifacts.get("exports_branch", False))
             if branch and exports_branch:

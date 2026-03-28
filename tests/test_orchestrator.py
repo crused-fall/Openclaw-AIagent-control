@@ -153,6 +153,37 @@ class OrchestratorDependencyTests(unittest.TestCase):
         self.assertEqual(values["primary_branch_name"], "openclaw-run-1-implement")
         self.assertEqual(values["source_branch"], "openclaw-run-1-implement")
 
+    def test_collect_dependency_values_ignores_missing_dependencies(self) -> None:
+        work_item = WorkItem(
+            id="publish_branch",
+            title="Publish implementation branch to origin",
+            profile="git_push_branch",
+            agent=AgentType.SYSTEM,
+            mode=ExecutionMode.CLI,
+            prompt_template="",
+            depends_on=["implement", "review"],
+        )
+        completed = {
+            "implement": AgentResult(
+                work_item_id="implement",
+                profile="codex_local",
+                agent=AgentType.CODEX,
+                mode=ExecutionMode.CLI,
+                status=TaskStatus.SUCCEEDED,
+                summary="noop",
+                artifacts={
+                    "branch_name": "openclaw-run-1-implement",
+                    "exports_branch": True,
+                    "source_branch": "openclaw-run-1-implement",
+                },
+            )
+        }
+
+        values = HybridOrchestrator._collect_dependency_values(work_item, completed)
+
+        self.assertEqual(values["primary_branch_name"], "openclaw-run-1-implement")
+        self.assertEqual(values["source_branch"], "openclaw-run-1-implement")
+
     def test_noop_summary_includes_dependency_id(self) -> None:
         work_item = WorkItem(
             id="publish_branch",
