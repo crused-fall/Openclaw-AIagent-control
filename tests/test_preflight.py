@@ -317,6 +317,47 @@ class PreflightOpenClawTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(check.details["repo"], "owner/repo")
         self.assertEqual(check.details["source"], "git_origin")
 
+    async def test_remote_base_sync_fails_live_when_branch_is_ahead_of_upstream(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        config.runtime.dry_run = False
+        runner = PreflightRunner(config)
+
+        with mock.patch(
+            "openclaw_v2.preflight.asyncio.create_subprocess_exec",
+            new=mock.AsyncMock(
+                side_effect=[
+                    _FakeProcess(0, "main\n"),
+                    _FakeProcess(0, "origin/main\n"),
+                    _FakeProcess(0, "0\t16\n"),
+                ]
+            ),
+        ):
+            check = await runner._check_remote_base_sync("/tmp/repo")
+
+        self.assertEqual(check.status, CheckStatus.FAILED)
+        self.assertIn("ahead of `origin/main` by 16 commit(s)", check.message)
+        self.assertEqual(check.details["ahead"], 16)
+        self.assertEqual(check.details["behind"], 0)
+
+    async def test_remote_base_sync_passes_when_branch_matches_upstream(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        runner = PreflightRunner(config)
+
+        with mock.patch(
+            "openclaw_v2.preflight.asyncio.create_subprocess_exec",
+            new=mock.AsyncMock(
+                side_effect=[
+                    _FakeProcess(0, "main\n"),
+                    _FakeProcess(0, "origin/main\n"),
+                    _FakeProcess(0, "0\t0\n"),
+                ]
+            ),
+        ):
+            check = await runner._check_remote_base_sync("/tmp/repo")
+
+        self.assertEqual(check.status, CheckStatus.PASSED)
+        self.assertIn("is in sync with `origin/main`", check.message)
+
 
 if __name__ == "__main__":
     unittest.main()

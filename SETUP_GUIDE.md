@@ -186,6 +186,7 @@ python3 main_v2.py --live --request "修复登录页报错" --steps triage,imple
 这条 `openclaw_builder` 路径当前更适合本地 `triage/implement/review` 校验；如果实现结果没有导出可推送分支，`publish_branch` 现在会明确 `blocked`，不会再误继续到 GitHub 尾链。
 当前主线已经补了显式的 `commit_changes` 步骤：只有当实现工作区里的改动被提交为干净 commit 后，`publish_branch` 才会继续；如果提交后工作区仍不干净，链路会继续明确 `blocked`。
 如果 live 计划里包含隔离 CLI worktree，而仓库仍有未提交改动，preflight 现在会直接失败；这些 worktree 只基于已提交 `HEAD`，不会自动带上本地改动。
+如果当前本地基线分支已经领先上游（例如 `main` 比 `origin/main` 更靠前），而计划又要继续 `publish_branch` 或 GitHub 尾链，preflight 现在会在 live 前直接失败；否则实现分支会把这些尚未发布的本地提交一起带进 PR。
 如果 `implement` 最终判断“请求已满足、无需改动”，结果会被显式标成 no-op，后续 `publish_branch` 会因为没有可发布文件变化而跳过。
 如果这时前面已经成功 `sync_issue`，`update_issue` 现在仍会继续，把“无需代码改动”的结果回写到现有 issue；但 `draft_pr / dispatch_review / collect_review` 仍会保持跳过。
 如果你希望网络类 GitHub 失败自动重试，可以把 `runtime.github_retry_attempts` 调到大于 `1`，并用 `runtime.github_retry_backoff_seconds` 控制间隔；默认是关闭的。

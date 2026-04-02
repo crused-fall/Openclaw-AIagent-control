@@ -26,6 +26,10 @@ class PreflightRunner:
         checks.extend(await self._check_openclaw_profiles(repo_path, plan))
         if any(bool(item.metadata.get("requires_origin_remote")) for item in plan):
             checks.append(await self._check_origin_remote(repo_path))
+        if any(bool(item.metadata.get("requires_origin_remote")) for item in plan) or any(
+            item.mode == ExecutionMode.GITHUB for item in plan
+        ):
+            checks.append(await self._check_remote_base_sync(repo_path))
         if any(item.mode == ExecutionMode.GITHUB for item in plan):
             checks.append(await self._check_github_repo_resolution(repo_path))
             checks.append(await self._check_gh_auth())
@@ -389,6 +393,114 @@ class PreflightRunner:
             status=status,
             message="Git remote `origin` is not configured.",
             details={"stderr": stderr.decode("utf-8", errors="replace").strip()},
+        )
+
+    async def _check_remote_base_sync(self, repo_path: str) -> PreflightCheck:
+        branch_process = await asyncio.create_subprocess_exec(
+            "git",
+            "-C",
+            repo_path,
+            "rev-parse",
+            "--abbrev-ref",
+            "HEAD",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        branch_stdout, branch_stderr = await branch_process.communicate()
+        current_branch = branch_stdout.decode("utf-8", errors="replace").strip()
+        if branch_process.returncode != 0 or not current_branch:
+            status = CheckStatus.WARNING if self.config.runtime.dry_run else CheckStatus.FAILED
+            return PreflightCheck(
+                name="git_remote_base_sync",
+                status=status,
+                message="Could not determine the current branch for remote-base sync checks.",
+                details={"stderr": branch_stderr.decode("utf-8", errors="replace").strip()},
+            )
+
+        upstream_process = await asyncio.create_subprocess_exec(
+            "git",
+            "-C",
+            repo_path,
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        upstream_stdout, upstream_stderr = await upstream_process.communicate()
+        upstream_branch = upstream_stdout.decode("utf-8", errors="replace").strip()
+        if upstream_process.returncode != 0 or not upstream_branch:
+            return PreflightCheck(
+                name="git_remote_base_sync",
+                status=CheckStatus.WARNING,
+                message=(
+                    f"Current branch `{current_branch}` has no upstream; remote-base sync could not be verified."
+                ),
+                details={"current_branch": current_branch, "stderr": upstream_stderr.decode("utf-8", errors="replace").strip()},
+            )
+
+        divergence_process = await asyncio.create_subprocess_exec(
+            "git",
+            "-C",
+            repo_path,
+            "rev-list",
+            "--left-right",
+            "--count",
+            f"{upstream_branch}...HEAD",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        divergence_stdout, divergence_stderr = await divergence_process.communicate()
+        if divergence_process.returncode != 0:
+            status = CheckStatus.WARNING if self.config.runtime.dry_run else CheckStatus.FAILED
+            return PreflightCheck(
+                name="git_remote_base_sync",
+                status=status,
+                message="Could not compare the current branch against its upstream.",
+                details={
+                    "current_branch": current_branch,
+                    "upstream_branch": upstream_branch,
+                    "stderr": divergence_stderr.decode("utf-8", errors="replace").strip(),
+                },
+            )
+
+        counts = divergence_stdout.decode("utf-8", errors="replace").strip().split()
+        behind = int(counts[0]) if len(counts) >= 1 else 0
+        ahead = int(counts[1]) if len(counts) >= 2 else 0
+        details = {
+            "current_branch": current_branch,
+            "upstream_branch": upstream_branch,
+            "ahead": ahead,
+            "behind": behind,
+        }
+        if ahead > 0:
+            status = CheckStatus.WARNING if self.config.runtime.dry_run else CheckStatus.FAILED
+            return PreflightCheck(
+                name="git_remote_base_sync",
+                status=status,
+                message=(
+                    f"Current branch `{current_branch}` is ahead of `{upstream_branch}` by {ahead} commit(s). "
+                    "Exported implementation branches will include those unpublished commits when opened against the remote base; "
+                    "push or sync the base branch first."
+                ),
+                details=details,
+            )
+        if behind > 0:
+            return PreflightCheck(
+                name="git_remote_base_sync",
+                status=CheckStatus.WARNING,
+                message=(
+                    f"Current branch `{current_branch}` is behind `{upstream_branch}` by {behind} commit(s); "
+                    "exported branches may be based on a stale local base."
+                ),
+                details=details,
+            )
+        return PreflightCheck(
+            name="git_remote_base_sync",
+            status=CheckStatus.PASSED,
+            message=f"Current branch `{current_branch}` is in sync with `{upstream_branch}`.",
+            details=details,
         )
 
     async def _check_github_repo_resolution(self, repo_path: str) -> PreflightCheck:
