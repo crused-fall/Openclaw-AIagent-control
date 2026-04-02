@@ -108,6 +108,7 @@ tests/
 - 只跑 `dispatch_review -> collect_review`
 - 用来单独验证 GitHub review workflow 的触发和状态回流
 - 适合在本地 `claude/codex` 环境不稳定时排除干扰
+- 它不会经过 `commit_changes` 和 `publish_branch` 步骤
 
 ## 快速开始
 
