@@ -53,7 +53,7 @@ class CLIExecutor(Executor):
         return env
 
     @staticmethod
-    async def _workspace_change_artifacts(workspace_path: str) -> dict[str, object]:
+    async def _workspace_changed_files(workspace_path: str) -> list[str] | None:
         process = await asyncio.create_subprocess_exec(
             "git",
             "-C",
@@ -65,10 +65,16 @@ class CLIExecutor(Executor):
         )
         stdout, _ = await process.communicate()
         if process.returncode != 0:
-            return {}
+            return None
 
         raw_output = stdout.decode("utf-8", errors="replace")
-        changed_paths = [line[3:] for line in raw_output.splitlines() if len(line) > 3]
+        return [line[3:] for line in raw_output.splitlines() if len(line) > 3]
+
+    @classmethod
+    async def _workspace_change_artifacts(cls, workspace_path: str) -> dict[str, object]:
+        changed_paths = await cls._workspace_changed_files(workspace_path)
+        if changed_paths is None:
+            return {}
         if not changed_paths:
             return {
                 "workspace_has_changes": False,
@@ -79,6 +85,22 @@ class CLIExecutor(Executor):
             "workspace_has_changes": True,
             "workspace_changed_files": changed_paths,
         }
+
+    @staticmethod
+    async def _head_commit(workspace_path: str) -> str:
+        process = await asyncio.create_subprocess_exec(
+            "git",
+            "-C",
+            workspace_path,
+            "rev-parse",
+            "HEAD",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await process.communicate()
+        if process.returncode != 0:
+            return ""
+        return stdout.decode("utf-8", errors="replace").strip()
 
     @staticmethod
     def _timeout_recovery_hint(work_item: WorkItem) -> str:
@@ -171,6 +193,7 @@ class CLIExecutor(Executor):
 
         command = self._render_command(profile.command, rendered_prompt, context, work_item)
         workspace_path = work_item.workspace_path or context.repo_path
+        commit_workspace_changes = bool(work_item.metadata.get("commits_workspace_changes", False))
         if context.dry_run:
             return AgentResult(
                 work_item_id=work_item.id,
@@ -191,6 +214,39 @@ class CLIExecutor(Executor):
                     "workspace_prepare_command": work_item.metadata.get("workspace_prepare_command", []),
                 },
             )
+
+        pre_commit_changed_files: list[str] | None = None
+        pre_commit_head = ""
+        if commit_workspace_changes:
+            pre_commit_changed_files = await self._workspace_changed_files(workspace_path)
+            pre_commit_head = await self._head_commit(workspace_path)
+            artifacts = self._artifacts(
+                work_item,
+                workspace_path,
+                exports_branch=bool(work_item.metadata.get("export_branch", False)),
+            )
+            if pre_commit_changed_files is not None:
+                artifacts["workspace_has_changes"] = bool(pre_commit_changed_files)
+                artifacts["workspace_changed_files"] = pre_commit_changed_files
+            if pre_commit_head:
+                artifacts["head_commit_before"] = pre_commit_head
+            if pre_commit_changed_files == []:
+                artifacts["changes_committed"] = False
+                artifacts["noop_result"] = True
+                return AgentResult(
+                    work_item_id=work_item.id,
+                    profile=work_item.profile,
+                    agent=work_item.agent,
+                    mode=work_item.mode,
+                    status=TaskStatus.SUCCEEDED,
+                    summary=f"CLI task {work_item.title} finished successfully with no file changes required.",
+                    output=rendered_prompt,
+                    stdout="",
+                    stderr="",
+                    exit_code=0,
+                    command=command,
+                    artifacts=artifacts,
+                )
 
         process = await asyncio.create_subprocess_exec(
             *command,
@@ -253,6 +309,36 @@ class CLIExecutor(Executor):
             )
             if status == TaskStatus.SUCCEEDED and bool(work_item.metadata.get("expects_file_changes", False)):
                 artifacts.update(await self._workspace_change_artifacts(workspace_path))
+            if status == TaskStatus.SUCCEEDED and commit_workspace_changes:
+                if pre_commit_changed_files is not None:
+                    artifacts["workspace_has_changes"] = bool(pre_commit_changed_files)
+                    artifacts["workspace_changed_files"] = pre_commit_changed_files
+                if pre_commit_head:
+                    artifacts["head_commit_before"] = pre_commit_head
+                post_commit_changed_files = await self._workspace_changed_files(workspace_path)
+                post_commit_head = await self._head_commit(workspace_path)
+                if post_commit_head:
+                    artifacts["head_commit"] = post_commit_head
+                if post_commit_changed_files:
+                    artifacts["workspace_has_uncommitted_changes"] = True
+                    artifacts["workspace_uncommitted_files"] = post_commit_changed_files
+                changes_committed = (
+                    pre_commit_changed_files is not None
+                    and bool(pre_commit_changed_files)
+                    and bool(post_commit_head)
+                    and post_commit_head != pre_commit_head
+                    and post_commit_changed_files == []
+                )
+                artifacts["changes_committed"] = changes_committed
+                if not changes_committed:
+                    blocked_reason = (
+                        "workspace changes were not committed cleanly; review the workspace and rerun the printed command."
+                    )
+                    artifacts["blocked_reason"] = blocked_reason
+                    status = TaskStatus.BLOCKED
+                    exports_branch = False
+                    artifacts["exports_branch"] = False
+                    artifacts["source_branch"] = ""
             summary = (
                 f"CLI task {work_item.title} blocked: {blocked_reason}"
                 if status == TaskStatus.BLOCKED

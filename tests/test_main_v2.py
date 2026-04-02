@@ -180,6 +180,39 @@ class MainV2PrintTests(unittest.TestCase):
         self.assertIn("noop_result: true", output)
         self.assertIn("workspace_has_changes: False", output)
 
+    def test_print_result_includes_commit_change_fields(self) -> None:
+        run_result = RunResult(
+            run_id="run-commit",
+            plan=[],
+            results=[
+                AgentResult(
+                    work_item_id="commit_changes",
+                    profile="git_commit_changes",
+                    agent=AgentType.SYSTEM,
+                    mode=ExecutionMode.CLI,
+                    status=TaskStatus.SUCCEEDED,
+                    summary="CLI task Commit implementation changes locally finished successfully.",
+                    artifacts={
+                        "changes_committed": True,
+                        "head_commit": "abc123",
+                        "workspace_has_uncommitted_changes": True,
+                        "workspace_uncommitted_files": ["README.md"],
+                    },
+                )
+            ],
+            success=True,
+            artifacts_dir="/tmp/run-commit",
+        )
+
+        with io.StringIO() as buffer, redirect_stdout(buffer):
+            _print_result(run_result)
+            output = buffer.getvalue()
+
+        self.assertIn("changes_committed: true", output)
+        self.assertIn("head_commit: abc123", output)
+        self.assertIn("workspace_has_uncommitted_changes: true", output)
+        self.assertIn("workspace_uncommitted_files: ['README.md']", output)
+
     def test_print_result_includes_planning_block_reason(self) -> None:
         run_result = RunResult(
             run_id="run-3",

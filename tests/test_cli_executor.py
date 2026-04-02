@@ -117,6 +117,91 @@ class CLIExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.artifacts["workspace_changed_files"], [])
         self.assertIn("no file changes required", result.summary)
 
+    async def test_commit_changes_records_commit_metadata(self) -> None:
+        process = _FakeProcess(stdout="Committed.")
+        pre_status_process = _FakeProcess(stdout=" M README.md\n")
+        pre_head_process = _FakeProcess(stdout="abc123\n")
+        post_status_process = _FakeProcess(stdout="")
+        post_head_process = _FakeProcess(stdout="def456\n")
+        work_item = WorkItem(
+            id="commit_changes",
+            title="Commit implementation changes locally",
+            profile="git_commit_changes",
+            agent=AgentType.SYSTEM,
+            mode=ExecutionMode.CLI,
+            prompt_template="hello",
+            branch_name="openclaw-run-1-implement",
+            metadata={"commits_workspace_changes": True, "export_branch": True},
+        )
+        profile = self.config.profiles["git_commit_changes"]
+
+        create_process = mock.AsyncMock(
+            side_effect=[
+                pre_status_process,
+                pre_head_process,
+                process,
+                post_status_process,
+                post_head_process,
+            ]
+        )
+        with mock.patch(
+            "openclaw_v2.executors.cli.asyncio.create_subprocess_exec",
+            new=create_process,
+        ):
+            result = await self.executor.execute(work_item, profile, self.context, "hello")
+
+        self.assertEqual(result.status, TaskStatus.SUCCEEDED)
+        self.assertTrue(result.artifacts["changes_committed"])
+        self.assertEqual(result.artifacts["head_commit_before"], "abc123")
+        self.assertEqual(result.artifacts["head_commit"], "def456")
+        self.assertEqual(result.artifacts["workspace_changed_files"], ["README.md"])
+        self.assertTrue(result.artifacts["exports_branch"])
+        self.assertEqual(result.artifacts["source_branch"], "openclaw-run-1-implement")
+
+    async def test_commit_changes_blocks_when_workspace_remains_dirty(self) -> None:
+        process = _FakeProcess(stdout="Committed.")
+        pre_status_process = _FakeProcess(stdout=" M README.md\n")
+        pre_head_process = _FakeProcess(stdout="abc123\n")
+        post_status_process = _FakeProcess(stdout=" M README.md\n")
+        post_head_process = _FakeProcess(stdout="def456\n")
+        work_item = WorkItem(
+            id="commit_changes",
+            title="Commit implementation changes locally",
+            profile="git_commit_changes",
+            agent=AgentType.SYSTEM,
+            mode=ExecutionMode.CLI,
+            prompt_template="hello",
+            branch_name="openclaw-run-1-implement",
+            metadata={"commits_workspace_changes": True, "export_branch": True},
+        )
+        profile = self.config.profiles["git_commit_changes"]
+
+        create_process = mock.AsyncMock(
+            side_effect=[
+                pre_status_process,
+                pre_head_process,
+                process,
+                post_status_process,
+                post_head_process,
+            ]
+        )
+        with mock.patch(
+            "openclaw_v2.executors.cli.asyncio.create_subprocess_exec",
+            new=create_process,
+        ):
+            result = await self.executor.execute(work_item, profile, self.context, "hello")
+
+        self.assertEqual(result.status, TaskStatus.BLOCKED)
+        self.assertFalse(result.artifacts["changes_committed"])
+        self.assertTrue(result.artifacts["workspace_has_uncommitted_changes"])
+        self.assertEqual(result.artifacts["workspace_uncommitted_files"], ["README.md"])
+        self.assertEqual(
+            result.artifacts["blocked_reason"],
+            "workspace changes were not committed cleanly; review the workspace and rerun the printed command.",
+        )
+        self.assertFalse(result.artifacts["exports_branch"])
+        self.assertEqual(result.artifacts["source_branch"], "")
+
     async def test_cli_profile_unset_env_is_removed_from_spawned_process(self) -> None:
         process = _FakeProcess(stdout="ok")
         work_item = WorkItem(
