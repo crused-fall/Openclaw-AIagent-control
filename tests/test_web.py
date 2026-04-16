@@ -86,6 +86,9 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["snapshot"]["currentPlan"][0]["id"], "implement")
         self.assertEqual(payload["repoPath"], self.repo_path)
         self.assertIn("defaultOpenClawAgentId", payload)
+        self.assertIn("integrations", payload)
+        self.assertIn("github", payload["integrations"])
+        self.assertIn("hermes", payload["integrations"])
 
     async def test_index_serves_readiness_and_output_controls(self) -> None:
         response = await self.client.get("/")
@@ -100,6 +103,12 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="copy-pr-note"', page)
         self.assertIn('id="launch-brief"', page)
         self.assertIn('id="pipeline-radar"', page)
+        self.assertIn('id="pipeline-dag"', page)
+        self.assertIn('id="github-bridge"', page)
+        self.assertIn('id="hermes-panel"', page)
+        self.assertIn('id="compare-left-run"', page)
+        self.assertIn('id="compare-right-run"', page)
+        self.assertIn('id="run-compare"', page)
         self.assertIn('id="request-presets"', page)
 
     async def test_health_endpoint_returns_snapshot(self) -> None:
@@ -135,11 +144,84 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         payload = await response.json()
         self.assertEqual(payload["runId"], "run-1")
         self.assertEqual(payload["files"][0]["path"], "context.json")
+        self.assertIn("insights", payload)
+        self.assertIn("github", payload["insights"])
 
         file_response = await self.client.get("/api/history/run-1/file?path=prompts/implement.txt")
         self.assertEqual(file_response.status, 200)
         file_payload = await file_response.json()
         self.assertIn("hello prompt", file_payload["content"])
+
+    async def test_history_compare_endpoint_returns_step_and_bridge_deltas(self) -> None:
+        runs_root = os.path.join(self.repo_path, ".openclaw", "runs")
+        os.makedirs(runs_root, exist_ok=True)
+
+        run_a = os.path.join(runs_root, "run-a")
+        os.makedirs(run_a, exist_ok=True)
+        with open(os.path.join(run_a, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "run_id": "run-a",
+                    "plan": [{"id": "publish_branch", "title": "Publish branch"}],
+                    "results": [
+                        {
+                            "work_item_id": "publish_branch",
+                            "status": "succeeded",
+                            "mode": "cli",
+                            "artifacts": {"source_branch": "branch-a"},
+                        },
+                        {
+                            "work_item_id": "draft_pr",
+                            "status": "succeeded",
+                            "mode": "github",
+                            "artifacts": {
+                                "pr_number": "11",
+                                "pr_url": "https://github.com/owner/repo/pull/11",
+                            },
+                        },
+                    ],
+                    "success": True,
+                },
+                handle,
+            )
+        with open(os.path.join(run_a, "context.json"), "w", encoding="utf-8") as handle:
+            json.dump({"repo_path": self.repo_path, "user_request": "alpha"}, handle)
+
+        run_b = os.path.join(runs_root, "run-b")
+        os.makedirs(run_b, exist_ok=True)
+        with open(os.path.join(run_b, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "run_id": "run-b",
+                    "plan": [{"id": "publish_branch", "title": "Publish branch"}],
+                    "results": [
+                        {
+                            "work_item_id": "publish_branch",
+                            "status": "blocked",
+                            "mode": "cli",
+                            "artifacts": {"source_branch": "branch-b"},
+                        },
+                        {
+                            "work_item_id": "record_summary",
+                            "status": "succeeded",
+                            "mode": "hermes",
+                            "artifacts": {"hermes_session_id": "session-42"},
+                        },
+                    ],
+                    "success": False,
+                },
+                handle,
+            )
+        with open(os.path.join(run_b, "context.json"), "w", encoding="utf-8") as handle:
+            json.dump({"repo_path": self.repo_path, "user_request": "beta"}, handle)
+
+        response = await self.client.post("/api/history/compare", json={"runIds": ["run-a", "run-b"]})
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(len(payload["runs"]), 2)
+        self.assertTrue(payload["comparison"]["branchChanged"])
+        self.assertEqual(payload["comparison"]["hermesSessionDelta"], 1)
+        self.assertTrue(any(item["stepId"] == "publish_branch" for item in payload["comparison"]["stepDiffs"]))
 
     async def test_cleanup_endpoint_removes_run_directory(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-cleanup")

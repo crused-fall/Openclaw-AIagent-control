@@ -96,6 +96,28 @@
           </div>
         </section>
 
+        <section class="insight-grid">
+          <section class="panel flight-plan">
+            <div class="panel-head">
+              <h2>Pipeline DAG</h2>
+              <span class="subtle">Stage-map the dependency graph before you commit to a route.</span>
+            </div>
+            <div id="pipeline-dag" class="pipeline-dag">
+              <div class="empty-state">Load a pipeline to render its staged dependency graph.</div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>GitHub Bridge</h2>
+              <span class="subtle">Track the branch, issue, PR, and review workflow for the active run.</span>
+            </div>
+            <div id="github-bridge" class="stack">
+              <div class="empty-state">Run a GitHub-enabled pipeline or load a recent run to surface collaboration links.</div>
+            </div>
+          </section>
+        </section>
+
         <section class="panel workbench">
           <div class="panel-head">
             <h2>Launch Pad</h2>
@@ -176,6 +198,38 @@
           <div id="readiness-checks" class="check-grid">
             <div class="empty-state">Readiness checks will appear here.</div>
           </div>
+        </section>
+
+        <section class="insight-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Hermes Control</h2>
+              <span class="subtle">Monitor supervisor and recorder coverage without pulling Hermes into implement.</span>
+            </div>
+            <div id="hermes-panel" class="stack">
+              <div class="empty-state">Hermes roles and runtime checks will appear here.</div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Run Compare</h2>
+              <span class="subtle">Contrast two recent runs to see route, GitHub, and Hermes deltas.</span>
+            </div>
+            <div class="compare-controls">
+              <label class="field">
+                <span>Left run</span>
+                <select id="compare-left-run"></select>
+              </label>
+              <label class="field">
+                <span>Right run</span>
+                <select id="compare-right-run"></select>
+              </label>
+            </div>
+            <div id="run-compare" class="stack">
+              <div class="empty-state">Pick two recent runs to compare their execution signatures.</div>
+            </div>
+          </section>
         </section>
 
         <section class="results-grid">

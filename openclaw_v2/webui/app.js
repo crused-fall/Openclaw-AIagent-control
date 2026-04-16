@@ -8,6 +8,7 @@ const state = {
   currentOutput: null,
   currentTaskStatus: "idle",
   resultFilter: "all",
+  comparePayload: null,
 };
 
 const elements = {
@@ -23,6 +24,9 @@ const elements = {
   launchBrief: document.getElementById("launch-brief"),
   heroStatus: document.getElementById("hero-status"),
   pipelineRadar: document.getElementById("pipeline-radar"),
+  pipelineDag: document.getElementById("pipeline-dag"),
+  githubBridge: document.getElementById("github-bridge"),
+  hermesPanel: document.getElementById("hermes-panel"),
   recentRuns: document.getElementById("recent-runs"),
   pruneKeepLatest: document.getElementById("prune-keep-latest"),
   pruneRuns: document.getElementById("prune-runs"),
@@ -44,6 +48,9 @@ const elements = {
   cleanupCurrentRun: document.getElementById("cleanup-current-run"),
   artifactList: document.getElementById("artifact-list"),
   artifactViewer: document.getElementById("artifact-viewer"),
+  compareLeftRun: document.getElementById("compare-left-run"),
+  compareRightRun: document.getElementById("compare-right-run"),
+  runCompare: document.getElementById("run-compare"),
   readinessStateSlot: document.getElementById("readiness-state-slot"),
   readinessSummary: document.getElementById("readiness-summary"),
   readinessChecks: document.getElementById("readiness-checks"),
@@ -116,6 +123,47 @@ function formatRelativeTime(value) {
     return formatter.format(Math.round(diffMs / hour), "hour");
   }
   return formatter.format(Math.round(diffMs / day), "day");
+}
+
+function safeExternalUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  return /^https?:\/\//i.test(text) ? text : "";
+}
+
+function currentHistoryPayload() {
+  if (state.currentHistory) {
+    return state.currentHistory;
+  }
+  if (state.currentOutput?.history) {
+    return state.currentOutput.history;
+  }
+  if (state.currentOutput?.summary && state.currentOutput?.files) {
+    return state.currentOutput;
+  }
+  return null;
+}
+
+function activeRunInsights() {
+  const history = currentHistoryPayload();
+  if (history?.insights) {
+    return history.insights;
+  }
+  const latestRun = state.bootstrap?.recentRuns?.[0];
+  return latestRun?.insights || null;
+}
+
+function activeRunId() {
+  const history = currentHistoryPayload();
+  if (history?.runId) {
+    return history.runId;
+  }
+  if (state.currentOutput?.runResult?.run_id) {
+    return state.currentOutput.runResult.run_id;
+  }
+  return state.bootstrap?.recentRuns?.[0]?.runId || "";
 }
 
 function routeSequence(stepIds) {
@@ -668,6 +716,412 @@ function renderPipelineRadar() {
   `;
 }
 
+function renderPipelineDag() {
+  const steps = currentPipelineSteps();
+  if (!steps.length) {
+    elements.pipelineDag.innerHTML = `<div class="empty-state">No steps are defined for the selected pipeline.</div>`;
+    return;
+  }
+
+  const effectiveSet = new Set(effectiveStepIds());
+  const explicitSet = new Set(selectedSteps());
+  const planMap = currentPlanMap();
+  const stepMap = new Map(steps.map((step) => [step.id, step]));
+  const depthCache = new Map();
+
+  function depthFor(stepId, trail = new Set()) {
+    if (depthCache.has(stepId)) {
+      return depthCache.get(stepId);
+    }
+    if (trail.has(stepId)) {
+      return 0;
+    }
+    const step = stepMap.get(stepId);
+    if (!step || !(step.dependsOn || []).length) {
+      depthCache.set(stepId, 0);
+      return 0;
+    }
+    const nextTrail = new Set(trail);
+    nextTrail.add(stepId);
+    const depth = Math.max(...(step.dependsOn || []).map((dependency) => depthFor(dependency, nextTrail))) + 1;
+    depthCache.set(stepId, depth);
+    return depth;
+  }
+
+  const columns = [];
+  for (const step of steps) {
+    const depth = depthFor(step.id);
+    if (!columns[depth]) {
+      columns[depth] = [];
+    }
+    columns[depth].push(step);
+  }
+
+  elements.pipelineDag.innerHTML = `
+    <div class="dag-lanes">
+      ${columns
+        .filter(Boolean)
+        .map(
+          (column, index) => `
+            <section class="dag-stage">
+              <div class="stage-label">
+                <strong>${escapeHtml(`Stage ${index + 1}`)}</strong>
+                <small>${escapeHtml(`${column.length} nodes`)}</small>
+              </div>
+              ${column
+                .map((step) => {
+                  const planItem = planMap.get(step.id) || {};
+                  const isEffective = effectiveSet.has(step.id);
+                  const isSelected = explicitSet.has(step.id);
+                  const mode = String(planItem.mode || "").toLowerCase();
+                  const badges = [];
+                  if (isSelected) {
+                    badges.push('<span class="route-badge tone-accent">selected</span>');
+                  } else if (isEffective) {
+                    badges.push('<span class="route-badge tone-teal">active</span>');
+                  } else {
+                    badges.push('<span class="route-badge tone-muted">parked</span>');
+                  }
+                  if (planItem.fallbackUsed) {
+                    badges.push('<span class="route-badge tone-gold">fallback</span>');
+                  }
+                  if (mode) {
+                    badges.push(`<span class="route-badge tone-ink">${escapeHtml(mode)}</span>`);
+                  }
+                  return `
+                    <article class="dag-node ${isEffective ? "effective" : "parked"}">
+                      <div class="result-card-header">
+                        <strong>${escapeHtml(step.id)}</strong>
+                        ${makeStatusChip(isEffective ? "passed" : "neutral")}
+                      </div>
+                      <p>${escapeHtml(step.title)}</p>
+                      <div class="dag-stack">${badges.join("")}</div>
+                      <small>${escapeHtml(`Depends on: ${(step.dependsOn || []).join(", ") || "none"}`)}</small>
+                      <small>${escapeHtml(`Route: ${planItem.managedAgent || step.assignment || step.profile || "n/a"}`)}</small>
+                    </article>
+                  `;
+                })
+                .join("")}
+            </section>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderGitHubBridge() {
+  const overview = state.bootstrap?.integrations?.github || {};
+  const github = activeRunInsights()?.github || {};
+  const cards = github.cards || [];
+  const repo = github.repo || overview.repo || "";
+  const branch = github.branch || "";
+  const repoUrl = repo ? `https://github.com/${repo}` : "";
+  const runId = activeRunId();
+  const checks = github.checks || [];
+
+  if (!repo && !cards.length && !checks.length) {
+    elements.githubBridge.innerHTML = `<div class="empty-state">Run a GitHub-enabled pipeline or load a run with branch / issue / PR artifacts.</div>`;
+    return;
+  }
+
+  elements.githubBridge.innerHTML = `
+    <div class="bridge-grid">
+      <article class="bridge-card">
+        <div class="result-card-header">
+          <strong>Repository</strong>
+          ${makeStatusChip(repo ? "passed" : "warning")}
+        </div>
+        <p>${escapeHtml(repo || "Repository not resolved yet")}</p>
+        <small>${escapeHtml(`Base branch: ${overview.baseBranch || "main"}`)}</small>
+        ${repoUrl ? `<a class="bridge-link" href="${escapeHtml(repoUrl)}" target="_blank" rel="noreferrer">Open repo</a>` : ""}
+      </article>
+      <article class="bridge-card">
+        <div class="result-card-header">
+          <strong>Active run</strong>
+          ${makeStatusChip(runId ? "passed" : "neutral")}
+        </div>
+        <p>${escapeHtml(runId || "No run loaded")}</p>
+        <small>${escapeHtml(branch ? `Branch: ${branch}` : "Branch will surface after publish_branch.")}</small>
+      </article>
+      <article class="bridge-card">
+        <div class="result-card-header">
+          <strong>Repo source</strong>
+          ${makeStatusChip(repo ? "passed" : "warning")}
+        </div>
+        <p>${escapeHtml(overview.repoSource || "unknown")}</p>
+        <small>${escapeHtml(overview.useOriginRemoteFallback ? "Origin fallback enabled" : "Config-pinned repo")}</small>
+      </article>
+      ${
+        cards.length
+          ? cards
+              .map((card) => {
+                const url = safeExternalUrl(card.url);
+                const number = card.number || card.branch || "";
+                const workflowTail = card.workflowConclusion || card.workflowStatus || "";
+                return `
+                  <article class="bridge-card">
+                    <div class="result-card-header">
+                      <strong>${escapeHtml(card.title || card.stepId || card.kind)}</strong>
+                      ${makeStatusChip(card.status || "neutral")}
+                    </div>
+                    <p>${escapeHtml(card.kind === "branch" ? card.branch || "branch pending" : number || "link pending")}</p>
+                    <small>${escapeHtml(workflowTail || card.stepId || "")}</small>
+                    ${url ? `<a class="bridge-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Open ${escapeHtml(card.kind)}</a>` : ""}
+                  </article>
+                `;
+              })
+              .join("")
+          : `<div class="inline-note">No GitHub bridge artifacts are attached to the active run yet.</div>`
+      }
+      ${
+        checks.length
+          ? `<article class="bridge-card">
+              <div class="result-card-header">
+                <strong>GitHub preflight</strong>
+                ${makeStatusChip(checks.some((item) => item.status === "failed") ? "warning" : "passed")}
+              </div>
+              <div class="chip-row">
+                ${checks
+                  .map(
+                    (check) =>
+                      `${makeStatusChip(check.status)} <span class="inline-note">${escapeHtml(check.name)}</span>`,
+                  )
+                  .join("")}
+              </div>
+            </article>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderHermesPanel() {
+  const overview = state.bootstrap?.integrations?.hermes || {};
+  const hermes = activeRunInsights()?.hermes || {};
+  const roles = hermes.roles || [];
+  const checks = hermes.checks || [];
+
+  if (!overview.enabled && !roles.length && !checks.length) {
+    elements.hermesPanel.innerHTML = `<div class="empty-state">Hermes is not configured in the current snapshot.</div>`;
+    return;
+  }
+
+  elements.hermesPanel.innerHTML = `
+    <div class="hermes-grid">
+      <article class="hermes-card">
+        <div class="result-card-header">
+          <strong>Runtime</strong>
+          ${makeStatusChip(overview.commandAvailable ? "passed" : "warning")}
+        </div>
+        <p>${escapeHtml(overview.commandAvailable ? "Hermes command available" : "Hermes command missing")}</p>
+        <small>${escapeHtml(overview.configPath || "")}</small>
+      </article>
+      <article class="hermes-card">
+        <div class="result-card-header">
+          <strong>Profiles</strong>
+          ${makeStatusChip((overview.profiles || []).length ? "passed" : "neutral")}
+        </div>
+        <p>${escapeHtml(String((overview.profiles || []).length || 0))}</p>
+        <small>${escapeHtml((overview.profiles || []).map((item) => item.name).join(" · ") || "No Hermes profile registered")}</small>
+      </article>
+      <article class="hermes-card">
+        <div class="result-card-header">
+          <strong>Roles</strong>
+          ${makeStatusChip((overview.roles || []).length ? "passed" : "neutral")}
+        </div>
+        <p>${escapeHtml(String((overview.roles || []).length || 0))}</p>
+        <small>${escapeHtml((overview.roles || []).map((item) => `${item.name}:${item.role}`).join(" · ") || "No Hermes managed agent role")}</small>
+      </article>
+      <article class="hermes-card">
+        <div class="result-card-header">
+          <strong>Live sessions</strong>
+          ${makeStatusChip(roles.length ? "passed" : "neutral")}
+        </div>
+        <p>${escapeHtml(String(hermes.sessionCount || 0))}</p>
+        <small>${escapeHtml(roles.length ? `from ${activeRunId()}` : "Load a Hermes-backed run to inspect session traces.")}</small>
+      </article>
+      ${
+        (overview.profiles || [])
+          .map(
+            (profile) => `
+              <article class="hermes-card">
+                <div class="result-card-header">
+                  <strong>${escapeHtml(profile.name)}</strong>
+                  ${makeStatusChip("passed")}
+                </div>
+                <p>${escapeHtml(profile.provider || "provider:auto")} · ${escapeHtml(profile.model || "model:auto")}</p>
+                <small>${escapeHtml(`source:${profile.source || "tool"} · maxTurns:${profile.maxTurns || 0}`)}</small>
+                <div class="chip-row">
+                  ${(profile.toolsets || [])
+                    .map((item) => `<span class="route-badge tone-teal">${escapeHtml(item)}</span>`)
+                    .join("")}
+                </div>
+              </article>
+            `,
+          )
+          .join("")
+      }
+      ${
+        roles.length
+          ? roles
+              .map(
+                (role) => `
+                  <article class="hermes-card">
+                    <div class="result-card-header">
+                      <strong>${escapeHtml(role.title || role.stepId)}</strong>
+                      ${makeStatusChip(role.status || "neutral")}
+                    </div>
+                    <p>${escapeHtml(`${role.role || "support"}${role.sessionId ? ` · ${role.sessionId}` : ""}`)}</p>
+                    <small>${escapeHtml(`${role.provider || "provider:auto"} · ${role.model || "model:auto"}`)}</small>
+                  </article>
+                `,
+              )
+              .join("")
+          : `<div class="inline-note">No Hermes step output is attached to the active run yet.</div>`
+      }
+      ${
+        (overview.pipelines || []).length
+          ? `<article class="hermes-card">
+              <div class="result-card-header">
+                <strong>Hermes pipelines</strong>
+                ${makeStatusChip("passed")}
+              </div>
+              <div class="chip-row">
+                ${(overview.pipelines || [])
+                  .map(
+                    (pipeline) =>
+                      `<span class="route-badge tone-ink">${escapeHtml(`${pipeline.name} · ${pipeline.stepCount}`)}</span>`,
+                  )
+                  .join("")}
+              </div>
+            </article>`
+          : ""
+      }
+      ${
+        checks.length
+          ? `<article class="hermes-card">
+              <div class="result-card-header">
+                <strong>Hermes checks</strong>
+                ${makeStatusChip(checks.some((item) => item.status === "failed") ? "warning" : "passed")}
+              </div>
+              <div class="chip-row">
+                ${checks
+                  .map(
+                    (check) =>
+                      `${makeStatusChip(check.status)} <span class="inline-note">${escapeHtml(check.name)}</span>`,
+                  )
+                  .join("")}
+              </div>
+            </article>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderCompareSelectors(bootstrap) {
+  const runs = bootstrap?.recentRuns || [];
+  const options = runs
+    .map(
+      (run) =>
+        `<option value="${escapeHtml(run.runId)}">${escapeHtml(`${run.runId} · ${formatRelativeTime(run.updatedAt)}`)}</option>`,
+    )
+    .join("");
+
+  elements.compareLeftRun.innerHTML = options;
+  elements.compareRightRun.innerHTML = options;
+  elements.compareLeftRun.disabled = runs.length < 2;
+  elements.compareRightRun.disabled = runs.length < 2;
+
+  if (runs.length >= 2) {
+    const currentLeft = runs.some((run) => run.runId === elements.compareLeftRun.value)
+      ? elements.compareLeftRun.value
+      : runs[0].runId;
+    const preferredRight = runs.some((run) => run.runId === elements.compareRightRun.value)
+      ? elements.compareRightRun.value
+      : runs[1].runId;
+    elements.compareLeftRun.value = currentLeft;
+    elements.compareRightRun.value = currentLeft === preferredRight ? runs[1].runId : preferredRight;
+    return;
+  }
+
+  if (runs.length === 1) {
+    elements.compareLeftRun.value = runs[0].runId;
+    elements.compareRightRun.value = runs[0].runId;
+  }
+}
+
+function renderRunCompare(payload) {
+  if (!payload || !(payload.runs || []).length) {
+    elements.runCompare.innerHTML = `<div class="empty-state">Pick two recent runs to compare their execution signatures.</div>`;
+    return;
+  }
+
+  const runs = payload.runs || [];
+  const comparison = payload.comparison || {};
+  elements.runCompare.innerHTML = `
+    <div class="compare-grid">
+      ${runs
+        .map(
+          (run) => `
+            <article class="compare-run-card">
+              <div class="result-card-header">
+                <strong>${escapeHtml(run.runId)}</strong>
+                ${makeStatusChip(run.success ? "succeeded" : "warning")}
+              </div>
+              <p>${escapeHtml(run.request || "No request captured.")}</p>
+              <small>${escapeHtml(`updated ${formatAbsoluteTime(run.updatedAt)}`)}</small>
+              <div class="chip-row">
+                ${Object.entries(run.insights?.statusCounts || {})
+                  .map(
+                    ([status, value]) =>
+                      `<span class="route-badge tone-ink">${escapeHtml(`${status}:${value}`)}</span>`,
+                  )
+                  .join("")}
+              </div>
+              <small>${escapeHtml(`branch: ${run.insights?.github?.branch || "n/a"}`)}</small>
+              <small>${escapeHtml(`Hermes sessions: ${run.insights?.hermes?.sessionCount || 0}`)}</small>
+            </article>
+          `,
+        )
+        .join("")}
+      <article class="diff-card">
+        <div class="result-card-header">
+          <strong>Count delta</strong>
+          ${makeStatusChip((comparison.stepDiffs || []).length ? "warning" : "passed")}
+        </div>
+        <div class="chip-row">
+          ${(comparison.countDiffs || [])
+            .map(
+              (item) =>
+                `<span class="route-badge ${item.delta > 0 ? "tone-teal" : item.delta < 0 ? "tone-accent" : "tone-muted"}">${escapeHtml(`${item.status}: ${item.left} → ${item.right}`)}</span>`,
+            )
+            .join("")}
+        </div>
+        <small>${escapeHtml(`Branch changed: ${comparison.branchChanged ? "yes" : "no"} · Workflow changed: ${comparison.workflowChanged ? "yes" : "no"} · Hermes session delta: ${comparison.hermesSessionDelta || 0}`)}</small>
+      </article>
+      ${
+        (comparison.stepDiffs || []).length
+          ? (comparison.stepDiffs || [])
+              .map(
+                (item) => `
+                  <article class="diff-card">
+                    <div class="result-card-header">
+                      <strong>${escapeHtml(item.stepId)}</strong>
+                      ${makeStatusChip(item.left === "missing" || item.right === "missing" ? "warning" : "blocked")}
+                    </div>
+                    <p>${escapeHtml(`${item.left} → ${item.right}`)}</p>
+                  </article>
+                `,
+              )
+              .join("")
+          : `<div class="inline-note">No step-status delta detected between the selected runs.</div>`
+      }
+    </div>
+  `;
+}
+
 async function copyText(text, successMessage) {
   if (!text) {
     return;
@@ -811,6 +1265,7 @@ function renderStepGrid() {
     input.addEventListener("change", () => {
       renderLaunchBrief();
       renderPipelineRadar();
+      renderPipelineDag();
       renderHeroStatus();
       renderReadinessGate();
     });
@@ -1051,8 +1506,12 @@ function renderBootstrap(bootstrap) {
   renderLaunchBrief();
   renderHeroStatus();
   renderPipelineRadar();
+  renderPipelineDag();
   renderReadinessGate();
   renderRecentRuns(bootstrap);
+  renderCompareSelectors(bootstrap);
+  renderGitHubBridge();
+  renderHermesPanel();
   if (!state.currentHistory) {
     clearArtifactBrowser();
   }
@@ -1336,6 +1795,8 @@ function renderOutput(payload) {
     clearArtifactBrowser();
   }
   renderReadinessGate();
+  renderGitHubBridge();
+  renderHermesPanel();
 }
 
 async function fetchJson(url, options = {}) {
@@ -1358,6 +1819,9 @@ async function loadBootstrap() {
   });
   const payload = await fetchJson(`/api/bootstrap?${query.toString()}`);
   renderBootstrap(payload);
+  await loadRunCompare().catch((error) => {
+    elements.runCompare.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+  });
   setCopyFeedback("Plan, preflight, run summary, and step results.");
 }
 
@@ -1395,6 +1859,38 @@ async function loadHealth() {
   });
   const payload = await fetchJson(`/api/system/health?${query.toString()}`);
   renderHealthSnapshot(payload);
+}
+
+async function loadRunCompare() {
+  if ((state.bootstrap?.recentRuns || []).length < 2) {
+    state.comparePayload = null;
+    renderRunCompare(null);
+    return;
+  }
+  const leftRun = elements.compareLeftRun.value || "";
+  const rightRun = elements.compareRightRun.value || "";
+  if (!leftRun || !rightRun) {
+    state.comparePayload = null;
+    renderRunCompare(null);
+    return;
+  }
+  if (leftRun === rightRun) {
+    state.comparePayload = null;
+    elements.runCompare.innerHTML = `<div class="empty-state">Choose two different runs to compare.</div>`;
+    return;
+  }
+
+  elements.runCompare.innerHTML = `<div class="empty-state">Comparing ${escapeHtml(leftRun)} and ${escapeHtml(rightRun)}...</div>`;
+  const query = new URLSearchParams({
+    repoPath: elements.repoPath.value || "",
+    configPath: elements.configPath.value || "",
+  });
+  const payload = await fetchJson(`/api/history/compare?${query.toString()}`, {
+    method: "POST",
+    body: JSON.stringify({ runIds: [leftRun, rightRun] }),
+  });
+  state.comparePayload = payload;
+  renderRunCompare(payload);
 }
 
 async function cleanupRun(runId) {
@@ -1556,6 +2052,18 @@ function bindEvents() {
     renderReadinessGate();
   });
 
+  elements.compareLeftRun.addEventListener("change", () => {
+    loadRunCompare().catch((error) => {
+      elements.runCompare.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+    });
+  });
+
+  elements.compareRightRun.addEventListener("change", () => {
+    loadRunCompare().catch((error) => {
+      elements.runCompare.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+    });
+  });
+
   elements.pruneRuns.addEventListener("click", () => {
     pruneRuns().catch((error) => {
       elements.housekeepingStatus.textContent = error.message;
@@ -1611,6 +2119,7 @@ function bindEvents() {
     });
     renderLaunchBrief();
     renderPipelineRadar();
+    renderPipelineDag();
     renderHeroStatus();
     renderReadinessGate();
   });
@@ -1621,6 +2130,7 @@ function bindEvents() {
     });
     renderLaunchBrief();
     renderPipelineRadar();
+    renderPipelineDag();
     renderHeroStatus();
     renderReadinessGate();
   });

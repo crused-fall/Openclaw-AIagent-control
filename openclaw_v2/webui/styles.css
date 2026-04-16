@@ -280,6 +280,12 @@ h3 {
   gap: 16px;
 }
 
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
 .pipeline-radar {
   display: grid;
   gap: 16px;
@@ -397,6 +403,92 @@ h3 {
   padding: 0 2px;
 }
 
+.pipeline-dag,
+.bridge-grid,
+.hermes-grid,
+.compare-grid,
+.diff-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.dag-lanes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.dag-stage {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(18, 32, 51, 0.04);
+  border: 1px solid rgba(18, 32, 51, 0.08);
+}
+
+.stage-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stage-label strong {
+  font-size: 0.95rem;
+}
+
+.dag-stack,
+.chip-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dag-node,
+.bridge-card,
+.hermes-card,
+.compare-run-card,
+.diff-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(18, 32, 51, 0.08);
+}
+
+.dag-node.parked {
+  opacity: 0.62;
+}
+
+.dag-node p,
+.bridge-card p,
+.hermes-card p,
+.compare-run-card p,
+.diff-card p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.inline-note {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+.bridge-link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  color: var(--teal);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.bridge-link:hover {
+  text-decoration: underline;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -496,6 +588,13 @@ h3 {
   transform: translateY(-1px);
   background: rgba(217, 101, 59, 0.1);
   border-color: rgba(217, 101, 59, 0.22);
+}
+
+.compare-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .field-full {
@@ -864,6 +963,7 @@ pre {
     grid-template-columns: 1fr;
   }
 
+  .insight-grid,
   .results-grid,
   .control-form {
     grid-template-columns: 1fr;
@@ -898,6 +998,10 @@ pre {
   .radar-summary {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .compare-controls {
+    grid-template-columns: 1fr;
   }
 
   .route-node {

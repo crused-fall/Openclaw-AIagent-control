@@ -16,6 +16,7 @@ from typing import Any
 from aiohttp import web
 
 from .config import diagnose_app_config, load_app_config, resolve_runtime_path
+from .github_support import normalize_github_repo, resolve_github_repo_from_origin
 from .models import TaskStatus
 from .orchestrator import HybridOrchestrator
 
@@ -83,7 +84,399 @@ def _load_preflight_report(artifacts_dir: str) -> dict[str, Any] | None:
         return json.load(handle)
 
 
-def _summarize_recent_runs(artifacts_root: str, limit: int = 8) -> list[dict[str, Any]]:
+def _step_status_map(summary: dict[str, Any]) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    for item in summary.get("results", []) or []:
+        step_id = str(item.get("work_item_id", "")).strip()
+        if step_id:
+            statuses[step_id] = str(item.get("status", "unknown")).strip() or "unknown"
+    return statuses
+
+
+def _extract_github_repo_from_url(url: str) -> str:
+    text = str(url or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"https://github\.com/([^/\s]+)/([^/\s]+)", text)
+    if match:
+        return f"{match.group(1)}/{match.group(2).removesuffix('.git')}"
+    return normalize_github_repo(text)
+
+
+def _config_profile_for_step(config: Any, step: Any) -> tuple[str, Any | None, str]:
+    profile_value = getattr(step, "profile", None)
+    if profile_value is None and isinstance(step, dict):
+        profile_value = step.get("profile", "")
+    profile_name = str(profile_value or "").strip()
+    if profile_name:
+        return profile_name, config.profiles.get(profile_name), ""
+
+    assignment_value = getattr(step, "assignment", None)
+    if assignment_value is None and isinstance(step, dict):
+        assignment_value = step.get("assignment", "")
+    assignment_name = str(assignment_value or "").strip()
+    if not assignment_name:
+        return "", None, ""
+    assignment = config.assignments.get(assignment_name)
+    if assignment is None:
+        return "", None, ""
+    managed_agent_name = assignment.agent
+    managed_agent = config.managed_agents.get(managed_agent_name)
+    if managed_agent is None:
+        return "", None, managed_agent_name
+    profile_name = managed_agent.profile
+    return profile_name, config.profiles.get(profile_name), managed_agent_name
+
+
+def _hermes_role_from_capabilities(capabilities: list[str]) -> str:
+    normalized = {str(item).strip() for item in capabilities if str(item).strip()}
+    if "record_summary" in normalized:
+        return "recorder"
+    if {"triage", "review"} & normalized:
+        return "supervisor"
+    return "support"
+
+
+def _build_hermes_overview(config: Any) -> dict[str, Any]:
+    profiles = []
+    for name, profile in sorted(config.profiles.items()):
+        if profile.mode.value != "hermes":
+            continue
+        profiles.append(
+            {
+                "name": name,
+                "provider": profile.hermes_provider,
+                "model": profile.hermes_model,
+                "toolsets": list(profile.hermes_toolsets),
+                "skills": list(profile.hermes_skills),
+                "source": profile.hermes_source,
+                "maxTurns": profile.hermes_max_turns,
+                "yolo": bool(profile.hermes_yolo),
+            }
+        )
+
+    roles = []
+    for name, agent in sorted(config.managed_agents.items()):
+        if agent.kind.value != "hermes":
+            continue
+        roles.append(
+            {
+                "name": name,
+                "profile": agent.profile,
+                "capabilities": list(agent.capabilities),
+                "role": _hermes_role_from_capabilities(agent.capabilities),
+                "enabled": bool(agent.enabled),
+                "notes": agent.notes,
+            }
+        )
+
+    pipelines = []
+    for pipeline_name, steps in sorted(config.pipelines.items()):
+        hermes_steps = []
+        for step in steps:
+            profile_name, profile, managed_agent_name = _config_profile_for_step(config, step)
+            if profile is None or profile.mode.value != "hermes":
+                continue
+            managed_name = managed_agent_name
+            if not managed_name:
+                assignment_name = str(step.assignment or "").strip()
+                if assignment_name and assignment_name in config.assignments:
+                    managed_name = config.assignments[assignment_name].agent
+            managed_agent = config.managed_agents.get(managed_name) if managed_name else None
+            capabilities = list(managed_agent.capabilities) if managed_agent else []
+            hermes_steps.append(
+                {
+                    "id": step.id,
+                    "title": step.title,
+                    "profile": profile_name,
+                    "managedAgent": managed_name,
+                    "assignment": step.assignment,
+                    "dependsOn": list(step.depends_on),
+                    "role": _hermes_role_from_capabilities(capabilities),
+                    "capabilities": capabilities,
+                }
+            )
+        if hermes_steps:
+            pipelines.append(
+                {
+                    "name": pipeline_name,
+                    "stepCount": len(hermes_steps),
+                    "steps": hermes_steps,
+                }
+            )
+
+    return {
+        "enabled": bool(profiles or roles or pipelines),
+        "commandAvailable": shutil.which("hermes") is not None,
+        "configPath": os.path.expanduser("~/.hermes/config.yaml"),
+        "envPath": os.path.expanduser("~/.hermes/.env"),
+        "profiles": profiles,
+        "roles": roles,
+        "pipelines": pipelines,
+    }
+
+
+async def _build_github_overview(config: Any, repo_path: str) -> dict[str, Any]:
+    repo = config.github.repo.strip()
+    repo_source = "config" if repo else "unconfigured"
+    origin_url = ""
+    resolution_error = ""
+    if not repo and config.github.use_origin_remote_fallback:
+        resolved_repo, origin_url, resolution_error = await resolve_github_repo_from_origin(repo_path)
+        if resolved_repo:
+            repo = resolved_repo
+            repo_source = "git_origin"
+        else:
+            repo_source = "unresolved"
+    return {
+        "repo": repo,
+        "repoSource": repo_source,
+        "originUrl": origin_url,
+        "resolutionError": resolution_error,
+        "baseBranch": config.github.base_branch,
+        "useOriginRemoteFallback": bool(config.github.use_origin_remote_fallback),
+        "defaultLabels": list(config.github.default_labels),
+    }
+
+
+def _summarize_run_insights(
+    summary: dict[str, Any],
+    context: dict[str, Any],
+    preflight: dict[str, Any] | None,
+    *,
+    default_github_repo: str = "",
+    github_base_branch: str = "main",
+) -> dict[str, Any]:
+    results = summary.get("results", []) or []
+    plan = summary.get("plan", []) or []
+    plan_titles = {
+        str(item.get("id", "")).strip(): str(item.get("title", "")).strip()
+        for item in plan
+        if isinstance(item, dict)
+    }
+    status_counts: dict[str, int] = {}
+    mode_counts: dict[str, int] = {}
+    github_repo = default_github_repo
+    github_branch = ""
+    github_issue: dict[str, Any] | None = None
+    github_pr: dict[str, Any] | None = None
+    github_workflow: dict[str, Any] | None = None
+    github_cards: list[dict[str, Any]] = []
+    hermes_roles: list[dict[str, Any]] = []
+    step_ids: list[str] = []
+
+    github_step_map = {
+        "publish_branch": ("branch", "Publish branch"),
+        "sync_issue": ("issue", "Planning issue"),
+        "update_issue": ("issue", "Issue follow-up"),
+        "draft_pr": ("pr", "Draft PR"),
+        "dispatch_review": ("workflow", "Dispatch review"),
+        "collect_review": ("workflow", "Collect review"),
+    }
+
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        work_item_id = str(item.get("work_item_id", "")).strip()
+        if work_item_id:
+            step_ids.append(work_item_id)
+        status = str(item.get("status", "unknown")).strip() or "unknown"
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+        mode = str(item.get("mode", "")).strip() or "unknown"
+        mode_counts[mode] = mode_counts.get(mode, 0) + 1
+        artifacts = item.get("artifacts") if isinstance(item.get("artifacts"), dict) else {}
+
+        github_branch = github_branch or str(
+            artifacts.get("source_branch") or artifacts.get("branch_name") or ""
+        ).strip()
+
+        for key in ("issue_url", "pr_url", "workflow_run_url"):
+            repo_candidate = _extract_github_repo_from_url(str(artifacts.get(key, "")).strip())
+            if repo_candidate:
+                github_repo = github_repo or repo_candidate
+
+        if work_item_id in github_step_map:
+            kind, label = github_step_map[work_item_id]
+            card: dict[str, Any] = {
+                "kind": kind,
+                "stepId": work_item_id,
+                "title": plan_titles.get(work_item_id, label),
+                "status": status,
+            }
+            if kind == "branch":
+                card["branch"] = github_branch
+                if github_repo and github_branch:
+                    card["url"] = f"https://github.com/{github_repo}/tree/{github_branch}"
+                if github_branch:
+                    github_cards.append(card)
+            elif kind == "issue":
+                issue_url = str(artifacts.get("issue_url", "")).strip()
+                issue_number = str(artifacts.get("issue_number", "")).strip()
+                if issue_url or issue_number:
+                    card["url"] = issue_url
+                    card["number"] = issue_number
+                    github_cards.append(card)
+                    github_issue = {
+                        "url": issue_url,
+                        "number": issue_number,
+                        "status": status,
+                        "stepId": work_item_id,
+                    }
+            elif kind == "pr":
+                pr_url = str(artifacts.get("pr_url", "")).strip()
+                pr_number = str(artifacts.get("pr_number", "")).strip()
+                if pr_url or pr_number:
+                    card["url"] = pr_url
+                    card["number"] = pr_number
+                    github_cards.append(card)
+                    github_pr = {
+                        "url": pr_url,
+                        "number": pr_number,
+                        "status": status,
+                        "stepId": work_item_id,
+                    }
+            elif kind == "workflow":
+                workflow_url = str(artifacts.get("workflow_run_url", "")).strip()
+                workflow_id = str(artifacts.get("workflow_run_id", "")).strip()
+                workflow_status = str(artifacts.get("workflow_status", "")).strip()
+                workflow_conclusion = str(artifacts.get("workflow_conclusion", "")).strip()
+                if workflow_url or workflow_id:
+                    card["url"] = workflow_url
+                    card["number"] = workflow_id
+                    card["workflowStatus"] = workflow_status
+                    card["workflowConclusion"] = workflow_conclusion
+                    github_cards.append(card)
+                    github_workflow = {
+                        "url": workflow_url,
+                        "id": workflow_id,
+                        "status": workflow_status,
+                        "conclusion": workflow_conclusion,
+                        "stepId": work_item_id,
+                    }
+
+        if mode == "hermes" or any(str(key).startswith("hermes_") for key in artifacts):
+            hermes_roles.append(
+                {
+                    "stepId": work_item_id,
+                    "title": plan_titles.get(work_item_id, work_item_id),
+                    "status": status,
+                    "role": "recorder" if "record" in work_item_id else "supervisor",
+                    "sessionId": str(artifacts.get("hermes_session_id", "")).strip(),
+                    "provider": str(artifacts.get("hermes_provider", "")).strip(),
+                    "model": str(artifacts.get("hermes_model", "")).strip(),
+                    "toolsets": list(artifacts.get("hermes_toolsets", []) or []),
+                    "skills": list(artifacts.get("hermes_skills", []) or []),
+                }
+            )
+
+    preflight_checks = preflight.get("checks", []) if isinstance(preflight, dict) else []
+    github_checks = []
+    hermes_checks = []
+    for check in preflight_checks:
+        if not isinstance(check, dict):
+            continue
+        name = str(check.get("name", "")).strip()
+        item = {
+            "name": name,
+            "status": str(check.get("status", "")).strip(),
+            "message": str(check.get("message", "")).strip(),
+        }
+        if name.startswith("github_") or name.startswith("github:"):
+            github_checks.append(item)
+        if name.startswith("hermes_"):
+            hermes_checks.append(item)
+
+    return {
+        "request": str(context.get("user_request", "")).strip(),
+        "dryRun": bool(context.get("dry_run", False)),
+        "stepIds": step_ids,
+        "statusCounts": status_counts,
+        "modeCounts": mode_counts,
+        "github": {
+            "repo": github_repo,
+            "baseBranch": github_base_branch,
+            "branch": github_branch,
+            "issue": github_issue,
+            "pr": github_pr,
+            "workflow": github_workflow,
+            "cards": github_cards,
+            "checks": github_checks,
+        },
+        "hermes": {
+            "used": bool(hermes_roles),
+            "sessionCount": len([item for item in hermes_roles if item["sessionId"]]),
+            "roles": hermes_roles,
+            "checks": hermes_checks,
+        },
+    }
+
+
+def _compare_run_histories(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    left_summary = left.get("summary", {}) if isinstance(left.get("summary"), dict) else {}
+    right_summary = right.get("summary", {}) if isinstance(right.get("summary"), dict) else {}
+    left_status_map = _step_status_map(left_summary)
+    right_status_map = _step_status_map(right_summary)
+    ordered_steps: list[str] = []
+    for source in (
+        left_summary.get("plan", []) or [],
+        right_summary.get("plan", []) or [],
+        left_summary.get("results", []) or [],
+        right_summary.get("results", []) or [],
+    ):
+        for item in source:
+            if not isinstance(item, dict):
+                continue
+            step_id = str(item.get("id") or item.get("work_item_id") or "").strip()
+            if step_id and step_id not in ordered_steps:
+                ordered_steps.append(step_id)
+
+    left_counts = left.get("insights", {}).get("statusCounts", {})
+    right_counts = right.get("insights", {}).get("statusCounts", {})
+    count_statuses = sorted(set(left_counts) | set(right_counts))
+    count_diffs = [
+        {
+            "status": status,
+            "left": int(left_counts.get(status, 0)),
+            "right": int(right_counts.get(status, 0)),
+            "delta": int(right_counts.get(status, 0)) - int(left_counts.get(status, 0)),
+        }
+        for status in count_statuses
+    ]
+    step_diffs = [
+        {
+            "stepId": step_id,
+            "left": left_status_map.get(step_id, "missing"),
+            "right": right_status_map.get(step_id, "missing"),
+        }
+        for step_id in ordered_steps
+        if left_status_map.get(step_id, "missing") != right_status_map.get(step_id, "missing")
+    ]
+    left_github = left.get("insights", {}).get("github", {})
+    right_github = right.get("insights", {}).get("github", {})
+    left_hermes = left.get("insights", {}).get("hermes", {})
+    right_hermes = right.get("insights", {}).get("hermes", {})
+    return {
+        "countDiffs": count_diffs,
+        "stepDiffs": step_diffs,
+        "branchChanged": left_github.get("branch", "") != right_github.get("branch", ""),
+        "workflowChanged": (
+            (left_github.get("workflow") or {}).get("id", "")
+            != (right_github.get("workflow") or {}).get("id", "")
+        ),
+        "hermesSessionDelta": int(right_hermes.get("sessionCount", 0)) - int(
+            left_hermes.get("sessionCount", 0)
+        ),
+    }
+
+
+def _summarize_recent_runs(
+    artifacts_root: str,
+    *,
+    default_github_repo: str = "",
+    github_base_branch: str = "main",
+    limit: int = 8,
+) -> list[dict[str, Any]]:
     runs: list[dict[str, Any]] = []
     root = Path(artifacts_root)
     if not root.exists():
@@ -113,6 +506,7 @@ def _summarize_recent_runs(artifacts_root: str, limit: int = 8) -> list[dict[str
                     context = json.load(handle)
             except json.JSONDecodeError:
                 context = {}
+        preflight = _load_preflight_report(str(run_dir))
 
         results = summary.get("results", [])
         status_counts: dict[str, int] = {}
@@ -131,6 +525,13 @@ def _summarize_recent_runs(artifacts_root: str, limit: int = 8) -> list[dict[str
                 "resultCount": len(results),
                 "statusCounts": status_counts,
                 "updatedAt": datetime.fromtimestamp(run_dir.stat().st_mtime, timezone.utc).isoformat(),
+                "insights": _summarize_run_insights(
+                    summary,
+                    context,
+                    preflight,
+                    default_github_repo=default_github_repo,
+                    github_base_branch=github_base_branch,
+                ),
             }
         )
     return runs
@@ -728,12 +1129,21 @@ def _read_run_history(
             context = json.load(handle)
 
     preflight = _load_preflight_report(str(run_dir))
+    updated_at = datetime.fromtimestamp(run_dir.stat().st_mtime, timezone.utc).isoformat()
     return {
         "runId": run_id,
+        "updatedAt": updated_at,
         "artifactsDir": str(run_dir),
         "context": context,
         "summary": summary,
         "preflight": preflight,
+        "insights": _summarize_run_insights(
+            summary,
+            context,
+            preflight,
+            default_github_repo=config.github.repo.strip(),
+            github_base_branch=config.github.base_branch,
+        ),
         "files": _list_run_files(run_dir),
     }
 
@@ -818,14 +1228,23 @@ async def _bootstrap_handler(request: web.Request) -> web.Response:
     orchestrator = HybridOrchestrator(config)
     plan = orchestrator.build_plan()
     artifacts_root = resolve_runtime_path(repo_path, config.runtime.artifacts_dir)
+    github_overview = await _build_github_overview(config, repo_path)
     payload = {
         "repoPath": repo_path,
         "configPath": config_path,
         "git": _git_status_snapshot(repo_path),
         "artifactsRoot": artifacts_root,
         "defaultOpenClawAgentId": _default_openclaw_agent_id(config),
+        "integrations": {
+            "github": github_overview,
+            "hermes": _build_hermes_overview(config),
+        },
         "snapshot": _serialize_config_snapshot(config, plan),
-        "recentRuns": _summarize_recent_runs(artifacts_root),
+        "recentRuns": _summarize_recent_runs(
+            artifacts_root,
+            default_github_repo=github_overview["repo"],
+            github_base_branch=github_overview["baseBranch"],
+        ),
     }
     return web.json_response(payload)
 
@@ -980,6 +1399,54 @@ async def _history_prune_handler(request: web.Request) -> web.Response:
     return web.json_response(payload)
 
 
+async def _history_compare_handler(request: web.Request) -> web.Response:
+    default_repo = str(request.app[APP_REPO_PATH])
+    repo_path = _resolve_user_path(request.query.get("repoPath", ""), default_repo)
+    config_path = _resolve_user_path(
+        request.query.get("configPath", "") or str(request.app[APP_CONFIG_PATH]),
+        repo_path,
+    )
+    body = await request.json() if request.can_read_body else {}
+    run_ids = body.get("runIds", [])
+    if not isinstance(run_ids, list):
+        raise web.HTTPBadRequest(text="runIds must be a list.")
+    normalized_ids = [str(run_id).strip() for run_id in run_ids if str(run_id).strip()]
+    if len(normalized_ids) < 2:
+        raise web.HTTPBadRequest(text="Two run ids are required for comparison.")
+
+    try:
+        left = _read_run_history(repo_path, config_path, normalized_ids[0])
+        right = _read_run_history(repo_path, config_path, normalized_ids[1])
+    except FileNotFoundError as error:
+        raise web.HTTPNotFound(text=str(error)) from error
+    except ValueError as error:
+        raise web.HTTPBadRequest(text=str(error)) from error
+
+    return web.json_response(
+        {
+            "runs": [
+                {
+                    "runId": left["runId"],
+                    "updatedAt": left["updatedAt"],
+                    "request": left["context"].get("user_request", ""),
+                    "success": bool(left.get("summary", {}).get("success", False)),
+                    "stepCount": len(left.get("summary", {}).get("plan", []) or []),
+                    "insights": left["insights"],
+                },
+                {
+                    "runId": right["runId"],
+                    "updatedAt": right["updatedAt"],
+                    "request": right["context"].get("user_request", ""),
+                    "success": bool(right.get("summary", {}).get("success", False)),
+                    "stepCount": len(right.get("summary", {}).get("plan", []) or []),
+                    "insights": right["insights"],
+                },
+            ],
+            "comparison": _compare_run_histories(left, right),
+        }
+    )
+
+
 async def _health_handler(request: web.Request) -> web.Response:
     default_repo = str(request.app[APP_REPO_PATH])
     repo_path = _resolve_user_path(request.query.get("repoPath", ""), default_repo)
@@ -1020,6 +1487,7 @@ def create_web_app(
     app.router.add_get("/api/history/{run_id}/file", _history_file_handler)
     app.router.add_post("/api/history/{run_id}/cleanup", _history_cleanup_handler)
     app.router.add_post("/api/history/prune", _history_prune_handler)
+    app.router.add_post("/api/history/compare", _history_compare_handler)
     app.router.add_get("/api/system/health", _health_handler)
     app.router.add_static("/static/", str(static_root))
     app.on_cleanup.append(_cleanup_background_tasks)
