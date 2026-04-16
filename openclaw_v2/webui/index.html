@@ -72,7 +72,7 @@
 
       <section class="deck">
         <header class="hero panel">
-          <div>
+          <div class="hero-copy">
             <p class="eyebrow">Hybrid CLI + GitHub orchestration</p>
             <h2>Run the project like a control room, not a terminal maze.</h2>
             <p class="lede">
@@ -80,8 +80,21 @@
               the pipeline looks clean.
             </p>
           </div>
-          <div class="hero-status" id="hero-status"></div>
+          <div class="hero-board">
+            <div id="launch-brief" class="launch-brief"></div>
+            <div class="hero-status" id="hero-status"></div>
+          </div>
         </header>
+
+        <section class="panel flight-plan">
+          <div class="panel-head">
+            <h2>Pipeline Radar</h2>
+            <span class="subtle">See the effective route, dependencies, and execution owners before you launch.</span>
+          </div>
+          <div id="pipeline-radar" class="pipeline-radar">
+            <div class="empty-state">Load a pipeline to inspect the effective route.</div>
+          </div>
+        </section>
 
         <section class="panel workbench">
           <div class="panel-head">
@@ -121,6 +134,7 @@
                 rows="5"
                 placeholder="Describe the change or diagnostic you want the pipeline to run."
               ></textarea>
+              <div id="request-presets" class="preset-row"></div>
             </label>
 
             <fieldset class="field field-full">

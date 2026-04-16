@@ -98,6 +98,9 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="copy-run-summary"', page)
         self.assertIn('id="copy-issue-update"', page)
         self.assertIn('id="copy-pr-note"', page)
+        self.assertIn('id="launch-brief"', page)
+        self.assertIn('id="pipeline-radar"', page)
+        self.assertIn('id="request-presets"', page)
 
     async def test_health_endpoint_returns_snapshot(self) -> None:
         fake_health = {

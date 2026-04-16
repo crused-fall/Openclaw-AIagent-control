@@ -6,6 +6,7 @@ const state = {
   currentHistory: null,
   healthSnapshot: null,
   currentOutput: null,
+  currentTaskStatus: "idle",
   resultFilter: "all",
 };
 
@@ -15,10 +16,13 @@ const elements = {
   pipeline: document.getElementById("pipeline"),
   request: document.getElementById("request"),
   stepGrid: document.getElementById("step-grid"),
+  requestPresets: document.getElementById("request-presets"),
   refreshBootstrap: document.getElementById("refresh-bootstrap"),
   modeToggle: document.getElementById("mode-toggle"),
   workspaceMetrics: document.getElementById("workspace-metrics"),
+  launchBrief: document.getElementById("launch-brief"),
   heroStatus: document.getElementById("hero-status"),
+  pipelineRadar: document.getElementById("pipeline-radar"),
   recentRuns: document.getElementById("recent-runs"),
   pruneKeepLatest: document.getElementById("prune-keep-latest"),
   pruneRuns: document.getElementById("prune-runs"),
@@ -63,8 +67,79 @@ function makeStatusChip(value) {
   return `<span class="status-chip ${normalized}">${escapeHtml(normalized)}</span>`;
 }
 
+function compactPath(value, keepSegments = 3) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "n/a";
+  }
+  const normalized = text.replaceAll("\\", "/");
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.length <= keepSegments) {
+    return normalized.startsWith("/") ? `/${parts.join("/")}` : normalized;
+  }
+  return `…/${parts.slice(-keepSegments).join("/")}`;
+}
+
+function formatAbsoluteTime(value) {
+  if (!value) {
+    return "unknown";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatRelativeTime(value) {
+  if (!value) {
+    return "time unknown";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const diffMs = date.getTime() - Date.now();
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (Math.abs(diffMs) < hour) {
+    return formatter.format(Math.round(diffMs / minute), "minute");
+  }
+  if (Math.abs(diffMs) < day) {
+    return formatter.format(Math.round(diffMs / hour), "hour");
+  }
+  return formatter.format(Math.round(diffMs / day), "day");
+}
+
+function routeSequence(stepIds) {
+  return (stepIds || []).join(" → ") || "No steps selected";
+}
+
 function setCopyFeedback(message) {
   elements.copyFeedback.textContent = message;
+}
+
+function updateActionButtons() {
+  const requestReady = Boolean((elements.request.value || "").trim());
+  const taskActive = ["queued", "running"].includes(state.currentTaskStatus);
+  elements.buttons.forEach((button) => {
+    if (taskActive) {
+      button.disabled = true;
+      return;
+    }
+    if (button.dataset.action === "run") {
+      button.disabled = !requestReady;
+      return;
+    }
+    button.disabled = false;
+  });
 }
 
 function statusCounts(results) {
@@ -473,6 +548,126 @@ function renderHeroStatus() {
     .join("");
 }
 
+function renderLaunchBrief() {
+  const bootstrap = state.bootstrap || {};
+  const snapshot = bootstrap.snapshot || {};
+  const git = bootstrap.git || {};
+  const pipelineName = elements.pipeline.value || snapshot.defaultPipeline || "n/a";
+  const requestText = (elements.request.value || "").trim();
+  const effectiveIds = effectiveStepIds();
+  const explicitSelection = selectedSteps();
+  const planItems = effectivePlanItems();
+  const fallbackCount = planItems.filter((item) => item.fallbackUsed).length;
+  const owners = Array.from(
+    new Set(
+      planItems
+        .map((item) => item.managedAgent || item.assignment || item.profile || "")
+        .filter(Boolean),
+    ),
+  );
+  const usesGitHub = planItems.some((item) => String(item.mode || "").toLowerCase() === "github");
+  const tone = !requestText ? "warning" : git.dirty ? "warning" : "passed";
+  elements.launchBrief.innerHTML = `
+    <div class="brief-banner">
+      <div>
+        <span class="eyebrow">Current Vector</span>
+        <strong>${escapeHtml(pipelineName)} · ${escapeHtml(state.live ? "Live" : "Dry-run")}</strong>
+        <p>${escapeHtml(routeSequence(effectiveIds))}</p>
+      </div>
+      ${makeStatusChip(tone)}
+    </div>
+    <div class="brief-grid">
+      <article class="brief-card">
+        <span class="brief-label">Request</span>
+        <strong>${escapeHtml(requestText ? "Ready" : "Missing")}</strong>
+        <small>${escapeHtml(requestText ? `${requestText.length} chars captured` : "Add intent before launching a run.")}</small>
+      </article>
+      <article class="brief-card">
+        <span class="brief-label">Scope</span>
+        <strong>${escapeHtml(`${effectiveIds.length} effective steps`)}</strong>
+        <small>${escapeHtml(explicitSelection.length ? `${explicitSelection.length} explicitly selected` : "Full pipeline currently in play")}</small>
+      </article>
+      <article class="brief-card">
+        <span class="brief-label">Repo Base</span>
+        <strong>${escapeHtml(git.dirty ? "Dirty" : "Clean")}</strong>
+        <small>${escapeHtml(git.branch || "branch unknown")}</small>
+      </article>
+      <article class="brief-card">
+        <span class="brief-label">Tail</span>
+        <strong>${escapeHtml(usesGitHub ? "GitHub armed" : "Local only")}</strong>
+        <small>${escapeHtml(fallbackCount ? `${fallbackCount} fallback routes active` : "Assignments are explicit")}</small>
+      </article>
+    </div>
+    <div class="brief-note">
+      <strong>Execution owners</strong>
+      <span>${escapeHtml(owners.join(" · ") || "No managed agents resolved yet")}</span>
+    </div>
+  `;
+}
+
+function renderPipelineRadar() {
+  const steps = currentPipelineSteps();
+  if (!steps.length) {
+    elements.pipelineRadar.innerHTML = `<div class="empty-state">No steps are defined for the selected pipeline.</div>`;
+    return;
+  }
+
+  const effectiveSet = new Set(effectiveStepIds());
+  const explicitSet = new Set(selectedSteps());
+  const planMap = currentPlanMap();
+  const activeCount = Array.from(effectiveSet).length;
+  elements.pipelineRadar.innerHTML = `
+    <div class="radar-summary">
+      <div>
+        <strong>Effective route</strong>
+        <p>${escapeHtml(routeSequence(Array.from(effectiveSet)))}</p>
+      </div>
+      <small>${escapeHtml(`${activeCount} active · ${steps.length - activeCount} parked`)}</small>
+    </div>
+    <div class="radar-strip">
+      ${steps
+        .map((step, index) => {
+          const planItem = planMap.get(step.id) || {};
+          const isEffective = effectiveSet.has(step.id);
+          const isSelected = explicitSet.has(step.id);
+          const badges = [];
+          if (isSelected) {
+            badges.push('<span class="route-badge tone-accent">selected</span>');
+          } else if (isEffective) {
+            badges.push('<span class="route-badge tone-teal">dependency</span>');
+          } else {
+            badges.push('<span class="route-badge tone-muted">parked</span>');
+          }
+          if (planItem.fallbackUsed) {
+            badges.push('<span class="route-badge tone-gold">fallback</span>');
+          }
+          const mode = String(planItem.mode || "").toLowerCase();
+          if (mode === "github") {
+            badges.push('<span class="route-badge tone-ink">github</span>');
+          } else if (mode === "openclaw" || mode === "hermes") {
+            badges.push(`<span class="route-badge tone-teal">${escapeHtml(mode)}</span>`);
+          }
+          const routeOwner = planItem.managedAgent || step.assignment || step.profile || "n/a";
+          const depends = (step.dependsOn || []).join(", ") || "none";
+          return `
+            <article class="route-node ${isEffective ? "effective" : "inactive"}">
+              <div class="route-node-top">
+                <span class="route-index">${escapeHtml(String(index + 1))}</span>
+                <div class="route-badges">${badges.join("")}</div>
+              </div>
+              <strong>${escapeHtml(step.id)}</strong>
+              <p>${escapeHtml(step.title)}</p>
+              <small>Route: ${escapeHtml(routeOwner)}</small>
+              <small>Depends on: ${escapeHtml(depends)}</small>
+            </article>
+            ${index < steps.length - 1 ? '<div class="route-link" aria-hidden="true">→</div>' : ""}
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
 async function copyText(text, successMessage) {
   if (!text) {
     return;
@@ -496,6 +691,7 @@ function setMode(live) {
   elements.modeToggle.setAttribute("aria-pressed", state.live ? "true" : "false");
   const copy = elements.modeToggle.querySelector(".toggle-copy");
   copy.textContent = state.live ? "Live" : "Dry-run";
+  renderLaunchBrief();
   renderHeroStatus();
   renderReadinessGate();
 }
@@ -510,20 +706,57 @@ function renderWorkspaceMetrics(bootstrap) {
   const git = bootstrap.git || {};
   const snapshot = bootstrap.snapshot || {};
   const runtime = snapshot.runtime || {};
-  const metrics = [
-    ["Repo", bootstrap.repoPath],
-    ["Config", bootstrap.configPath],
-    ["Branch", git.branch || "unknown"],
-    ["Dirty", git.dirty ? "yes" : "no"],
-    ["Default pipeline", snapshot.defaultPipeline || "n/a"],
-    ["Artifacts", bootstrap.artifactsRoot || "n/a"],
-    ["Live policy", runtime.allow_fallback_in_live ? "fallback allowed" : "strict"],
-    ["Live steps", Array.isArray(runtime.allowed_live_steps) ? runtime.allowed_live_steps.join(", ") : "n/a"],
+  const statCards = [
+    {
+      label: "Branch",
+      value: git.branch || "unknown",
+      detail: git.dirty ? "dirty working tree" : "clean working tree",
+    },
+    {
+      label: "Pipeline",
+      value: snapshot.defaultPipeline || "n/a",
+      detail: `${Object.keys(snapshot.pipelines || {}).length} loaded`,
+    },
+    {
+      label: "Live policy",
+      value: runtime.allow_fallback_in_live ? "relaxed" : "strict",
+      detail: runtime.require_step_selection_for_live ? "explicit steps" : "free selection",
+    },
+    {
+      label: "Live allow-list",
+      value: Array.isArray(runtime.allowed_live_steps) && runtime.allowed_live_steps.length
+        ? `${runtime.allowed_live_steps.length} steps`
+        : "n/a",
+      detail: Array.isArray(runtime.allowed_live_steps) && runtime.allowed_live_steps.length
+        ? compactPath(runtime.allowed_live_steps.join(" · "), 4)
+        : "No allow-list configured",
+    },
   ];
-  elements.workspaceMetrics.innerHTML = metrics
+  const pathCards = [
+    ["Repo root", bootstrap.repoPath],
+    ["Config", bootstrap.configPath],
+    ["Artifacts", bootstrap.artifactsRoot],
+  ];
+  elements.workspaceMetrics.innerHTML = statCards
     .map(
-      ([label, value]) =>
-        `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`,
+      (metric) => `
+        <div class="metric-card">
+          <dt>${escapeHtml(metric.label)}</dt>
+          <dd>${escapeHtml(metric.value)}</dd>
+          <small>${escapeHtml(metric.detail)}</small>
+        </div>
+      `,
+    )
+    .concat(
+      pathCards.map(
+        ([label, value]) => `
+          <div class="metric-card full" title="${escapeHtml(value || "n/a")}">
+            <dt>${escapeHtml(label)}</dt>
+            <dd>${escapeHtml(compactPath(value || "", 4))}</dd>
+            <small>${escapeHtml(value || "n/a")}</small>
+          </div>
+        `,
+      ),
     )
     .join("");
 }
@@ -576,8 +809,60 @@ function renderStepGrid() {
 
   elements.stepGrid.querySelectorAll("input[type=checkbox]").forEach((input) => {
     input.addEventListener("change", () => {
+      renderLaunchBrief();
+      renderPipelineRadar();
       renderHeroStatus();
       renderReadinessGate();
+    });
+  });
+}
+
+function renderRequestPresets() {
+  const pipelineName = elements.pipeline.value || state.bootstrap?.snapshot?.defaultPipeline || "selected pipeline";
+  const presets = [
+    {
+      label: "Doc update",
+      text: `Update the README and config notes for ${pipelineName}, then summarize any risks before implementation.`,
+    },
+    {
+      label: "Runtime bug",
+      text: `Investigate a runtime failure in ${pipelineName}, fix the root cause, and capture validation steps for review.`,
+    },
+    {
+      label: "Preflight audit",
+      text: `Audit ${pipelineName} for blockers, assignment mismatches, and live-mode risks before changing code.`,
+    },
+    {
+      label: "GitHub follow-up",
+      text: `Run the selected ${pipelineName} steps and prepare the issue / PR follow-up with a concise collaboration summary.`,
+    },
+  ];
+  elements.requestPresets.innerHTML = presets
+    .map(
+      (preset) => `
+        <button
+          class="preset-chip"
+          type="button"
+          data-request-preset="${escapeHtml(preset.text)}"
+        >
+          ${escapeHtml(preset.label)}
+        </button>
+      `,
+    )
+    .join("");
+  elements.requestPresets.querySelectorAll("button[data-request-preset]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextValue = button.getAttribute("data-request-preset") || "";
+      if (elements.request.value.trim() && elements.request.value.trim() !== nextValue) {
+        const confirmed = window.confirm("Replace the current request text with this starter?");
+        if (!confirmed) {
+          return;
+        }
+      }
+      elements.request.value = nextValue;
+      renderLaunchBrief();
+      renderReadinessGate();
+      elements.request.focus();
     });
   });
 }
@@ -600,7 +885,12 @@ function renderRecentRuns(bootstrap) {
             ${makeStatusChip(run.success ? "succeeded" : "warning")}
           </div>
           <p>${escapeHtml(run.request || "No request captured.")}</p>
-          <small>${escapeHtml(counts || "no status data")}</small>
+          <div class="recent-run-meta">
+            <span>${escapeHtml(formatRelativeTime(run.updatedAt))}</span>
+            <span>${escapeHtml(`${run.stepCount || 0} planned steps`)}</span>
+            <span>${escapeHtml(counts || "no status data")}</span>
+          </div>
+          <small>${escapeHtml(formatAbsoluteTime(run.updatedAt))}</small>
           <div class="task-controls">
             <button class="ghost-button" type="button" data-run-id="${escapeHtml(run.runId)}">Load summary</button>
             <button class="ghost-button" type="button" data-cleanup-run-id="${escapeHtml(run.runId)}">Cleanup</button>
@@ -756,17 +1046,23 @@ function renderBootstrap(bootstrap) {
   setMode(Boolean(runtime.dry_run) === false);
   renderPipelines(bootstrap);
   renderStepGrid();
+  renderRequestPresets();
   renderWorkspaceMetrics(bootstrap);
+  renderLaunchBrief();
   renderHeroStatus();
+  renderPipelineRadar();
   renderReadinessGate();
   renderRecentRuns(bootstrap);
   if (!state.currentHistory) {
     clearArtifactBrowser();
   }
+  updateActionButtons();
   updateCopyButtons();
 }
 
 function renderTask(task) {
+  state.currentTaskStatus = task.status || "idle";
+  updateActionButtons();
   elements.taskStateSlot.innerHTML = makeStatusChip(task.status || "neutral");
   elements.cancelTask.disabled = !["queued", "running"].includes(task.status);
   elements.taskMeta.innerHTML = `
@@ -1304,13 +1600,17 @@ function bindEvents() {
   });
 
   elements.request.addEventListener("input", () => {
+    renderLaunchBrief();
     renderReadinessGate();
+    updateActionButtons();
   });
 
   elements.selectAll.addEventListener("click", () => {
     elements.stepGrid.querySelectorAll("input[type=checkbox]").forEach((input) => {
       input.checked = true;
     });
+    renderLaunchBrief();
+    renderPipelineRadar();
     renderHeroStatus();
     renderReadinessGate();
   });
@@ -1319,6 +1619,8 @@ function bindEvents() {
     elements.stepGrid.querySelectorAll("input[type=checkbox]").forEach((input) => {
       input.checked = false;
     });
+    renderLaunchBrief();
+    renderPipelineRadar();
     renderHeroStatus();
     renderReadinessGate();
   });
@@ -1338,8 +1640,10 @@ async function boot() {
   await loadHealth().catch((error) => {
     setCopyFeedback(`Health check skipped: ${error.message}`);
   });
+  state.currentTaskStatus = "idle";
   elements.cancelTask.disabled = true;
   elements.cleanupCurrentRun.disabled = true;
+  updateActionButtons();
   updateCopyButtons();
 }
 
