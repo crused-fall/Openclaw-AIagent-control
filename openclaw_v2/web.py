@@ -24,6 +24,7 @@ APP_CONFIG_PATH = web.AppKey("config_path", str)
 APP_REPO_PATH = web.AppKey("repo_path", str)
 APP_STATIC_ROOT = web.AppKey("static_root", str)
 APP_TASK_MANAGER = web.AppKey("task_manager", Any)
+APP_ALLOW_PATH_OVERRIDE = web.AppKey("allow_path_override", bool)
 
 
 def _json_ready(value: Any) -> Any:
@@ -51,6 +52,47 @@ def _resolve_user_path(raw_path: str, base_path: str | None = None) -> str:
     if base_path:
         return os.path.abspath(os.path.join(base_path, expanded))
     return os.path.abspath(expanded)
+
+
+def _canonical_path(path: str) -> Path:
+    return Path(path).expanduser().resolve(strict=False)
+
+
+def _same_path(left: str, right: str) -> bool:
+    return _canonical_path(left) == _canonical_path(right)
+
+
+def _path_within(path: str, root: str) -> bool:
+    try:
+        _canonical_path(path).relative_to(_canonical_path(root))
+    except ValueError:
+        return False
+    return True
+
+
+def _resolve_dashboard_scope(
+    app: web.Application,
+    *,
+    raw_repo_path: str,
+    raw_config_path: str,
+) -> tuple[str, str]:
+    default_repo_path = str(app[APP_REPO_PATH])
+    default_config_path = str(app[APP_CONFIG_PATH])
+
+    repo_path = _resolve_user_path(raw_repo_path, default_repo_path)
+    config_input = raw_config_path or default_config_path
+    config_path = _resolve_user_path(config_input, repo_path)
+
+    if bool(app[APP_ALLOW_PATH_OVERRIDE]):
+        return str(_canonical_path(repo_path)), str(_canonical_path(config_path))
+
+    if not _same_path(repo_path, default_repo_path):
+        raise ValueError("Dashboard repoPath is fixed to the configured repository root.")
+    if not (_same_path(config_path, default_config_path) or _path_within(config_path, repo_path)):
+        raise ValueError(
+            "Dashboard configPath must stay within the repository or match the configured config file."
+        )
+    return str(_canonical_path(repo_path)), str(_canonical_path(config_path))
 
 
 def _selected_steps(payload: dict[str, Any]) -> list[str] | None:
@@ -1017,11 +1059,10 @@ def _resolve_request_payload(
     app: web.Application,
     payload: dict[str, Any],
 ) -> tuple[str, str, Any]:
-    default_repo_path = str(app[APP_REPO_PATH])
-    repo_path = _resolve_user_path(str(payload.get("repoPath", "")).strip(), default_repo_path)
-    config_path = _resolve_user_path(
-        str(payload.get("configPath", "")).strip() or str(app[APP_CONFIG_PATH]),
-        repo_path,
+    repo_path, config_path = _resolve_dashboard_scope(
+        app,
+        raw_repo_path=str(payload.get("repoPath", "")).strip(),
+        raw_config_path=str(payload.get("configPath", "")).strip(),
     )
     config = load_app_config(config_path)
     pipeline = str(payload.get("pipeline", "")).strip()
@@ -1215,13 +1256,15 @@ async def _index_handler(request: web.Request) -> web.StreamResponse:
 
 
 async def _bootstrap_handler(request: web.Request) -> web.Response:
-    default_repo = str(request.app[APP_REPO_PATH])
-    repo_path = _resolve_user_path(request.query.get("repoPath", ""), default_repo)
-    config_path = _resolve_user_path(
-        request.query.get("configPath", "") or str(request.app[APP_CONFIG_PATH]),
-        repo_path,
-    )
-    config = load_app_config(config_path)
+    try:
+        repo_path, config_path = _resolve_dashboard_scope(
+            request.app,
+            raw_repo_path=request.query.get("repoPath", ""),
+            raw_config_path=request.query.get("configPath", ""),
+        )
+        config = load_app_config(config_path)
+    except (FileNotFoundError, ValueError) as error:
+        raise web.HTTPBadRequest(text=str(error)) from error
     pipeline = request.query.get("pipeline", "").strip()
     if pipeline:
         config.runtime.pipeline = pipeline
@@ -1254,6 +1297,10 @@ async def _task_create_handler(request: web.Request) -> web.Response:
     action = str(payload.get("action", "")).strip()
     if action not in {"diagnose", "preflight", "doctor", "run"}:
         raise web.HTTPBadRequest(text="Unsupported action.")
+    try:
+        _resolve_request_payload(request.app, payload)
+    except (FileNotFoundError, ValueError) as error:
+        raise web.HTTPBadRequest(text=str(error)) from error
     task = request.app[APP_TASK_MANAGER].submit(action, payload)
     return web.json_response({"task": task.to_payload()}, status=202)
 
@@ -1311,12 +1358,14 @@ async def _task_events_handler(request: web.Request) -> web.StreamResponse:
 
 
 async def _history_handler(request: web.Request) -> web.Response:
-    default_repo = str(request.app[APP_REPO_PATH])
-    repo_path = _resolve_user_path(request.query.get("repoPath", ""), default_repo)
-    config_path = _resolve_user_path(
-        request.query.get("configPath", "") or str(request.app[APP_CONFIG_PATH]),
-        repo_path,
-    )
+    try:
+        repo_path, config_path = _resolve_dashboard_scope(
+            request.app,
+            raw_repo_path=request.query.get("repoPath", ""),
+            raw_config_path=request.query.get("configPath", ""),
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise web.HTTPBadRequest(text=str(error)) from error
     run_id = request.match_info["run_id"]
     try:
         payload = _read_run_history(repo_path, config_path, run_id)
@@ -1328,12 +1377,14 @@ async def _history_handler(request: web.Request) -> web.Response:
 
 
 async def _history_file_handler(request: web.Request) -> web.Response:
-    default_repo = str(request.app[APP_REPO_PATH])
-    repo_path = _resolve_user_path(request.query.get("repoPath", ""), default_repo)
-    config_path = _resolve_user_path(
-        request.query.get("configPath", "") or str(request.app[APP_CONFIG_PATH]),
-        repo_path,
-    )
+    try:
+        repo_path, config_path = _resolve_dashboard_scope(
+            request.app,
+            raw_repo_path=request.query.get("repoPath", ""),
+            raw_config_path=request.query.get("configPath", ""),
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise web.HTTPBadRequest(text=str(error)) from error
     run_id = request.match_info["run_id"]
     relative_path = request.query.get("path", "")
     if not re.fullmatch(r"[A-Za-z0-9._-]+", run_id):
@@ -1351,12 +1402,14 @@ async def _history_file_handler(request: web.Request) -> web.Response:
 
 
 async def _history_cleanup_handler(request: web.Request) -> web.Response:
-    default_repo = str(request.app[APP_REPO_PATH])
-    repo_path = _resolve_user_path(request.query.get("repoPath", ""), default_repo)
-    config_path = _resolve_user_path(
-        request.query.get("configPath", "") or str(request.app[APP_CONFIG_PATH]),
-        repo_path,
-    )
+    try:
+        repo_path, config_path = _resolve_dashboard_scope(
+            request.app,
+            raw_repo_path=request.query.get("repoPath", ""),
+            raw_config_path=request.query.get("configPath", ""),
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise web.HTTPBadRequest(text=str(error)) from error
     run_id = request.match_info["run_id"]
     body = await request.json() if request.can_read_body else {}
     remove_worktrees = bool(body.get("removeWorktrees", True))
@@ -1378,12 +1431,14 @@ async def _history_cleanup_handler(request: web.Request) -> web.Response:
 
 
 async def _history_prune_handler(request: web.Request) -> web.Response:
-    default_repo = str(request.app[APP_REPO_PATH])
-    repo_path = _resolve_user_path(request.query.get("repoPath", ""), default_repo)
-    config_path = _resolve_user_path(
-        request.query.get("configPath", "") or str(request.app[APP_CONFIG_PATH]),
-        repo_path,
-    )
+    try:
+        repo_path, config_path = _resolve_dashboard_scope(
+            request.app,
+            raw_repo_path=request.query.get("repoPath", ""),
+            raw_config_path=request.query.get("configPath", ""),
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise web.HTTPBadRequest(text=str(error)) from error
     body = await request.json() if request.can_read_body else {}
     keep_latest = max(0, int(body.get("keepLatest", 10)))
     remove_worktrees = bool(body.get("removeWorktrees", True))
@@ -1400,12 +1455,14 @@ async def _history_prune_handler(request: web.Request) -> web.Response:
 
 
 async def _history_compare_handler(request: web.Request) -> web.Response:
-    default_repo = str(request.app[APP_REPO_PATH])
-    repo_path = _resolve_user_path(request.query.get("repoPath", ""), default_repo)
-    config_path = _resolve_user_path(
-        request.query.get("configPath", "") or str(request.app[APP_CONFIG_PATH]),
-        repo_path,
-    )
+    try:
+        repo_path, config_path = _resolve_dashboard_scope(
+            request.app,
+            raw_repo_path=request.query.get("repoPath", ""),
+            raw_config_path=request.query.get("configPath", ""),
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise web.HTTPBadRequest(text=str(error)) from error
     body = await request.json() if request.can_read_body else {}
     run_ids = body.get("runIds", [])
     if not isinstance(run_ids, list):
@@ -1448,13 +1505,15 @@ async def _history_compare_handler(request: web.Request) -> web.Response:
 
 
 async def _health_handler(request: web.Request) -> web.Response:
-    default_repo = str(request.app[APP_REPO_PATH])
-    repo_path = _resolve_user_path(request.query.get("repoPath", ""), default_repo)
-    config_path = _resolve_user_path(
-        request.query.get("configPath", "") or str(request.app[APP_CONFIG_PATH]),
-        repo_path,
-    )
-    config = load_app_config(config_path)
+    try:
+        _, config_path = _resolve_dashboard_scope(
+            request.app,
+            raw_repo_path=request.query.get("repoPath", ""),
+            raw_config_path=request.query.get("configPath", ""),
+        )
+        config = load_app_config(config_path)
+    except (FileNotFoundError, ValueError) as error:
+        raise web.HTTPBadRequest(text=str(error)) from error
     agent_id = request.query.get("agentId", "").strip() or _default_openclaw_agent_id(config)
     payload = await asyncio.to_thread(_openclaw_health_snapshot, agent_id)
     return web.json_response(payload)
@@ -1469,6 +1528,7 @@ def create_web_app(
     *,
     config_path: str,
     repo_path: str,
+    allow_path_override: bool = False,
 ) -> web.Application:
     static_root = Path(__file__).with_name("webui")
     app = web.Application()
@@ -1476,6 +1536,7 @@ def create_web_app(
     app[APP_REPO_PATH] = repo_path
     app[APP_STATIC_ROOT] = str(static_root)
     app[APP_TASK_MANAGER] = DashboardTaskManager(app)
+    app[APP_ALLOW_PATH_OVERRIDE] = allow_path_override
 
     app.router.add_get("/", _index_handler)
     app.router.add_get("/api/bootstrap", _bootstrap_handler)
@@ -1500,8 +1561,13 @@ async def run_web_server(
     repo_path: str,
     host: str,
     port: int,
+    allow_path_override: bool = False,
 ) -> None:
-    app = create_web_app(config_path=config_path, repo_path=repo_path)
+    app = create_web_app(
+        config_path=config_path,
+        repo_path=repo_path,
+        allow_path_override=allow_path_override,
+    )
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host=host, port=port)

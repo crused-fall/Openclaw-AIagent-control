@@ -1,6 +1,6 @@
 # OpenClaw Project Status
 
-更新时间：2026-03-28
+更新时间：2026-04-16
 
 ## 当前阶段
 
@@ -19,6 +19,7 @@
 - `main_v2.py` 已可作为统一入口
 - 支持 `--steps`、`--request`、`--live`、`--preflight-only`
 - 支持 `--list-managed-agents`、`--doctor-config`、`--diagnose-plan`
+- 支持 `--web` 本地 Mission Control 控制台
 - live 运行时会输出 step 级 progress
 
 ### Orchestration Layer
@@ -64,6 +65,8 @@
 - run summary
 - blocked 原因透传
 - `first_blocked` 根因摘要
+- 本地 Web UI 已具备 readiness gate、run compare、artifact browser、health snapshot 和 housekeeping 入口
+- Web UI 的 repo/config 作用域已默认收紧到启动时绑定的仓库，避免页面层面对任意路径做历史清理和健康检查
 
 ## 部分完成
 
@@ -71,6 +74,7 @@
 - OpenClaw 接入骨架已落地，但目前只安全接到 `triage` 变体 pipeline
 - OpenClaw 已验证“仓库外 workspace + repo 绝对路径 handoff”可运行，当前已有 `mission_control_openclaw_triage` 和 `mission_control_openclaw_default` 两条变体 pipeline
 - Hermes 已作为本机 `supervisor + recorder` 接入，新增 `mission_control_hermes_supervised` 变体 pipeline，但不承担 `implement`
+- 当前分支上的 Web UI control room 已把 CLI / GitHub / Hermes / OpenClaw 的运行态集中到一个本地面板里
 - `Gemini` 和 `Cursor` 已进入受控 agent 注册表，但还没进入默认 assignment
 - 当前 fallback 仍是静态配置回退，不是实时在线调度
 - live 模式下已默认禁止 fallback managed agent 静默执行

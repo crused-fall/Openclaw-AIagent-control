@@ -182,6 +182,8 @@ python3 main_v2.py --web --web-host 127.0.0.1 --web-port 8766
 
 `--web` 会启动一个本地 Mission Control Web UI，用来集中做 pipeline 启动、diagnose / preflight / doctor、OpenClaw 健康检查、run artifacts 浏览，以及最近运行的清理。
 当前页面还带了一个 Readiness Gate，会结合请求内容、step 选择、repo git 状态、OpenClaw health / memory、fallback 解析和最近一次 preflight 结果，帮助你在真正 live 前先看风险。
+出于安全原因，Web UI 默认绑定启动它时的 `repo_path + config_path`。
+如果需要切换到别的仓库或配置，请重新启动 Web UI，而不是在页面里临时改路径；历史清理、prune 和健康检查也只会作用在当前仓库范围内。
 
 如果要临时改 agent 分配，不必改 pipeline step。本次运行前覆盖 assignment 即可，例如：
 

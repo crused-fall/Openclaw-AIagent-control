@@ -127,12 +127,14 @@
           <form id="control-form" class="control-form">
             <label class="field">
               <span>Repo path</span>
-              <input id="repo-path" name="repoPath" type="text" autocomplete="off" />
+              <input id="repo-path" name="repoPath" type="text" autocomplete="off" readonly />
+              <small class="subtle">Bound to the repo root that started this dashboard.</small>
             </label>
 
             <label class="field">
               <span>Config path</span>
-              <input id="config-path" name="configPath" type="text" autocomplete="off" />
+              <input id="config-path" name="configPath" type="text" autocomplete="off" readonly />
+              <small class="subtle">Limited to the configured file or another config inside this repo.</small>
             </label>
 
             <label class="field">

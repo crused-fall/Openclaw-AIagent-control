@@ -56,9 +56,14 @@ def _write_minimal_config(path: str) -> None:
         handle.write("\n")
 
 
+def _normalized_path(path: str) -> str:
+    return os.path.realpath(path)
+
+
 class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
+        self.external_dir = tempfile.TemporaryDirectory()
         self.repo_path = self.temp_dir.name
         self.config_path = os.path.join(self.repo_path, "config_v2.yaml")
         _write_minimal_config(self.config_path)
@@ -74,6 +79,7 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.client.close()
+        self.external_dir.cleanup()
         self.temp_dir.cleanup()
 
     async def test_bootstrap_returns_pipeline_snapshot(self) -> None:
@@ -84,7 +90,7 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["snapshot"]["defaultPipeline"], "demo_pipeline")
         self.assertIn("demo_pipeline", payload["snapshot"]["pipelines"])
         self.assertEqual(payload["snapshot"]["currentPlan"][0]["id"], "implement")
-        self.assertEqual(payload["repoPath"], self.repo_path)
+        self.assertEqual(payload["repoPath"], _normalized_path(self.repo_path))
         self.assertIn("defaultOpenClawAgentId", payload)
         self.assertIn("integrations", payload)
         self.assertIn("github", payload["integrations"])
@@ -110,6 +116,8 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="compare-right-run"', page)
         self.assertIn('id="run-compare"', page)
         self.assertIn('id="request-presets"', page)
+        self.assertIn('id="repo-path" name="repoPath" type="text" autocomplete="off" readonly', page)
+        self.assertIn('id="config-path" name="configPath" type="text" autocomplete="off" readonly', page)
 
     async def test_health_endpoint_returns_snapshot(self) -> None:
         fake_health = {
@@ -128,6 +136,28 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         payload = await response.json()
         self.assertEqual(payload["agentId"], "openclaw-control-ext")
         self.assertTrue(payload["healthOk"])
+
+    async def test_bootstrap_allows_in_repo_config_override(self) -> None:
+        alt_dir = os.path.join(self.repo_path, "configs")
+        os.makedirs(alt_dir, exist_ok=True)
+        alt_config_path = os.path.join(alt_dir, "alt_config.yaml")
+        _write_minimal_config(alt_config_path)
+
+        response = await self.client.get("/api/bootstrap", params={"configPath": "configs/alt_config.yaml"})
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["configPath"], _normalized_path(alt_config_path))
+
+    async def test_bootstrap_rejects_repo_override_outside_configured_root(self) -> None:
+        response = await self.client.get("/api/bootstrap", params={"repoPath": self.external_dir.name})
+        self.assertEqual(response.status, 400)
+        self.assertIn("configured repository root", await response.text())
+
+    async def test_health_rejects_config_override_outside_repo_scope(self) -> None:
+        outside_config = os.path.join(self.external_dir.name, "outside_config.yaml")
+        response = await self.client.get("/api/system/health", params={"configPath": outside_config})
+        self.assertEqual(response.status, 400)
+        self.assertIn("Dashboard configPath must stay within the repository", await response.text())
 
     async def test_history_endpoints_return_files_and_content(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-1")
@@ -257,6 +287,7 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
 class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
+        self.external_dir = tempfile.TemporaryDirectory()
         self.repo_path = self.temp_dir.name
         self.config_path = os.path.join(self.repo_path, "config_v2.yaml")
         _write_minimal_config(self.config_path)
@@ -272,6 +303,7 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.client.close()
+        self.external_dir.cleanup()
         self.temp_dir.cleanup()
 
     async def test_run_task_captures_progress_and_result(self) -> None:
@@ -486,3 +518,15 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
             body = await events_response.text()
             self.assertIn("event: task", body)
             self.assertIn('"status": "completed"', body)
+
+    async def test_task_create_rejects_repo_override_outside_configured_root(self) -> None:
+        response = await self.client.post(
+            "/api/tasks",
+            json={
+                "action": "doctor",
+                "repoPath": self.external_dir.name,
+                "configPath": self.config_path,
+            },
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("configured repository root", await response.text())
