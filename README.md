@@ -195,6 +195,7 @@ CLI 失败结果现在也会带 `cli_failure_kind` 和 `cli_recovery_hint`。如
 这条 `openclaw_builder` 路径目前主要用于本地 `triage/implement/review`；如果实现结果没有导出可推送分支，`publish_branch` 现在会直接 `blocked`，而不是假装还能继续 GitHub 尾链。
 当前主线已经补了显式的 `commit_changes` 步骤：只有实现工作区中的改动被提交为干净 commit 后，`publish_branch` 才会继续；如果提交后工作区仍不干净，链路会继续明确 `blocked`。
 如果 live 计划里包含隔离 CLI worktree，而仓库还有未提交改动，preflight 现在会直接拦下；这些 worktree 只基于已提交 `HEAD`，不会自动带上本地脏改动。
+如果当前本地基线分支已经领先上游（例如 `main` ahead of `origin/main`），而计划又要继续 `publish_branch` 或 GitHub 尾链，preflight 现在会在 live 前直接拦下；否则新建的实现分支会把这些未发布的本地提交一起带进 PR。
 如果 `implement` 判断“请求已满足、无需改动”，结果会显式标成 no-op；后续 `publish_branch` 会因为没有可发布文件变化而跳过。
 
 如果要直接做 GitHub bridge live 验证：

@@ -424,8 +424,18 @@ pipelines:
         你是 OpenClaw 的本地审阅 agent。
         请基于实现结果判断当前分支是否适合进入 GitHub 协作流程。
 
+        实现步骤可能运行在独立 worktree / 分支中，这属于预期，不要因为改动尚未回到仓库根目录就判断为流程错误。
+        如果依赖结果提供了实现分支或实现工作目录，请优先基于这些实现产物审阅；下游 `commit_changes` / `publish_branch` 会继续在实现分支上处理。
+        不要建议把改动手工复制回当前仓库根目录，除非依赖结果明确显示实现分支或实现工作目录缺失。
+
         工作目录：
         {workspace_path}
+
+        实现分支：
+        {source_branch}
+
+        实现工作目录：
+        {source_workspace_path}
 
         用户请求：
         {user_request}
@@ -822,8 +832,18 @@ pipelines:
         你是 OpenClaw 的本地审阅 agent。
         请基于实现结果判断当前分支是否适合进入 GitHub 协作流程。
 
+        实现步骤可能运行在独立 worktree / 分支中，这属于预期，不要因为改动尚未回到仓库根目录就判断为流程错误。
+        如果依赖结果提供了实现分支或实现工作目录，请优先基于这些实现产物审阅；下游 `commit_changes` / `publish_branch` 会继续在实现分支上处理。
+        不要建议把改动手工复制回当前仓库根目录，除非依赖结果明确显示实现分支或实现工作目录缺失。
+
         工作目录：
         {workspace_path}
+
+        实现分支：
+        {source_branch}
+
+        实现工作目录：
+        {source_workspace_path}
 
         用户请求：
         {user_request}
@@ -1038,8 +1058,18 @@ pipelines:
         你是 OpenClaw 的本地审阅 agent。
         请基于实现结果判断当前分支是否适合进入 GitHub 协作流程。
 
+        实现步骤可能运行在独立 worktree / 分支中，这属于预期，不要因为改动尚未回到仓库根目录就判断为流程错误。
+        如果依赖结果提供了实现分支或实现工作目录，请优先基于这些实现产物审阅；下游 `commit_changes` / `publish_branch` 会继续在实现分支上处理。
+        不要建议把改动手工复制回当前仓库根目录，除非依赖结果明确显示实现分支或实现工作目录缺失。
+
         工作目录：
         {workspace_path}
+
+        实现分支：
+        {source_branch}
+
+        实现工作目录：
+        {source_workspace_path}
 
         用户请求：
         {user_request}
