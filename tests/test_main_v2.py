@@ -1,8 +1,11 @@
 import io
+import os
+import sys
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 
-from main_v2 import _print_plan_diagnostics, _print_result, _validate_live_policy
+from main_v2 import _print_plan_diagnostics, _print_result, _validate_live_policy, main
 from openclaw_v2.config import load_app_config
 from openclaw_v2.models import AgentResult, AgentType, ExecutionMode, RunResult, TaskStatus, WorkItem
 from openclaw_v2.orchestrator import HybridOrchestrator
@@ -363,6 +366,65 @@ class MainV2PolicyTests(unittest.TestCase):
 
         self.assertIn("fallback managed agents", str(error.exception))
         self.assertIn("implement -> cursor_editor", str(error.exception))
+
+
+class MainV2WebModeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_main_starts_web_server_with_expected_args(self) -> None:
+        class FakeOrchestrator:
+            def __init__(self, config) -> None:
+                self.config = config
+
+        with (
+            mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "main_v2.py",
+                    "--web",
+                    "--config",
+                    "config_v2.yaml",
+                    "--repo-path",
+                    ".",
+                    "--web-host",
+                    "0.0.0.0",
+                    "--web-port",
+                    "9900",
+                ],
+            ),
+            mock.patch("main_v2.HybridOrchestrator", FakeOrchestrator),
+            mock.patch("openclaw_v2.web.run_web_server", new_callable=mock.AsyncMock) as run_web_server,
+        ):
+            await main()
+
+        run_web_server.assert_awaited_once_with(
+            config_path=os.path.abspath("config_v2.yaml"),
+            repo_path=os.path.abspath("."),
+            host="0.0.0.0",
+            port=9900,
+        )
+
+    async def test_main_rejects_web_with_request(self) -> None:
+        class FakeOrchestrator:
+            def __init__(self, config) -> None:
+                self.config = config
+
+        with (
+            mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "main_v2.py",
+                    "--web",
+                    "--request",
+                    "hello",
+                ],
+            ),
+            mock.patch("main_v2.HybridOrchestrator", FakeOrchestrator),
+        ):
+            with self.assertRaises(SystemExit) as error:
+                await main()
+
+        self.assertIn("--web cannot be combined", str(error.exception))
 
 
 if __name__ == "__main__":
