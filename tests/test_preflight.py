@@ -177,6 +177,226 @@ class PreflightOpenClawTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Available local agents: main, openclaw-control-ext.", checks[0].message)
         self.assertEqual(checks[0].details["available_agent_ids"], ["main", "openclaw-control-ext"])
 
+    async def test_required_commands_include_hermes_for_hermes_steps(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        def fake_which(command: str) -> str | None:
+            if command in {"git", "hermes"}:
+                return f"/usr/bin/{command}"
+            return None
+
+        with mock.patch("openclaw_v2.preflight.shutil.which", side_effect=fake_which):
+            checks = await runner._check_required_commands(plan)
+
+        names = {check.name: check for check in checks}
+        self.assertEqual(names["command:git"].status, CheckStatus.PASSED)
+        self.assertEqual(names["command:hermes"].status, CheckStatus.PASSED)
+
+    def test_hermes_provider_preflight_warns_when_no_credentials_exist(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as home_dir:
+            hermes_home = os.path.join(home_dir, ".hermes")
+            os.makedirs(hermes_home, exist_ok=True)
+            with open(os.path.join(hermes_home, "config.yaml"), "w", encoding="utf-8") as handle:
+                handle.write("model:\n  provider: auto\n  base_url: https://openrouter.ai/api/v1\n")
+
+            with mock.patch.dict("os.environ", {"HOME": home_dir}, clear=True):
+                with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/hermes"):
+                    checks = runner._check_hermes_profiles(plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.WARNING)
+        self.assertIn("no ready inference provider", checks[0].message)
+
+    def test_hermes_provider_preflight_passes_with_env_api_key(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as home_dir:
+            hermes_home = os.path.join(home_dir, ".hermes")
+            os.makedirs(hermes_home, exist_ok=True)
+            with open(os.path.join(hermes_home, "config.yaml"), "w", encoding="utf-8") as handle:
+                handle.write("model:\n  provider: auto\n  base_url: https://openrouter.ai/api/v1\n")
+            with open(os.path.join(hermes_home, ".env"), "w", encoding="utf-8") as handle:
+                handle.write("OPENROUTER_API_KEY=test-key\n")
+
+            with mock.patch.dict("os.environ", {"HOME": home_dir}, clear=True):
+                with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/hermes"):
+                    checks = runner._check_hermes_profiles(plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.PASSED)
+        self.assertIn("usable inference provider path", checks[0].message)
+
+    def test_hermes_provider_preflight_checks_tool_call_support_for_custom_endpoint(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as home_dir:
+            hermes_home = os.path.join(home_dir, ".hermes")
+            os.makedirs(hermes_home, exist_ok=True)
+            with open(os.path.join(hermes_home, "config.yaml"), "w", encoding="utf-8") as handle:
+                handle.write(
+                    "model:\n"
+                    "  provider: custom\n"
+                    "  default: gpt-5.4\n"
+                    "  base_url: http://127.0.0.1:1234/v1\n"
+                )
+            with open(os.path.join(hermes_home, ".env"), "w", encoding="utf-8") as handle:
+                handle.write("OPENAI_API_KEY=test-key\n")
+
+            with mock.patch.dict("os.environ", {"HOME": home_dir}, clear=True):
+                with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/hermes"):
+                    with mock.patch.object(
+                        PreflightRunner,
+                        "_probe_custom_openai_tool_calls",
+                        return_value=(False, "unexpected EOF"),
+                    ):
+                        checks = runner._check_hermes_profiles(plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.PASSED)
+        self.assertEqual(checks[1].status, CheckStatus.WARNING)
+        self.assertIn("failed the direct tool-call probe", checks[1].message)
+
+    def test_hermes_provider_preflight_passes_tool_call_probe(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as home_dir:
+            hermes_home = os.path.join(home_dir, ".hermes")
+            os.makedirs(hermes_home, exist_ok=True)
+            with open(os.path.join(hermes_home, "config.yaml"), "w", encoding="utf-8") as handle:
+                handle.write(
+                    "model:\n"
+                    "  provider: custom\n"
+                    "  default: gpt-5.4\n"
+                    "  base_url: http://127.0.0.1:1234/v1\n"
+                )
+            with open(os.path.join(hermes_home, ".env"), "w", encoding="utf-8") as handle:
+                handle.write("OPENAI_API_KEY=test-key\n")
+
+            with mock.patch.dict("os.environ", {"HOME": home_dir}, clear=True):
+                with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/hermes"):
+                    with mock.patch.object(
+                        PreflightRunner,
+                        "_probe_custom_openai_tool_calls",
+                        return_value=(True, ""),
+                    ):
+                        checks = runner._check_hermes_profiles(plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.PASSED)
+        self.assertEqual(checks[1].status, CheckStatus.PASSED)
+        self.assertIn("supports tool calls", checks[1].message)
+
+    async def test_hermes_runtime_probe_passes_when_ready_marker_is_returned(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        config.runtime.dry_run = False
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as repo_path:
+            with open(os.path.join(repo_path, "AGENTS.md"), "w", encoding="utf-8") as handle:
+                handle.write("# test\n")
+
+            with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/hermes"):
+                with mock.patch(
+                    "openclaw_v2.preflight.asyncio.create_subprocess_exec",
+                    new=mock.AsyncMock(return_value=_FakeProcess(0, "OPENCLAW_STATUS: ready\n")),
+                ):
+                    checks = await runner._check_hermes_runtime(repo_path, plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.PASSED)
+        self.assertIn("runtime probe succeeded", checks[0].message)
+
+    async def test_hermes_runtime_probe_fails_when_tool_run_errors(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        config.runtime.dry_run = False
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as repo_path:
+            with open(os.path.join(repo_path, "AGENTS.md"), "w", encoding="utf-8") as handle:
+                handle.write("# test\n")
+
+            with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/hermes"):
+                with mock.patch(
+                    "openclaw_v2.preflight.asyncio.create_subprocess_exec",
+                    new=mock.AsyncMock(return_value=_FakeProcess(1, "API call failed after 3 retries: Connection error.\n")),
+                ):
+                    checks = await runner._check_hermes_runtime(repo_path, plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.FAILED)
+        self.assertIn("runtime probe failed", checks[0].message)
+
     def test_github_workflow_preflight_fails_when_file_is_missing_in_live_mode(self) -> None:
         config = load_app_config("config_v2.yaml")
         config.runtime.dry_run = False

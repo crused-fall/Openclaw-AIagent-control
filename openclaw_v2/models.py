@@ -12,6 +12,7 @@ class AgentType(str, Enum):
     CODEX = "codex"
     CURSOR = "cursor"
     OPENCLAW = "openclaw"
+    HERMES = "hermes"
     COPILOT = "copilot"
     ANTIGRAVITY = "antigravity"
     SYSTEM = "system"
@@ -21,6 +22,7 @@ class ExecutionMode(str, Enum):
     CLI = "cli"
     GITHUB = "github"
     OPENCLAW = "openclaw"
+    HERMES = "hermes"
     SYSTEM = "system"
 
 

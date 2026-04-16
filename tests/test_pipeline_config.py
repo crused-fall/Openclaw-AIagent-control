@@ -106,6 +106,37 @@ class PipelineConfigTests(unittest.TestCase):
         self.assertEqual(work_items["implement"].profile, "openclaw_local")
         self.assertEqual(work_items["implement"].mode, ExecutionMode.OPENCLAW)
 
+    def test_hermes_supervised_pipeline_uses_hermes_for_supervision_and_recording(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        config.runtime.pipeline = "mission_control_hermes_supervised"
+        planner = PipelinePlanner(config)
+
+        plan = planner.build_plan()
+        work_items = {item.id: item for item in plan}
+
+        self.assertEqual(work_items["triage"].profile, "hermes_local")
+        self.assertEqual(work_items["triage"].assignment, "triage_hermes")
+        self.assertEqual(work_items["triage"].managed_agent, "hermes_supervisor")
+        self.assertEqual(work_items["triage"].mode, ExecutionMode.HERMES)
+        self.assertEqual(work_items["implement"].mode, ExecutionMode.CLI)
+        self.assertEqual(work_items["review"].profile, "hermes_local")
+        self.assertEqual(work_items["review"].assignment, "review_hermes")
+        self.assertEqual(work_items["review"].managed_agent, "hermes_supervisor")
+        self.assertEqual(work_items["review"].mode, ExecutionMode.HERMES)
+        self.assertEqual(work_items["record_summary"].profile, "hermes_local")
+        self.assertEqual(work_items["record_summary"].assignment, "record_summary_hermes")
+        self.assertEqual(work_items["record_summary"].managed_agent, "hermes_scribe")
+        self.assertEqual(work_items["record_summary"].mode, ExecutionMode.HERMES)
+        self.assertEqual(sorted(work_items["record_summary"].depends_on), ["publish_branch", "review", "sync_issue"])
+        self.assertEqual(
+            sorted(work_items["update_issue"].depends_on),
+            ["publish_branch", "record_summary", "review", "sync_issue"],
+        )
+        self.assertEqual(
+            sorted(work_items["draft_pr"].depends_on),
+            ["publish_branch", "record_summary", "review", "sync_issue", "update_issue"],
+        )
+
     def test_github_bridge_smoke_pipeline_only_contains_review_workflow_steps(self) -> None:
         config = load_app_config("config_v2.yaml")
         config.runtime.pipeline = "github_bridge_smoke"
@@ -132,6 +163,7 @@ class PipelineConfigTests(unittest.TestCase):
             "hybrid_default",
             "mission_control_openclaw_triage",
             "mission_control_openclaw_default",
+            "mission_control_hermes_supervised",
             "github_bridge_smoke",
         ]:
             config.runtime.pipeline = pipeline_name

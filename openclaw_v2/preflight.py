@@ -5,7 +5,7 @@ import json
 import os
 import shutil
 
-from .config import AppConfig
+from .config import AppConfig, _load_yaml
 from .github_support import resolve_github_repo_from_origin
 from .models import CheckStatus, ExecutionMode, PreflightCheck, PreflightReport, WorkItem
 
@@ -24,6 +24,8 @@ class PreflightRunner:
         checks.extend(self._check_managed_assignments(plan))
         checks.extend(await self._check_required_commands(plan))
         checks.extend(await self._check_openclaw_profiles(repo_path, plan))
+        checks.extend(self._check_hermes_profiles(plan))
+        checks.extend(await self._check_hermes_runtime(repo_path, plan))
         if any(bool(item.metadata.get("requires_origin_remote")) for item in plan):
             checks.append(await self._check_origin_remote(repo_path))
         if any(bool(item.metadata.get("requires_origin_remote")) for item in plan) or any(
@@ -200,6 +202,8 @@ class PreflightRunner:
                 command_names.add(profile.command[0])
             if item.mode == ExecutionMode.OPENCLAW:
                 command_names.add("openclaw")
+            if item.mode == ExecutionMode.HERMES:
+                command_names.add("hermes")
             if item.mode == ExecutionMode.GITHUB:
                 command_names.add("gh")
 
@@ -359,6 +363,414 @@ class PreflightRunner:
                     )
                 )
         return checks
+
+    def _check_hermes_profiles(self, plan: list[WorkItem]) -> list[PreflightCheck]:
+        profile_map = {
+            item.profile: self.config.profiles[item.profile]
+            for item in plan
+            if item.mode == ExecutionMode.HERMES
+        }
+        if not profile_map or shutil.which("hermes") is None:
+            return []
+
+        hermes_home = os.path.expanduser("~/.hermes")
+        config_path = os.path.join(hermes_home, "config.yaml")
+        env_path = os.path.join(hermes_home, ".env")
+        auth_json_path = os.path.join(hermes_home, "auth.json")
+        anthropic_oauth_path = os.path.join(hermes_home, ".anthropic_oauth.json")
+
+        checks: list[PreflightCheck] = []
+        config_data: dict[str, object] = {}
+        if os.path.exists(config_path):
+            try:
+                loaded = _load_yaml(config_path)
+                if isinstance(loaded, dict):
+                    config_data = loaded
+            except Exception as error:
+                status = CheckStatus.WARNING if self.config.runtime.dry_run else CheckStatus.FAILED
+                checks.append(
+                    PreflightCheck(
+                        name="hermes_config",
+                        status=status,
+                        message=f"Hermes config could not be parsed: {error}",
+                        details={"config_path": config_path},
+                    )
+                )
+                return checks
+
+        env_values = self._load_env_file_values(env_path)
+        model_config = config_data.get("model", {})
+        if not isinstance(model_config, dict):
+            model_config = {}
+
+        default_provider = str(model_config.get("provider", "")).strip()
+        default_base_url = str(model_config.get("base_url", "")).strip()
+        default_model = str(model_config.get("default") or model_config.get("model") or "").strip()
+        default_api_key = str(model_config.get("api_key", "")).strip()
+        auth_json_exists = os.path.exists(auth_json_path)
+        anthropic_oauth_exists = os.path.exists(anthropic_oauth_path)
+
+        for profile_name, profile in profile_map.items():
+            effective_provider = profile.hermes_provider.strip() or default_provider or "auto"
+            effective_base_url = default_base_url
+            effective_model = profile.hermes_model.strip() or default_model
+            effective_api_key = default_api_key
+            ready, reason, details = self._hermes_provider_ready(
+                effective_provider,
+                effective_base_url,
+                effective_api_key,
+                env_values,
+                auth_json_exists,
+                anthropic_oauth_exists,
+            )
+            status = CheckStatus.PASSED if ready else (CheckStatus.WARNING if self.config.runtime.dry_run else CheckStatus.FAILED)
+            if ready:
+                message = (
+                    f"Hermes profile `{profile_name}` has a usable inference provider path ({details['provider']})."
+                )
+            else:
+                message = (
+                    f"Hermes profile `{profile_name}` has no ready inference provider. {reason} "
+                    "Run `hermes model` or `hermes auth`, or add the required API key to `~/.hermes/.env`."
+                )
+            details.update(
+                {
+                    "config_path": config_path,
+                    "env_path": env_path,
+                    "auth_json_exists": auth_json_exists,
+                    "anthropic_oauth_exists": anthropic_oauth_exists,
+                }
+            )
+            checks.append(
+                PreflightCheck(
+                    name=f"hermes_provider:{profile_name}",
+                    status=status,
+                    message=message,
+                    details=details,
+                )
+            )
+            if (
+                ready
+                and effective_provider.strip() in {"custom", "main", "lmstudio", "ollama", "vllm", "llamacpp"}
+                and profile.hermes_toolsets
+            ):
+                probe_ok, probe_reason = self._probe_custom_openai_tool_calls(
+                    effective_base_url,
+                    effective_api_key or env_values.get("OPENAI_API_KEY", ""),
+                    effective_model,
+                )
+                probe_status = CheckStatus.PASSED if probe_ok else CheckStatus.WARNING
+                probe_message = (
+                    f"Hermes profile `{profile_name}` custom endpoint supports tool calls."
+                    if probe_ok
+                    else (
+                        f"Hermes profile `{profile_name}` custom endpoint failed the direct tool-call probe: {probe_reason}. "
+                        "Keeping this as a warning because the Hermes runtime probe is authoritative for live supervision/recording runs."
+                    )
+                )
+                checks.append(
+                    PreflightCheck(
+                        name=f"hermes_tool_calling:{profile_name}",
+                        status=probe_status,
+                        message=probe_message,
+                        details={
+                            "provider": effective_provider,
+                            "base_url": effective_base_url,
+                            "model": effective_model,
+                            "toolsets": list(profile.hermes_toolsets),
+                        },
+                    )
+                )
+        return checks
+
+    async def _check_hermes_runtime(self, repo_path: str, plan: list[WorkItem]) -> list[PreflightCheck]:
+        if self.config.runtime.dry_run:
+            return []
+
+        profile_map = {
+            item.profile: self.config.profiles[item.profile]
+            for item in plan
+            if item.mode == ExecutionMode.HERMES and self.config.profiles[item.profile].hermes_toolsets
+        }
+        if not profile_map or shutil.which("hermes") is None:
+            return []
+
+        probe_file = os.path.join(repo_path, "AGENTS.md")
+        if not os.path.exists(probe_file):
+            probe_file = os.path.join(repo_path, "config_v2.yaml")
+        if not os.path.exists(probe_file):
+            return [
+                PreflightCheck(
+                    name="hermes_runtime",
+                    status=CheckStatus.WARNING,
+                    message="Hermes runtime probe skipped because no probe file was found in the repository.",
+                    details={"repo_path": repo_path},
+                )
+            ]
+
+        checks: list[PreflightCheck] = []
+        for profile_name, profile in profile_map.items():
+            prompt = "\n".join(
+                [
+                    "Read the target file with Hermes tools before answering.",
+                    f"Target file: {probe_file}",
+                    "Then reply with exactly:",
+                    "OPENCLAW_STATUS: ready",
+                ]
+            )
+            command = [
+                "hermes",
+                "chat",
+                "-q",
+                prompt,
+                "-Q",
+                "--source",
+                profile.hermes_source.strip() or "tool",
+            ]
+            if profile.hermes_provider.strip():
+                command.extend(["--provider", profile.hermes_provider.strip()])
+            if profile.hermes_model.strip():
+                command.extend(["--model", profile.hermes_model.strip()])
+            toolsets = ",".join(item.strip() for item in profile.hermes_toolsets if item.strip())
+            if toolsets:
+                command.extend(["--toolsets", toolsets])
+            skills = ",".join(item.strip() for item in profile.hermes_skills if item.strip())
+            if skills:
+                command.extend(["--skills", skills])
+            max_turns = profile.hermes_max_turns if profile.hermes_max_turns > 0 else 8
+            command.extend(["--max-turns", str(min(max_turns, 8))])
+            if profile.hermes_yolo:
+                command.append("--yolo")
+
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                cwd=repo_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=45)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.communicate()
+                checks.append(
+                    PreflightCheck(
+                        name=f"hermes_runtime:{profile_name}",
+                        status=CheckStatus.FAILED,
+                        message="Hermes runtime probe timed out while trying to complete a simple read-only tool task.",
+                        details={"command": command, "probe_file": probe_file},
+                    )
+                )
+                continue
+
+            output = stdout.decode("utf-8", errors="replace").strip()
+            error_output = stderr.decode("utf-8", errors="replace").strip()
+            if process.returncode == 0 and "OPENCLAW_STATUS: ready" in output:
+                checks.append(
+                    PreflightCheck(
+                        name=f"hermes_runtime:{profile_name}",
+                        status=CheckStatus.PASSED,
+                        message="Hermes runtime probe succeeded on a simple read-only tool task.",
+                        details={"probe_file": probe_file},
+                    )
+                )
+                continue
+
+            details = {
+                "probe_file": probe_file,
+                "command": command,
+                "exit_code": process.returncode,
+            }
+            if output:
+                details["output"] = output.splitlines()[-4:]
+            if error_output:
+                details["stderr"] = error_output.splitlines()[-4:]
+            output_lines = [line.strip() for line in output.splitlines() if line.strip()]
+            non_session_output_lines = [
+                line for line in output_lines if not line.lower().startswith("session_id:")
+            ]
+            message = "Hermes runtime probe failed on a simple read-only tool task."
+            if error_output:
+                message = f"{message} {error_output.splitlines()[-1]}"
+            elif non_session_output_lines:
+                message = f"{message} {non_session_output_lines[-1]}"
+            checks.append(
+                PreflightCheck(
+                    name=f"hermes_runtime:{profile_name}",
+                    status=CheckStatus.FAILED,
+                    message=message,
+                    details=details,
+                )
+            )
+
+        return checks
+
+    @staticmethod
+    def _load_env_file_values(path: str) -> dict[str, str]:
+        values = dict(os.environ)
+        if not os.path.exists(path):
+            return values
+
+        with open(path, "r", encoding="utf-8") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                if not key or key in values:
+                    continue
+                values[key] = value.strip().strip('"').strip("'")
+        return values
+
+    @staticmethod
+    def _hermes_provider_ready(
+        provider: str,
+        base_url: str,
+        api_key: str,
+        env_values: dict[str, str],
+        auth_json_exists: bool,
+        anthropic_oauth_exists: bool,
+    ) -> tuple[bool, str, dict[str, object]]:
+        normalized_provider = provider.strip() or "auto"
+        supported_key_groups = {
+            "openrouter": ["OPENROUTER_API_KEY", "OPENAI_API_KEY"],
+            "anthropic": ["ANTHROPIC_API_KEY"],
+            "copilot": ["GITHUB_TOKEN"],
+            "gemini": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
+            "huggingface": ["HF_TOKEN"],
+            "zai": ["GLM_API_KEY"],
+            "kimi-coding": ["KIMI_API_KEY"],
+            "kimi-coding-cn": ["KIMI_API_KEY"],
+            "minimax": ["MINIMAX_API_KEY"],
+            "minimax-cn": ["MINIMAX_CN_API_KEY"],
+            "xiaomi": ["XIAOMI_API_KEY"],
+            "arcee": ["ARCEEAI_API_KEY"],
+            "ollama-cloud": ["OLLAMA_API_KEY"],
+            "kilocode": ["KILOCODE_API_KEY"],
+            "nous": ["NOUS_API_KEY"],
+            "openai-codex": ["OPENAI_API_KEY"],
+        }
+
+        def present(keys: list[str]) -> list[str]:
+            return [key for key in keys if env_values.get(key, "").strip()]
+
+        details: dict[str, object] = {"provider": normalized_provider}
+        if api_key.strip():
+            details["credential_source"] = "config_api_key"
+            return True, "", details
+
+        if normalized_provider in {"custom", "lmstudio", "ollama", "vllm", "llamacpp"}:
+            if base_url.strip():
+                details["credential_source"] = "custom_base_url"
+                details["base_url"] = base_url
+                return True, "", details
+            return False, "No custom base_url is configured for the local OpenAI-compatible endpoint.", details
+
+        if normalized_provider == "anthropic":
+            if anthropic_oauth_exists or auth_json_exists:
+                details["credential_source"] = "oauth_store"
+                return True, "", details
+            found = present(supported_key_groups["anthropic"])
+            if found:
+                details["credential_source"] = "env"
+                details["env_keys"] = found
+                return True, "", details
+            return False, "Anthropic provider requires OAuth credentials or ANTHROPIC_API_KEY.", details
+
+        if normalized_provider == "openai-codex":
+            if auth_json_exists:
+                details["credential_source"] = "auth_store"
+                return True, "", details
+            found = present(supported_key_groups["openai-codex"])
+            if found:
+                details["credential_source"] = "env"
+                details["env_keys"] = found
+                return True, "", details
+            return False, "OpenAI Codex provider requires `hermes auth` or an OPENAI_API_KEY.", details
+
+        if normalized_provider in supported_key_groups:
+            found = present(supported_key_groups[normalized_provider])
+            if found:
+                details["credential_source"] = "env"
+                details["env_keys"] = found
+                return True, "", details
+            return (
+                False,
+                f"{normalized_provider} provider is selected but no matching credential was found.",
+                details,
+            )
+
+        auto_keys: list[str] = []
+        for keys in supported_key_groups.values():
+            for key in keys:
+                if key not in auto_keys:
+                    auto_keys.append(key)
+        found = present(auto_keys)
+        if found:
+            details["credential_source"] = "env"
+            details["env_keys"] = found
+            return True, "", details
+        if auth_json_exists or anthropic_oauth_exists:
+            details["credential_source"] = "auth_store"
+            return True, "", details
+        if base_url.strip() and "openrouter.ai" not in base_url:
+            details["credential_source"] = "custom_base_url"
+            details["base_url"] = base_url
+            return True, "", details
+        return False, "Auto provider could not find any usable Hermes credentials or local endpoint.", details
+
+    @staticmethod
+    def _probe_custom_openai_tool_calls(
+        base_url: str,
+        api_key: str,
+        model: str,
+    ) -> tuple[bool, str]:
+        if not base_url.strip():
+            return False, "No custom base_url is configured."
+        if not model.strip():
+            return False, "No model is configured for the custom Hermes endpoint."
+
+        try:
+            from openai import OpenAI
+        except ModuleNotFoundError:
+            return False, "The `openai` Python package is unavailable for endpoint probing."
+
+        try:
+            client = OpenAI(base_url=base_url, api_key=api_key or "dummy")
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": "Call the ping tool with value 'ok' and stop.",
+                    }
+                ],
+                tools=[
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "ping",
+                            "description": "Return a ping payload.",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {"value": {"type": "string"}},
+                                "required": ["value"],
+                            },
+                        },
+                    }
+                ],
+                tool_choice={"type": "function", "function": {"name": "ping"}},
+                max_tokens=64,
+            )
+        except Exception as error:
+            return False, str(error)
+
+        message = response.choices[0].message if response.choices else None
+        tool_calls = getattr(message, "tool_calls", None)
+        if tool_calls:
+            return True, ""
+        return False, "The endpoint returned a response without any tool calls."
 
     @staticmethod
     def _is_within_repo(workspace_path: str, repo_path: str) -> bool:

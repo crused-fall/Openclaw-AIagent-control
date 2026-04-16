@@ -70,6 +70,7 @@
 - 任务拆分仍然是静态 pipeline，不是智能动态 planner
 - OpenClaw 接入骨架已落地，但目前只安全接到 `triage` 变体 pipeline
 - OpenClaw 已验证“仓库外 workspace + repo 绝对路径 handoff”可运行，当前已有 `mission_control_openclaw_triage` 和 `mission_control_openclaw_default` 两条变体 pipeline
+- Hermes 已作为本机 `supervisor + recorder` 接入，新增 `mission_control_hermes_supervised` 变体 pipeline，但不承担 `implement`
 - `Gemini` 和 `Cursor` 已进入受控 agent 注册表，但还没进入默认 assignment
 - 当前 fallback 仍是静态配置回退，不是实时在线调度
 - live 模式下已默认禁止 fallback managed agent 静默执行

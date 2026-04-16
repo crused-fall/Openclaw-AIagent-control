@@ -7,7 +7,7 @@ from typing import Callable
 
 from .artifacts import ArtifactStore
 from .config import AppConfig, resolve_runtime_path
-from .executors import CLIExecutor, GitHubWorkflowExecutor, OpenClawExecutor
+from .executors import CLIExecutor, GitHubWorkflowExecutor, HermesExecutor, OpenClawExecutor
 from .models import AgentResult, CheckStatus, ExecutionContext, ExecutionMode, RunResult, TaskStatus, WorkItem
 from .planner import PipelinePlanner
 from .preflight import PreflightRunner
@@ -26,6 +26,7 @@ class HybridOrchestrator:
         self.executors = {
             ExecutionMode.CLI: CLIExecutor(config),
             ExecutionMode.GITHUB: GitHubWorkflowExecutor(config),
+            ExecutionMode.HERMES: HermesExecutor(config),
             ExecutionMode.OPENCLAW: OpenClawExecutor(config),
         }
 

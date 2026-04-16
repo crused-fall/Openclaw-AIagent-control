@@ -103,6 +103,14 @@ tests/
 - 当前这样设计是为了先替换最容易受 Claude 环境影响的监督层，不把 gateway / ACP 问题一次性扩大
 - OpenClaw executor 会显式把 repo 绝对路径传给 agent，并要求它先读取 repo 内的 `AGENTS.md`
 
+另有一条 Hermes 监督变体 pipeline：
+
+- `mission_control_hermes_supervised`：让 Hermes 承担 `triage + review + record_summary`
+- `implement` 仍保持本地 CLI 执行，不让 Hermes 直接做实现
+- `record_summary` 会在 `publish_branch + sync_issue + review` 之后整理协作记录，供 `update_issue` 和 `draft_pr` 继续复用
+- 适合把 Hermes 当成 supervisor + recorder，而不是 implementer
+- 这条变体默认复用你本机 `~/.hermes/config.yaml` 的 provider / model，不强行覆盖 Hermes 自身配置
+
 另有一条 GitHub-only smoke pipeline：`github_bridge_smoke`
 
 - 只跑 `dispatch_review -> collect_review`
@@ -134,6 +142,7 @@ gh auth login
 - `codex`
 - `cursor-agent`
 - `openclaw`
+- `hermes`
 
 如果要验证本机 OpenClaw 接入，再额外准备：
 
@@ -146,6 +155,16 @@ export OPENCLAW_AGENT_ID="your-openclaw-agent-id"
 
 推荐把 OpenClaw agent 的 workspace 放在仓库外，再把仓库绝对路径交给 executor。
 不要长期把 workspace 直接指到 repo 根目录。
+
+如果要启用 Hermes 监督/记录变体，先确认本机 `hermes` 可用：
+
+```bash
+hermes --version
+hermes doctor
+```
+
+如果 Hermes 走的是本机自定义 OpenAI-compatible endpoint，这个 endpoint 还需要支持 tool calling / function calling；
+否则 Hermes 虽然能聊天，但无法稳定驱动 `file` / `terminal` 这类监督步骤。
 
 如果你的 `claude` 依赖自定义 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`，当前默认 `claude_local` 会保留这些环境变量。
 仓库里还提供了一个隔离版 `claude_local_isolated`，只在你需要显式绕过这两个变量时使用。
@@ -171,6 +190,14 @@ python3 main_v2.py --list-steps --steps triage
 
 ```bash
 python3 main_v2.py --request "修复登录页报错" --steps triage,implement,review
+```
+
+如果你想让 Hermes 承担 supervisor + recorder，但不接 implement：
+
+```bash
+python3 main_v2.py --pipeline mission_control_hermes_supervised \
+  --request "修复登录页报错" \
+  --steps triage,implement,review,record_summary
 ```
 
 如果你只想验证 GitHub review workflow，不想先经过本地 `triage/implement/review`：

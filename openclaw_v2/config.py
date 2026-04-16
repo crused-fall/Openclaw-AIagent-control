@@ -30,7 +30,9 @@ class RuntimeConfig:
     github_retry_backoff_seconds: float = 1.0
     github_workflow_view_poll_attempts: int = 1
     github_workflow_view_poll_interval_seconds: float = 2.0
-    allowed_live_steps: list[str] = field(default_factory=lambda: ["triage", "implement", "review", "publish_branch"])
+    allowed_live_steps: list[str] = field(
+        default_factory=lambda: ["triage", "implement", "review", "record_summary", "publish_branch"]
+    )
 
 
 @dataclass
@@ -56,6 +58,13 @@ class ProfileConfig:
     openclaw_agent_id: str = ""
     openclaw_profile: str = ""
     openclaw_local: bool = True
+    hermes_provider: str = ""
+    hermes_model: str = ""
+    hermes_toolsets: list[str] = field(default_factory=list)
+    hermes_skills: list[str] = field(default_factory=list)
+    hermes_source: str = "tool"
+    hermes_max_turns: int = 0
+    hermes_yolo: bool = False
 
 
 @dataclass
@@ -494,6 +503,13 @@ def load_app_config(path: str) -> AppConfig:
             openclaw_agent_id=raw.get("openclaw_agent_id", ""),
             openclaw_profile=raw.get("openclaw_profile", ""),
             openclaw_local=raw.get("openclaw_local", True),
+            hermes_provider=raw.get("hermes_provider", ""),
+            hermes_model=raw.get("hermes_model", ""),
+            hermes_toolsets=raw.get("hermes_toolsets", []),
+            hermes_skills=raw.get("hermes_skills", []),
+            hermes_source=raw.get("hermes_source", "tool"),
+            hermes_max_turns=raw.get("hermes_max_turns", 0),
+            hermes_yolo=raw.get("hermes_yolo", False),
         )
 
     managed_agents: dict[str, ManagedAgentConfig] = {}
