@@ -957,10 +957,18 @@ def _serialize_plan_for_ui(plan: list[Any]) -> list[dict[str, Any]]:
     return items
 
 
+def _serialize_runtime_snapshot(runtime: Any) -> dict[str, Any]:
+    return {
+        "dry_run": bool(runtime.dry_run),
+        "require_step_selection_for_live": bool(runtime.require_step_selection_for_live),
+        "allow_fallback_in_live": bool(runtime.allow_fallback_in_live),
+        "allowed_live_steps": list(runtime.allowed_live_steps),
+    }
+
+
 def _serialize_config_snapshot(config: Any, plan: list[Any]) -> dict[str, Any]:
     return {
-        "runtime": _json_ready(config.runtime),
-        "github": _json_ready(config.github),
+        "runtime": _serialize_runtime_snapshot(config.runtime),
         "defaultPipeline": config.runtime.pipeline,
         "pipelines": {
             name: [
@@ -975,14 +983,6 @@ def _serialize_config_snapshot(config: Any, plan: list[Any]) -> dict[str, Any]:
                 for step in steps
             ]
             for name, steps in config.pipelines.items()
-        },
-        "managedAgents": {
-            name: _json_ready(agent)
-            for name, agent in sorted(config.managed_agents.items())
-        },
-        "assignments": {
-            name: _json_ready(item)
-            for name, item in sorted(config.assignments.items())
         },
         "currentPlan": _serialize_plan_for_ui(plan),
     }

@@ -95,6 +95,8 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("integrations", payload)
         self.assertIn("github", payload["integrations"])
         self.assertIn("hermes", payload["integrations"])
+        self.assertNotIn("managedAgents", payload["snapshot"])
+        self.assertNotIn("assignments", payload["snapshot"])
 
     async def test_index_serves_readiness_and_output_controls(self) -> None:
         response = await self.client.get("/")
