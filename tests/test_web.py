@@ -9,7 +9,7 @@ from unittest import mock
 from aiohttp.test_utils import TestClient, TestServer
 
 from openclaw_v2.models import AgentResult, AgentType, ExecutionMode, RunResult, TaskStatus, WorkItem
-from openclaw_v2.web import create_web_app
+from openclaw_v2.web import APP_HOUSEKEEPING_TOKEN, create_web_app
 
 
 def _write_minimal_config(path: str) -> None:
@@ -67,12 +67,16 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.repo_path = self.temp_dir.name
         self.config_path = os.path.join(self.repo_path, "config_v2.yaml")
         _write_minimal_config(self.config_path)
+        self.app = create_web_app(
+            config_path=self.config_path,
+            repo_path=self.repo_path,
+        )
+        self.housekeeping_headers = {
+            "X-OpenClaw-Housekeeping-Token": self.app[APP_HOUSEKEEPING_TOKEN],
+        }
         self.client = TestClient(
             TestServer(
-                create_web_app(
-                    config_path=self.config_path,
-                    repo_path=self.repo_path,
-                )
+                self.app
             )
         )
         await self.client.start_server()
@@ -92,6 +96,8 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["snapshot"]["currentPlan"][0]["id"], "implement")
         self.assertEqual(payload["repoPath"], _normalized_path(self.repo_path))
         self.assertIn("defaultOpenClawAgentId", payload)
+        self.assertIn("housekeeping", payload)
+        self.assertEqual(payload["housekeeping"]["confirmationToken"], self.housekeeping_headers["X-OpenClaw-Housekeeping-Token"])
         self.assertIn("integrations", payload)
         self.assertIn("github", payload["integrations"])
         self.assertIn("hermes", payload["integrations"])
@@ -261,11 +267,25 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
             json.dump({"run_id": "run-cleanup", "plan": [], "results": [], "success": True}, handle)
 
-        response = await self.client.post("/api/history/run-cleanup/cleanup", json={})
+        response = await self.client.post(
+            "/api/history/run-cleanup/cleanup",
+            json={},
+            headers=self.housekeeping_headers,
+        )
         self.assertEqual(response.status, 200)
         payload = await response.json()
         self.assertEqual(payload["runId"], "run-cleanup")
         self.assertFalse(os.path.exists(run_dir))
+
+    async def test_cleanup_endpoint_requires_housekeeping_token(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-no-token")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-no-token", "plan": [], "results": [], "success": True}, handle)
+
+        response = await self.client.post("/api/history/run-no-token/cleanup", json={})
+        self.assertEqual(response.status, 403)
+        self.assertIn("confirmation token", await response.text())
 
     async def test_cleanup_endpoint_skips_workspace_manifests_outside_repo_scope(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-suspicious")
@@ -288,6 +308,7 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
             response = await self.client.post(
                 "/api/history/run-suspicious/cleanup",
                 json={"removeArtifacts": False, "removeWorktrees": True},
+                headers=self.housekeeping_headers,
             )
 
         self.assertEqual(response.status, 200)
@@ -332,6 +353,7 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
                 response = await self.client.post(
                     "/api/history/run-managed/cleanup",
                     json={"removeArtifacts": False, "removeWorktrees": True},
+                    headers=self.housekeeping_headers,
                 )
 
             self.assertEqual(response.status, 200)
@@ -358,13 +380,22 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
                 json.dump({"run_id": run_id, "plan": [], "results": [], "success": True}, handle)
             os.utime(run_dir, (index, index))
 
-        response = await self.client.post("/api/history/prune", json={"keepLatest": 1})
+        response = await self.client.post(
+            "/api/history/prune",
+            json={"keepLatest": 1},
+            headers=self.housekeeping_headers,
+        )
         self.assertEqual(response.status, 200)
         payload = await response.json()
         self.assertEqual(len(payload["removed"]), 2)
         self.assertTrue(os.path.exists(os.path.join(runs_root, "run-c")))
         self.assertFalse(os.path.exists(os.path.join(runs_root, "run-a")))
         self.assertFalse(os.path.exists(os.path.join(runs_root, "run-b")))
+
+    async def test_prune_endpoint_requires_housekeeping_token(self) -> None:
+        response = await self.client.post("/api/history/prune", json={"keepLatest": 1})
+        self.assertEqual(response.status, 403)
+        self.assertIn("confirmation token", await response.text())
 
 
 class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
@@ -374,12 +405,13 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
         self.repo_path = self.temp_dir.name
         self.config_path = os.path.join(self.repo_path, "config_v2.yaml")
         _write_minimal_config(self.config_path)
+        self.app = create_web_app(
+            config_path=self.config_path,
+            repo_path=self.repo_path,
+        )
         self.client = TestClient(
             TestServer(
-                create_web_app(
-                    config_path=self.config_path,
-                    repo_path=self.repo_path,
-                )
+                self.app
             )
         )
         await self.client.start_server()

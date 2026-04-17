@@ -1800,8 +1800,12 @@ function renderOutput(payload) {
 }
 
 async function fetchJson(url, options = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
   const response = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...options,
   });
   if (!response.ok) {
@@ -1809,6 +1813,11 @@ async function fetchJson(url, options = {}) {
     throw new Error(message || `HTTP ${response.status}`);
   }
   return response.json();
+}
+
+function housekeepingHeaders() {
+  const token = state.bootstrap?.housekeeping?.confirmationToken || "";
+  return token ? { "X-OpenClaw-Housekeeping-Token": token } : {};
 }
 
 async function loadBootstrap() {
@@ -1905,6 +1914,7 @@ async function cleanupRun(runId) {
   });
   const payload = await fetchJson(`/api/history/${encodeURIComponent(runId)}/cleanup?${query.toString()}`, {
     method: "POST",
+    headers: housekeepingHeaders(),
     body: JSON.stringify({
       removeWorktrees: true,
       removeArtifacts: true,
@@ -1931,6 +1941,7 @@ async function pruneRuns() {
   });
   const payload = await fetchJson(`/api/history/prune?${query.toString()}`, {
     method: "POST",
+    headers: housekeepingHeaders(),
     body: JSON.stringify({
       keepLatest,
       removeWorktrees: true,

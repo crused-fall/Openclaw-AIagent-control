@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 import json
 import os
 import re
@@ -25,6 +26,7 @@ APP_REPO_PATH = web.AppKey("repo_path", str)
 APP_STATIC_ROOT = web.AppKey("static_root", str)
 APP_TASK_MANAGER = web.AppKey("task_manager", Any)
 APP_ALLOW_PATH_OVERRIDE = web.AppKey("allow_path_override", bool)
+APP_HOUSEKEEPING_TOKEN = web.AppKey("housekeeping_token", str)
 
 
 def _json_ready(value: Any) -> Any:
@@ -93,6 +95,13 @@ def _resolve_dashboard_scope(
             "Dashboard configPath must stay within the repository or match the configured config file."
         )
     return str(_canonical_path(repo_path)), str(_canonical_path(config_path))
+
+
+def _require_housekeeping_token(request: web.Request) -> None:
+    expected = str(request.app[APP_HOUSEKEEPING_TOKEN])
+    provided = request.headers.get("X-OpenClaw-Housekeeping-Token", "").strip()
+    if not provided or not secrets.compare_digest(provided, expected):
+        raise web.HTTPForbidden(text="Housekeeping confirmation token is required.")
 
 
 def _selected_steps(payload: dict[str, Any]) -> list[str] | None:
@@ -1376,6 +1385,9 @@ async def _bootstrap_handler(request: web.Request) -> web.Response:
         "configPath": config_path,
         "git": _git_status_snapshot(repo_path),
         "artifactsRoot": artifacts_root,
+        "housekeeping": {
+            "confirmationToken": str(request.app[APP_HOUSEKEEPING_TOKEN]),
+        },
         "defaultOpenClawAgentId": _default_openclaw_agent_id(config),
         "integrations": {
             "github": github_overview,
@@ -1501,6 +1513,7 @@ async def _history_file_handler(request: web.Request) -> web.Response:
 
 
 async def _history_cleanup_handler(request: web.Request) -> web.Response:
+    _require_housekeeping_token(request)
     try:
         repo_path, config_path = _resolve_dashboard_scope(
             request.app,
@@ -1530,6 +1543,7 @@ async def _history_cleanup_handler(request: web.Request) -> web.Response:
 
 
 async def _history_prune_handler(request: web.Request) -> web.Response:
+    _require_housekeeping_token(request)
     try:
         repo_path, config_path = _resolve_dashboard_scope(
             request.app,
@@ -1636,6 +1650,7 @@ def create_web_app(
     app[APP_STATIC_ROOT] = str(static_root)
     app[APP_TASK_MANAGER] = DashboardTaskManager(app)
     app[APP_ALLOW_PATH_OVERRIDE] = allow_path_override
+    app[APP_HOUSEKEEPING_TOKEN] = secrets.token_urlsafe(24)
 
     app.router.add_get("/", _index_handler)
     app.router.add_get("/api/bootstrap", _bootstrap_handler)
