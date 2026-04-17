@@ -148,6 +148,8 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         payload = await response.json()
         self.assertEqual(payload["agentId"], "openclaw-control-ext")
         self.assertTrue(payload["healthOk"])
+        self.assertNotIn("healthRaw", payload)
+        self.assertNotIn("knownAgents", payload)
 
     async def test_bootstrap_allows_in_repo_config_override(self) -> None:
         alt_dir = os.path.join(self.repo_path, "configs")

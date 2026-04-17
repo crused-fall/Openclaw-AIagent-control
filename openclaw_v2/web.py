@@ -871,6 +871,15 @@ def _command_snapshot(
     }
 
 
+def _public_command_snapshot(capture: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ok": bool(capture.get("ok", False)),
+        "exitCode": capture.get("exitCode"),
+        "stdout": str(capture.get("stdout", "")),
+        "stderr": str(capture.get("stderr", "")),
+    }
+
+
 def _openclaw_health_snapshot(agent_id: str) -> dict[str, Any]:
     health_capture = _command_snapshot(["openclaw", "health", "--json"], timeout_seconds=30.0)
     gateway_capture = _command_snapshot(["openclaw", "gateway", "status"], timeout_seconds=15.0)
@@ -907,12 +916,10 @@ def _openclaw_health_snapshot(agent_id: str) -> dict[str, Any]:
         "agentId": agent_id,
         "healthOk": bool(health_payload.get("ok")),
         "defaultAgentId": health_payload.get("defaultAgentId", ""),
-        "knownAgents": [agent_id for agent_id in agent_ids if agent_id],
         "targetAgentPresent": agent_id in agent_ids,
         "channels": channels,
-        "healthRaw": health_payload,
-        "gateway": gateway_capture,
-        "memory": memory_capture,
+        "gateway": _public_command_snapshot(gateway_capture),
+        "memory": _public_command_snapshot(memory_capture),
     }
 
 
