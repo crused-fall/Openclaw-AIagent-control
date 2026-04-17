@@ -199,10 +199,8 @@ def _build_hermes_overview(config: Any) -> dict[str, Any]:
                 "provider": profile.hermes_provider,
                 "model": profile.hermes_model,
                 "toolsets": list(profile.hermes_toolsets),
-                "skills": list(profile.hermes_skills),
                 "source": profile.hermes_source,
                 "maxTurns": profile.hermes_max_turns,
-                "yolo": bool(profile.hermes_yolo),
             }
         )
 
@@ -214,10 +212,7 @@ def _build_hermes_overview(config: Any) -> dict[str, Any]:
             {
                 "name": name,
                 "profile": agent.profile,
-                "capabilities": list(agent.capabilities),
                 "role": _hermes_role_from_capabilities(agent.capabilities),
-                "enabled": bool(agent.enabled),
-                "notes": agent.notes,
             }
         )
 
@@ -252,15 +247,13 @@ def _build_hermes_overview(config: Any) -> dict[str, Any]:
                 {
                     "name": pipeline_name,
                     "stepCount": len(hermes_steps),
-                    "steps": hermes_steps,
                 }
             )
 
     return {
         "enabled": bool(profiles or roles or pipelines),
         "commandAvailable": shutil.which("hermes") is not None,
-        "configPath": os.path.expanduser("~/.hermes/config.yaml"),
-        "envPath": os.path.expanduser("~/.hermes/.env"),
+        "configPath": "~/.hermes/config.yaml",
         "profiles": profiles,
         "roles": roles,
         "pipelines": pipelines,
@@ -270,10 +263,8 @@ def _build_hermes_overview(config: Any) -> dict[str, Any]:
 async def _build_github_overview(config: Any, repo_path: str) -> dict[str, Any]:
     repo = config.github.repo.strip()
     repo_source = "config" if repo else "unconfigured"
-    origin_url = ""
-    resolution_error = ""
     if not repo and config.github.use_origin_remote_fallback:
-        resolved_repo, origin_url, resolution_error = await resolve_github_repo_from_origin(repo_path)
+        resolved_repo, _, _ = await resolve_github_repo_from_origin(repo_path)
         if resolved_repo:
             repo = resolved_repo
             repo_source = "git_origin"
@@ -282,11 +273,8 @@ async def _build_github_overview(config: Any, repo_path: str) -> dict[str, Any]:
     return {
         "repo": repo,
         "repoSource": repo_source,
-        "originUrl": origin_url,
-        "resolutionError": resolution_error,
         "baseBranch": config.github.base_branch,
         "useOriginRemoteFallback": bool(config.github.use_origin_remote_fallback),
-        "defaultLabels": list(config.github.default_labels),
     }
 
 

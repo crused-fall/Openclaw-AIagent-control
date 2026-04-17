@@ -101,6 +101,10 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("integrations", payload)
         self.assertIn("github", payload["integrations"])
         self.assertIn("hermes", payload["integrations"])
+        self.assertNotIn("originUrl", payload["integrations"]["github"])
+        self.assertNotIn("resolutionError", payload["integrations"]["github"])
+        self.assertNotIn("defaultLabels", payload["integrations"]["github"])
+        self.assertNotIn("envPath", payload["integrations"]["hermes"])
         self.assertNotIn("managedAgents", payload["snapshot"])
         self.assertNotIn("assignments", payload["snapshot"])
 
