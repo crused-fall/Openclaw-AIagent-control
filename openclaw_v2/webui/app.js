@@ -69,9 +69,39 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+const STATUS_CHIP_TONES = {
+  neutral: "neutral",
+  idle: "neutral",
+  queued: "neutral",
+  running: "running",
+  succeeded: "succeeded",
+  success: "succeeded",
+  passed: "passed",
+  completed: "completed",
+  ready: "passed",
+  ok: "passed",
+  failed: "failed",
+  error: "failed",
+  blocked: "blocked",
+  skipped: "skipped",
+  warning: "warning",
+  warn: "warning",
+  cancelled: "cancelled",
+  canceled: "cancelled",
+};
+
+function normalizeStatusLabel(value) {
+  return String(value || "neutral").trim().toLowerCase() || "neutral";
+}
+
+function statusChipTone(value) {
+  return STATUS_CHIP_TONES[normalizeStatusLabel(value)] || "neutral";
+}
+
 function makeStatusChip(value) {
-  const normalized = String(value || "neutral").toLowerCase();
-  return `<span class="status-chip ${normalized}">${escapeHtml(normalized)}</span>`;
+  const normalized = normalizeStatusLabel(value);
+  const tone = statusChipTone(normalized);
+  return `<span class="status-chip ${tone}">${escapeHtml(normalized)}</span>`;
 }
 
 function compactPath(value, keepSegments = 3) {
