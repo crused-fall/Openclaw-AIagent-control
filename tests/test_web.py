@@ -265,6 +265,87 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["runId"], "run-cleanup")
         self.assertFalse(os.path.exists(run_dir))
 
+    async def test_cleanup_endpoint_skips_workspace_manifests_outside_repo_scope(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-suspicious")
+        workspaces_dir = os.path.join(run_dir, "workspaces")
+        os.makedirs(workspaces_dir, exist_ok=True)
+        with open(os.path.join(workspaces_dir, "implement.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "workspace_path": self.external_dir.name,
+                    "branch_name": "openclaw-run-suspicious-implement",
+                    "metadata": {
+                        "workspace_strategy": "git-worktree",
+                        "workspace_repo_root": self.external_dir.name,
+                    },
+                },
+                handle,
+            )
+
+        with mock.patch("openclaw_v2.web._run_cleanup_command") as run_cleanup:
+            response = await self.client.post(
+                "/api/history/run-suspicious/cleanup",
+                json={"removeArtifacts": False, "removeWorktrees": True},
+            )
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertTrue(os.path.exists(run_dir))
+        self.assertEqual(run_cleanup.call_count, 0)
+        self.assertTrue(all(item.get("skipped") for item in payload["operations"]))
+        self.assertTrue(
+            any("outside the configured repository" in item.get("reason", "") for item in payload["operations"])
+        )
+
+    async def test_cleanup_endpoint_only_executes_commands_for_managed_repo_worktrees(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-managed")
+        workspaces_dir = os.path.join(run_dir, "workspaces")
+        os.makedirs(workspaces_dir, exist_ok=True)
+        os.makedirs("/tmp/openclaw-worktrees", exist_ok=True)
+
+        with tempfile.TemporaryDirectory(dir="/tmp/openclaw-worktrees") as workspace_path:
+            with open(os.path.join(workspaces_dir, "implement.json"), "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "workspace_path": workspace_path,
+                        "branch_name": "openclaw-run-managed-implement",
+                        "metadata": {
+                            "workspace_strategy": "git-worktree",
+                            "workspace_repo_root": self.repo_path,
+                        },
+                    },
+                    handle,
+                )
+
+            with mock.patch(
+                "openclaw_v2.web._run_cleanup_command",
+                side_effect=lambda command: {
+                    "command": command,
+                    "ok": True,
+                    "exitCode": 0,
+                    "stdout": "",
+                    "stderr": "",
+                },
+            ) as run_cleanup:
+                response = await self.client.post(
+                    "/api/history/run-managed/cleanup",
+                    json={"removeArtifacts": False, "removeWorktrees": True},
+                )
+
+            self.assertEqual(response.status, 200)
+            payload = await response.json()
+            self.assertEqual(run_cleanup.call_count, 2)
+            commands = [call.args[0] for call in run_cleanup.call_args_list]
+            self.assertEqual(
+                commands[0],
+                ["git", "-C", _normalized_path(self.repo_path), "worktree", "remove", "--force", _normalized_path(workspace_path)],
+            )
+            self.assertEqual(
+                commands[1],
+                ["git", "-C", _normalized_path(self.repo_path), "branch", "-D", "openclaw-run-managed-implement"],
+            )
+            self.assertFalse(any(item.get("skipped") for item in payload["operations"]))
+
     async def test_prune_endpoint_keeps_latest_runs(self) -> None:
         runs_root = os.path.join(self.repo_path, ".openclaw", "runs")
         os.makedirs(runs_root, exist_ok=True)

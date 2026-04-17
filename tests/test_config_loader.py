@@ -2,12 +2,28 @@ import tempfile
 import textwrap
 import unittest
 from unittest import mock
+from types import SimpleNamespace
 
 from openclaw_v2.config import _load_yaml, load_app_config
 from openclaw_v2.models import AgentType, ExecutionMode
 
 
 class ConfigLoaderTests(unittest.TestCase):
+    def test_load_yaml_ruby_fallback_uses_safe_load(self) -> None:
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write("runtime:\n  pipeline: demo\n")
+            handle.flush()
+            with mock.patch("openclaw_v2.config.yaml", None):
+                with mock.patch(
+                    "openclaw_v2.config.subprocess.run",
+                    return_value=SimpleNamespace(stdout="{}", stderr="", returncode=0),
+                ) as run_mock:
+                    _load_yaml(handle.name)
+
+        command = run_mock.call_args.args[0]
+        self.assertIn("YAML.safe_load", command[4])
+        self.assertNotIn("YAML.load_file", command[4])
+
     def test_load_yaml_falls_back_without_pyyaml(self) -> None:
         content = textwrap.dedent(
             """

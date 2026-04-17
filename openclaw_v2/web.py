@@ -616,9 +616,11 @@ def _load_run_workspace_manifests(run_dir: Path) -> list[dict[str, Any]]:
     for path in sorted(workspaces_dir.glob("*.json")):
         try:
             with path.open("r", encoding="utf-8") as handle:
-                manifests.append(json.load(handle))
+                payload = json.load(handle)
         except json.JSONDecodeError:
             continue
+        if isinstance(payload, dict):
+            manifests.append(payload)
     return manifests
 
 
@@ -660,46 +662,137 @@ def _run_cleanup_command(command: list[str]) -> dict[str, Any]:
     }
 
 
+def _cleanup_skip(operation_type: str, reason: str, **details: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "type": operation_type,
+        "ok": False,
+        "skipped": True,
+        "reason": reason,
+        "exitCode": None,
+        "stdout": "",
+        "stderr": "",
+    }
+    payload.update(details)
+    return payload
+
+
+def _managed_cleanup_branch(branch_name: str) -> bool:
+    return bool(re.fullmatch(r"openclaw-[a-z0-9_-]+", branch_name))
+
+
 def _cleanup_run_resources(
     run_dir: Path,
     *,
+    allowed_repo_root: str,
+    allowed_worktrees_root: str,
     remove_worktrees: bool,
     remove_artifacts: bool,
 ) -> dict[str, Any]:
     operations: list[dict[str, Any]] = []
     manifests = _load_run_workspace_manifests(run_dir)
+    repo_root = str(_canonical_path(allowed_repo_root))
+    worktrees_root = str(_canonical_path(allowed_worktrees_root))
 
     if remove_worktrees:
         for manifest in manifests:
-            metadata = manifest.get("metadata") or {}
+            metadata = manifest.get("metadata") if isinstance(manifest.get("metadata"), dict) else {}
             strategy = str(metadata.get("workspace_strategy", "")).strip()
             if strategy != "git-worktree":
                 continue
 
             workspace_path = str(manifest.get("workspace_path", "")).strip()
             branch_name = str(manifest.get("branch_name", "")).strip()
-            repo_root = str(metadata.get("workspace_repo_root", "")).strip()
-            if not repo_root:
+            manifest_repo_root = str(metadata.get("workspace_repo_root", "")).strip()
+            if not manifest_repo_root:
+                operations.append(
+                    _cleanup_skip(
+                        "worktree_remove",
+                        "Workspace manifest is missing workspace_repo_root.",
+                        workspacePath=workspace_path,
+                    )
+                )
+                if branch_name:
+                    operations.append(
+                        _cleanup_skip(
+                            "branch_delete",
+                            "Workspace manifest is missing workspace_repo_root.",
+                            branchName=branch_name,
+                        )
+                    )
                 continue
 
-            if workspace_path and os.path.exists(workspace_path):
+            if not _same_path(manifest_repo_root, repo_root):
                 operations.append(
-                    {
-                        "type": "worktree_remove",
-                        "workspacePath": workspace_path,
-                        **_run_cleanup_command(
-                            ["git", "-C", repo_root, "worktree", "remove", "--force", workspace_path]
-                        ),
-                    }
+                    _cleanup_skip(
+                        "worktree_remove",
+                        "Workspace manifest points outside the configured repository.",
+                        workspacePath=workspace_path,
+                        repoRoot=manifest_repo_root,
+                    )
                 )
+                if branch_name:
+                    operations.append(
+                        _cleanup_skip(
+                            "branch_delete",
+                            "Workspace manifest points outside the configured repository.",
+                            branchName=branch_name,
+                            repoRoot=manifest_repo_root,
+                        )
+                    )
+                continue
 
-            if branch_name and branch_name.startswith("openclaw-"):
+            if workspace_path:
+                if not _path_within(workspace_path, worktrees_root):
+                    operations.append(
+                        _cleanup_skip(
+                            "worktree_remove",
+                            "Workspace path is outside the configured worktrees root.",
+                            workspacePath=workspace_path,
+                            worktreesRoot=worktrees_root,
+                        )
+                    )
+                elif os.path.exists(workspace_path):
+                    operations.append(
+                        {
+                            "type": "worktree_remove",
+                            "workspacePath": str(_canonical_path(workspace_path)),
+                            **_run_cleanup_command(
+                                [
+                                    "git",
+                                    "-C",
+                                    repo_root,
+                                    "worktree",
+                                    "remove",
+                                    "--force",
+                                    str(_canonical_path(workspace_path)),
+                                ]
+                            ),
+                        }
+                    )
+                else:
+                    operations.append(
+                        _cleanup_skip(
+                            "worktree_remove",
+                            "Workspace path is already absent.",
+                            workspacePath=workspace_path,
+                        )
+                    )
+
+            if branch_name and _managed_cleanup_branch(branch_name):
                 operations.append(
                     {
                         "type": "branch_delete",
                         "branchName": branch_name,
                         **_run_cleanup_command(["git", "-C", repo_root, "branch", "-D", branch_name]),
                     }
+                )
+            elif branch_name:
+                operations.append(
+                    _cleanup_skip(
+                        "branch_delete",
+                        "Branch name is outside the managed cleanup scope.",
+                        branchName=branch_name,
+                    )
                 )
 
     if remove_artifacts and run_dir.exists():
@@ -1201,11 +1294,14 @@ def _cleanup_run_history(
         raise ValueError("Invalid run id.")
     config = load_app_config(config_path)
     artifacts_root = resolve_runtime_path(repo_path, config.runtime.artifacts_dir)
+    worktrees_root = resolve_runtime_path(repo_path, config.runtime.worktrees_dir)
     run_dir = Path(artifacts_root) / run_id
     if not run_dir.exists():
         raise FileNotFoundError(f"Run directory not found for {run_id}.")
     return _cleanup_run_resources(
         run_dir,
+        allowed_repo_root=repo_path,
+        allowed_worktrees_root=worktrees_root,
         remove_worktrees=remove_worktrees,
         remove_artifacts=remove_artifacts,
     )
@@ -1221,6 +1317,7 @@ def _prune_run_history(
 ) -> dict[str, Any]:
     config = load_app_config(config_path)
     artifacts_root = resolve_runtime_path(repo_path, config.runtime.artifacts_dir)
+    worktrees_root = resolve_runtime_path(repo_path, config.runtime.worktrees_dir)
     root = Path(artifacts_root)
     if not root.exists():
         return {
@@ -1239,6 +1336,8 @@ def _prune_run_history(
         removed.append(
             _cleanup_run_resources(
                 run_dir,
+                allowed_repo_root=repo_path,
+                allowed_worktrees_root=worktrees_root,
                 remove_worktrees=remove_worktrees,
                 remove_artifacts=remove_artifacts,
             )

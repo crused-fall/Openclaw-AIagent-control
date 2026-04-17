@@ -459,7 +459,12 @@ def _load_yaml(path: str) -> dict[str, Any]:
         "-rjson",
         "-ryaml",
         "-e",
-        "path = ARGV.fetch(0); data = YAML.load_file(path) || {}; puts JSON.generate(data)",
+        (
+            "path = ARGV.fetch(0); "
+            "raw = File.read(path); "
+            "data = YAML.safe_load(raw, aliases: true) || {}; "
+            "puts JSON.generate(data)"
+        ),
         path,
     ]
     try:
