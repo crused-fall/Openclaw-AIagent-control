@@ -186,6 +186,7 @@ python3 main_v2.py --web --web-host 127.0.0.1 --web-port 8766
 如果需要切换到别的仓库或配置，请重新启动 Web UI，而不是在页面里临时改路径；历史清理、prune 和健康检查也只会作用在当前仓库范围内。
 Housekeeping 还会额外校验 run manifest 里的 `workspace_repo_root / workspace_path / branch_name`，只清理由当前仓库生成、且落在受管 worktrees 根里的对象。
 对于 `cleanup / prune` 这类危险操作，Web UI 现在还要求当前 dashboard 会话提供后端下发的 confirmation token，不再只依赖前端弹窗确认。
+即使 `configPath` 指向 repo 内的另一份配置，Web UI 也不会接受它改写 `runtime.artifacts_dir / runtime.worktrees_dir`；要切换这些根路径，需要直接用那份配置重新启动 dashboard。
 
 如果要临时改 agent 分配，不必改 pipeline step。本次运行前覆盖 assignment 即可，例如：
 

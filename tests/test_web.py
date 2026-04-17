@@ -160,6 +160,57 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         payload = await response.json()
         self.assertEqual(payload["configPath"], _normalized_path(alt_config_path))
 
+    async def test_bootstrap_rejects_in_repo_config_override_that_changes_artifacts_root(self) -> None:
+        alt_dir = os.path.join(self.repo_path, "configs")
+        os.makedirs(alt_dir, exist_ok=True)
+        alt_config_path = os.path.join(alt_dir, "alt_config.yaml")
+        with open(alt_config_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                textwrap.dedent(
+                    f"""
+                    runtime:
+                      pipeline: demo_pipeline
+                      dry_run: true
+                      artifacts_dir: {self.external_dir.name}
+
+                    profiles:
+                      codex_local:
+                        agent: codex
+                        mode: cli
+                        command:
+                          - echo
+                          - "{{prompt}}"
+
+                    managed_agents:
+                      codex_builder:
+                        kind: codex
+                        profile: codex_local
+                        capabilities:
+                          - implement
+
+                    assignments:
+                      implement_local:
+                        agent: codex_builder
+                        required_capabilities:
+                          - implement
+
+                    pipelines:
+                      demo_pipeline:
+                        - id: implement
+                          title: Implement docs
+                          assignment: implement_local
+                          prompt_template: |
+                            Implement request:
+                            {{user_request}}
+                    """
+                ).strip()
+            )
+            handle.write("\n")
+
+        response = await self.client.get("/api/bootstrap", params={"configPath": "configs/alt_config.yaml"})
+        self.assertEqual(response.status, 400)
+        self.assertIn("cannot change the artifacts root", await response.text())
+
     async def test_bootstrap_rejects_repo_override_outside_configured_root(self) -> None:
         response = await self.client.get("/api/bootstrap", params={"repoPath": self.external_dir.name})
         self.assertEqual(response.status, 400)
@@ -649,3 +700,61 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status, 400)
         self.assertIn("configured repository root", await response.text())
+
+    async def test_task_create_rejects_config_override_that_changes_worktrees_root(self) -> None:
+        alt_dir = os.path.join(self.repo_path, "configs")
+        os.makedirs(alt_dir, exist_ok=True)
+        alt_config_path = os.path.join(alt_dir, "alt_config.yaml")
+        with open(alt_config_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                textwrap.dedent(
+                    f"""
+                    runtime:
+                      pipeline: demo_pipeline
+                      dry_run: true
+                      worktrees_dir: {self.external_dir.name}
+
+                    profiles:
+                      codex_local:
+                        agent: codex
+                        mode: cli
+                        command:
+                          - echo
+                          - "{{prompt}}"
+
+                    managed_agents:
+                      codex_builder:
+                        kind: codex
+                        profile: codex_local
+                        capabilities:
+                          - implement
+
+                    assignments:
+                      implement_local:
+                        agent: codex_builder
+                        required_capabilities:
+                          - implement
+
+                    pipelines:
+                      demo_pipeline:
+                        - id: implement
+                          title: Implement docs
+                          assignment: implement_local
+                          prompt_template: |
+                            Implement request:
+                            {{user_request}}
+                    """
+                ).strip()
+            )
+            handle.write("\n")
+
+        response = await self.client.post(
+            "/api/tasks",
+            json={
+                "action": "doctor",
+                "repoPath": self.repo_path,
+                "configPath": alt_config_path,
+            },
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("cannot change the worktrees root", await response.text())

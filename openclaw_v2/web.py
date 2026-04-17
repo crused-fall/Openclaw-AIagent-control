@@ -27,6 +27,8 @@ APP_STATIC_ROOT = web.AppKey("static_root", str)
 APP_TASK_MANAGER = web.AppKey("task_manager", Any)
 APP_ALLOW_PATH_OVERRIDE = web.AppKey("allow_path_override", bool)
 APP_HOUSEKEEPING_TOKEN = web.AppKey("housekeeping_token", str)
+APP_ARTIFACTS_ROOT = web.AppKey("artifacts_root", str)
+APP_WORKTREES_ROOT = web.AppKey("worktrees_root", str)
 
 
 def _json_ready(value: Any) -> Any:
@@ -102,6 +104,24 @@ def _require_housekeeping_token(request: web.Request) -> None:
     provided = request.headers.get("X-OpenClaw-Housekeeping-Token", "").strip()
     if not provided or not secrets.compare_digest(provided, expected):
         raise web.HTTPForbidden(text="Housekeeping confirmation token is required.")
+
+
+def _validate_dashboard_runtime_roots(
+    app: web.Application,
+    *,
+    repo_path: str,
+    config: Any,
+) -> None:
+    artifacts_root = str(_canonical_path(resolve_runtime_path(repo_path, config.runtime.artifacts_dir)))
+    worktrees_root = str(_canonical_path(resolve_runtime_path(repo_path, config.runtime.worktrees_dir)))
+    if not _same_path(artifacts_root, str(app[APP_ARTIFACTS_ROOT])):
+        raise ValueError(
+            "Dashboard configPath cannot change the artifacts root; restart the dashboard with that config instead."
+        )
+    if not _same_path(worktrees_root, str(app[APP_WORKTREES_ROOT])):
+        raise ValueError(
+            "Dashboard configPath cannot change the worktrees root; restart the dashboard with that config instead."
+        )
 
 
 def _selected_steps(payload: dict[str, Any]) -> list[str] | None:
@@ -1155,6 +1175,7 @@ def _resolve_request_payload(
         raw_config_path=str(payload.get("configPath", "")).strip(),
     )
     config = load_app_config(config_path)
+    _validate_dashboard_runtime_roots(app, repo_path=repo_path, config=config)
     pipeline = str(payload.get("pipeline", "")).strip()
     if pipeline:
         config.runtime.pipeline = pipeline
@@ -1359,6 +1380,7 @@ async def _bootstrap_handler(request: web.Request) -> web.Response:
             raw_config_path=request.query.get("configPath", ""),
         )
         config = load_app_config(config_path)
+        _validate_dashboard_runtime_roots(request.app, repo_path=repo_path, config=config)
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
     pipeline = request.query.get("pipeline", "").strip()
@@ -1463,6 +1485,8 @@ async def _history_handler(request: web.Request) -> web.Response:
             raw_repo_path=request.query.get("repoPath", ""),
             raw_config_path=request.query.get("configPath", ""),
         )
+        config = load_app_config(config_path)
+        _validate_dashboard_runtime_roots(request.app, repo_path=repo_path, config=config)
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
     run_id = request.match_info["run_id"]
@@ -1482,13 +1506,14 @@ async def _history_file_handler(request: web.Request) -> web.Response:
             raw_repo_path=request.query.get("repoPath", ""),
             raw_config_path=request.query.get("configPath", ""),
         )
+        config = load_app_config(config_path)
+        _validate_dashboard_runtime_roots(request.app, repo_path=repo_path, config=config)
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
     run_id = request.match_info["run_id"]
     relative_path = request.query.get("path", "")
     if not re.fullmatch(r"[A-Za-z0-9._-]+", run_id):
         raise web.HTTPBadRequest(text="Invalid run id.")
-    config = load_app_config(config_path)
     artifacts_root = resolve_runtime_path(repo_path, config.runtime.artifacts_dir)
     run_dir = Path(artifacts_root) / run_id
     try:
@@ -1508,6 +1533,8 @@ async def _history_cleanup_handler(request: web.Request) -> web.Response:
             raw_repo_path=request.query.get("repoPath", ""),
             raw_config_path=request.query.get("configPath", ""),
         )
+        config = load_app_config(config_path)
+        _validate_dashboard_runtime_roots(request.app, repo_path=repo_path, config=config)
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
     run_id = request.match_info["run_id"]
@@ -1538,6 +1565,8 @@ async def _history_prune_handler(request: web.Request) -> web.Response:
             raw_repo_path=request.query.get("repoPath", ""),
             raw_config_path=request.query.get("configPath", ""),
         )
+        config = load_app_config(config_path)
+        _validate_dashboard_runtime_roots(request.app, repo_path=repo_path, config=config)
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
     body = await request.json() if request.can_read_body else {}
@@ -1562,6 +1591,8 @@ async def _history_compare_handler(request: web.Request) -> web.Response:
             raw_repo_path=request.query.get("repoPath", ""),
             raw_config_path=request.query.get("configPath", ""),
         )
+        config = load_app_config(config_path)
+        _validate_dashboard_runtime_roots(request.app, repo_path=repo_path, config=config)
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
     body = await request.json() if request.can_read_body else {}
@@ -1613,6 +1644,7 @@ async def _health_handler(request: web.Request) -> web.Response:
             raw_config_path=request.query.get("configPath", ""),
         )
         config = load_app_config(config_path)
+        _validate_dashboard_runtime_roots(request.app, repo_path=str(request.app[APP_REPO_PATH]), config=config)
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
     agent_id = request.query.get("agentId", "").strip() or _default_openclaw_agent_id(config)
@@ -1632,13 +1664,22 @@ def create_web_app(
     allow_path_override: bool = False,
 ) -> web.Application:
     static_root = Path(__file__).with_name("webui")
+    resolved_repo_path = str(_canonical_path(repo_path))
+    resolved_config_path = str(_canonical_path(config_path))
+    startup_config = load_app_config(resolved_config_path)
     app = web.Application()
-    app[APP_CONFIG_PATH] = config_path
-    app[APP_REPO_PATH] = repo_path
+    app[APP_CONFIG_PATH] = resolved_config_path
+    app[APP_REPO_PATH] = resolved_repo_path
     app[APP_STATIC_ROOT] = str(static_root)
     app[APP_TASK_MANAGER] = DashboardTaskManager(app)
     app[APP_ALLOW_PATH_OVERRIDE] = allow_path_override
     app[APP_HOUSEKEEPING_TOKEN] = secrets.token_urlsafe(24)
+    app[APP_ARTIFACTS_ROOT] = str(
+        _canonical_path(resolve_runtime_path(resolved_repo_path, startup_config.runtime.artifacts_dir))
+    )
+    app[APP_WORKTREES_ROOT] = str(
+        _canonical_path(resolve_runtime_path(resolved_repo_path, startup_config.runtime.worktrees_dir))
+    )
 
     app.router.add_get("/", _index_handler)
     app.router.add_get("/api/bootstrap", _bootstrap_handler)

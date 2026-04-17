@@ -69,6 +69,7 @@
 - Web UI 的 repo/config 作用域已默认收紧到启动时绑定的仓库，避免页面层面对任意路径做历史清理和健康检查
 - housekeeping 清理已改为校验 manifest 的 repo/worktree/branch 范围，防止 run 产物被篡改后越界删除其他仓库对象
 - housekeeping 危险操作已要求当前 dashboard 会话携带服务端确认 token，降低绕过前端弹窗直接调用接口的风险
+- Web UI 对 repo 内替代配置的支持已进一步收紧：允许调整 pipeline/assignment，但不允许改写 dashboard 绑定的 artifacts/worktrees roots
 
 ## 部分完成
 
