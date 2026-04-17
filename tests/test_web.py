@@ -89,6 +89,9 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
     async def test_bootstrap_returns_pipeline_snapshot(self) -> None:
         response = await self.client.get("/api/bootstrap")
         self.assertEqual(response.status, 200)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         payload = await response.json()
 
         self.assertEqual(payload["snapshot"]["defaultPipeline"], "demo_pipeline")
@@ -111,6 +114,9 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
     async def test_index_serves_readiness_and_output_controls(self) -> None:
         response = await self.client.get("/")
         self.assertEqual(response.status, 200)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         page = await response.text()
 
         self.assertIn("Readiness Gate", page)

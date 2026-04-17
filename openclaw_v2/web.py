@@ -30,6 +30,26 @@ APP_HOUSEKEEPING_TOKEN = web.AppKey("housekeeping_token", str)
 APP_ARTIFACTS_ROOT = web.AppKey("artifacts_root", str)
 APP_WORKTREES_ROOT = web.AppKey("worktrees_root", str)
 
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'"
+    ),
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "Cache-Control": "no-store",
+}
+
 
 def _json_ready(value: Any) -> Any:
     if isinstance(value, Enum):
@@ -104,6 +124,17 @@ def _require_housekeeping_token(request: web.Request) -> None:
     provided = request.headers.get("X-OpenClaw-Housekeeping-Token", "").strip()
     if not provided or not secrets.compare_digest(provided, expected):
         raise web.HTTPForbidden(text="Housekeeping confirmation token is required.")
+
+
+@web.middleware
+async def _security_headers_middleware(
+    request: web.Request,
+    handler: Any,
+) -> web.StreamResponse:
+    response = await handler(request)
+    for header, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    return response
 
 
 def _validate_dashboard_runtime_roots(
@@ -1674,7 +1705,7 @@ def create_web_app(
     resolved_repo_path = str(_canonical_path(repo_path))
     resolved_config_path = str(_canonical_path(config_path))
     startup_config = load_app_config(resolved_config_path)
-    app = web.Application()
+    app = web.Application(middlewares=[_security_headers_middleware])
     app[APP_CONFIG_PATH] = resolved_config_path
     app[APP_REPO_PATH] = resolved_repo_path
     app[APP_STATIC_ROOT] = str(static_root)
