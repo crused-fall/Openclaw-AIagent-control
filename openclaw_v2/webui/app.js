@@ -163,6 +163,13 @@ function safeExternalUrl(value) {
   return /^https?:\/\//i.test(text) ? text : "";
 }
 
+function channelHealthStatus(channels) {
+  if (!Array.isArray(channels) || !channels.length) {
+    return "warning";
+  }
+  return channels.every((item) => item.probeOk) ? "passed" : "warning";
+}
+
 function currentHistoryPayload() {
   if (state.currentHistory) {
     return state.currentHistory;
@@ -1483,7 +1490,7 @@ function renderHealthSnapshot(payload) {
       <article class="health-card">
         <div class="result-card-header">
           <h3>Channels</h3>
-          ${makeStatusChip(channels.every((item) => item.probeOk) ? "passed" : "warning")}
+          ${makeStatusChip(channelHealthStatus(channels))}
         </div>
         <div class="meta-list">
           ${

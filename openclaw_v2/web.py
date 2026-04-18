@@ -126,15 +126,23 @@ def _require_housekeeping_token(request: web.Request) -> None:
         raise web.HTTPForbidden(text="Housekeeping confirmation token is required.")
 
 
+def _apply_security_headers(response: web.StreamResponse) -> web.StreamResponse:
+    for header, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    return response
+
+
 @web.middleware
 async def _security_headers_middleware(
     request: web.Request,
     handler: Any,
 ) -> web.StreamResponse:
-    response = await handler(request)
-    for header, value in SECURITY_HEADERS.items():
-        response.headers.setdefault(header, value)
-    return response
+    try:
+        response = await handler(request)
+    except web.HTTPException as error_response:
+        _apply_security_headers(error_response)
+        raise
+    return _apply_security_headers(response)
 
 
 def _validate_dashboard_runtime_roots(

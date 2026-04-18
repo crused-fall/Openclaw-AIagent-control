@@ -222,6 +222,9 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
     async def test_bootstrap_rejects_repo_override_outside_configured_root(self) -> None:
         response = await self.client.get("/api/bootstrap", params={"repoPath": self.external_dir.name})
         self.assertEqual(response.status, 400)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertIn("configured repository root", await response.text())
 
     async def test_health_rejects_config_override_outside_repo_scope(self) -> None:
@@ -348,6 +351,9 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
 
         response = await self.client.post("/api/history/run-no-token/cleanup", json={})
         self.assertEqual(response.status, 403)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertIn("confirmation token", await response.text())
 
     async def test_cleanup_endpoint_skips_workspace_manifests_outside_repo_scope(self) -> None:
