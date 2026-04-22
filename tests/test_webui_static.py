@@ -25,6 +25,20 @@ class WebUiStaticTests(unittest.TestCase):
             source,
         )
 
+    def test_preflight_snapshot_status_is_shared_between_panels(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function preflightSnapshotStatus(checks)", source)
+        self.assertIn("const preflight = preflightSnapshotStatus(preflightChecks);", source)
+        self.assertIn("const preflight = preflightSnapshotStatus(latestPreflightChecks());", source)
+        self.assertIn('${makeStatusChip(preflight.status)}', source)
+        self.assertNotIn(
+            'No preflight snapshot loaded yet.',
+            source.split("function preflightSnapshotStatus(checks)")[0],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

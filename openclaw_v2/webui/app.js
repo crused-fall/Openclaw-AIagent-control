@@ -170,6 +170,32 @@ function channelHealthStatus(channels) {
   return channels.every((item) => item.probeOk) ? "passed" : "warning";
 }
 
+function preflightSnapshotStatus(checks) {
+  const normalized = Array.isArray(checks) ? checks : [];
+  if (!normalized.length) {
+    return {
+      status: "neutral",
+      summary: "No preflight snapshot loaded yet.",
+      detail: "Run Preflight or load a recent run to surface the last report here.",
+    };
+  }
+
+  const problems = normalized.filter((check) =>
+    ["blocked", "failed", "warning"].includes(String(check.status || "").toLowerCase()),
+  );
+  return {
+    status: problems.some((item) => ["blocked", "failed"].includes(String(item.status || "").toLowerCase()))
+      ? "blocked"
+      : problems.length
+        ? "warning"
+        : "passed",
+    summary: problems.length
+      ? `${problems.length} preflight checks need attention.`
+      : "Latest preflight snapshot is clean.",
+    detail: `${normalized.length} checks captured from the latest snapshot.`,
+  };
+}
+
 function currentHistoryPayload() {
   if (state.currentHistory) {
     return state.currentHistory;
@@ -445,6 +471,7 @@ function renderReadinessGate() {
   const effectiveIds = effectiveStepIds();
   const planItems = effectivePlanItems();
   const preflightChecks = latestPreflightChecks();
+  const preflight = preflightSnapshotStatus(preflightChecks);
   const allowedLiveSteps = Array.isArray(runtime.allowed_live_steps) ? runtime.allowed_live_steps : [];
   const usesOpenClaw = planItems.some((item) => {
     const mode = String(item.mode || "").toLowerCase();
@@ -452,9 +479,6 @@ function renderReadinessGate() {
     return mode === "openclaw" || agent === "openclaw";
   });
   const fallbackItems = planItems.filter((item) => item.fallbackUsed);
-  const preflightProblems = preflightChecks.filter((check) =>
-    ["blocked", "failed", "warning"].includes(String(check.status || "").toLowerCase()),
-  );
   const liveDisallowed = state.live
     ? effectiveIds.filter((stepId) => allowedLiveSteps.length && !allowedLiveSteps.includes(stepId))
     : [];
@@ -574,21 +598,9 @@ function renderReadinessGate() {
     },
     {
       name: "Latest preflight",
-      status: !preflightChecks.length
-        ? "neutral"
-        : preflightProblems.some((item) => ["blocked", "failed"].includes(String(item.status || "").toLowerCase()))
-          ? "blocked"
-          : preflightProblems.length
-            ? "warning"
-            : "passed",
-      summary: !preflightChecks.length
-        ? "No preflight snapshot loaded yet."
-        : preflightProblems.length
-          ? `${preflightProblems.length} preflight checks need attention.`
-          : "Latest preflight snapshot is clean.",
-      detail: !preflightChecks.length
-        ? "Run Preflight or load a recent run to surface the last report here."
-        : `${preflightChecks.length} checks captured from the latest snapshot.`,
+      status: preflight.status,
+      summary: preflight.summary,
+      detail: preflight.detail,
     },
   ];
 
@@ -1471,6 +1483,7 @@ function renderHealthSnapshot(payload) {
   renderHeroStatus();
   renderReadinessGate();
   const channels = payload.channels || [];
+  const preflight = preflightSnapshotStatus(latestPreflightChecks());
   const gateway = payload.gateway || {};
   const memory = payload.memory || {};
   elements.healthPanel.innerHTML = `
@@ -1509,6 +1522,16 @@ function renderHealthSnapshot(payload) {
                   .join("")
               : `<div><dt>Channels</dt><dd>No channel data returned.</dd></div>`
           }
+        </div>
+      </article>
+      <article class="health-card">
+        <div class="result-card-header">
+          <h3>Preflight</h3>
+          ${makeStatusChip(preflight.status)}
+        </div>
+        <div class="meta-list">
+          <div><dt>Summary</dt><dd>${escapeHtml(preflight.summary)}</dd></div>
+          <div><dt>Detail</dt><dd>${escapeHtml(preflight.detail)}</dd></div>
         </div>
       </article>
       <article class="health-card">
