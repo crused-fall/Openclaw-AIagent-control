@@ -65,7 +65,7 @@
 - run summary
 - blocked 原因透传
 - `first_blocked` 根因摘要
-- 本地 Web UI 已具备 readiness gate、run compare、artifact browser、health snapshot 和 housekeeping 入口
+- 本地 Web UI 已具备 readiness gate、run compare、artifact browser、health snapshot（含最近 preflight 摘要与来源）和 housekeeping 入口
 - Web UI 的健康面板在渠道数据为空时会保守显示 warning，不再误报 passed
 - Web UI 的 repo/config 作用域已默认收紧到启动时绑定的仓库，避免页面层面对任意路径做历史清理和健康检查
 - housekeeping 清理已改为校验 manifest 的 repo/worktree/branch 范围，防止 run 产物被篡改后越界删除其他仓库对象

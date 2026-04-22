@@ -30,9 +30,12 @@ class WebUiStaticTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        self.assertIn("function latestPreflightSource()", source)
         self.assertIn("function preflightSnapshotStatus(checks)", source)
         self.assertIn("const preflight = preflightSnapshotStatus(preflightChecks);", source)
         self.assertIn("const preflight = preflightSnapshotStatus(latestPreflightChecks());", source)
+        self.assertIn("const preflightSource = latestPreflightSource();", source)
+        self.assertIn("<div><dt>Source</dt><dd>${escapeHtml(preflightSource)}</dd></div>", source)
         self.assertIn('${makeStatusChip(preflight.status)}', source)
         self.assertNotIn(
             'No preflight snapshot loaded yet.',

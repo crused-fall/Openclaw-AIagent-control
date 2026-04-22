@@ -409,6 +409,23 @@ function latestPreflightChecks() {
   return [];
 }
 
+function latestPreflightSource() {
+  const history = currentHistoryPayload();
+  if (history?.runId) {
+    return `run ${history.runId}`;
+  }
+  if (state.currentOutput?.runResult?.run_id) {
+    return `run ${state.currentOutput.runResult.run_id}`;
+  }
+  if (state.currentOutput?.summary?.run_id) {
+    return `run ${state.currentOutput.summary.run_id}`;
+  }
+  if (state.currentOutput?.mode === "doctor") {
+    return "doctor snapshot";
+  }
+  return "current snapshot";
+}
+
 function overallStatus(checks) {
   const statuses = (checks || []).map((item) => item.status);
   if (statuses.some((status) => ["blocked", "failed"].includes(status))) {
@@ -1484,6 +1501,7 @@ function renderHealthSnapshot(payload) {
   renderReadinessGate();
   const channels = payload.channels || [];
   const preflight = preflightSnapshotStatus(latestPreflightChecks());
+  const preflightSource = latestPreflightSource();
   const gateway = payload.gateway || {};
   const memory = payload.memory || {};
   elements.healthPanel.innerHTML = `
@@ -1532,6 +1550,7 @@ function renderHealthSnapshot(payload) {
         <div class="meta-list">
           <div><dt>Summary</dt><dd>${escapeHtml(preflight.summary)}</dd></div>
           <div><dt>Detail</dt><dd>${escapeHtml(preflight.detail)}</dd></div>
+          <div><dt>Source</dt><dd>${escapeHtml(preflightSource)}</dd></div>
         </div>
       </article>
       <article class="health-card">
