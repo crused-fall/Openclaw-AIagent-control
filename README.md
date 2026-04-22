@@ -300,7 +300,7 @@ v2 已验证：
 - GitHub bridge 已支持可配置的网络类自动重试；默认关闭，需要显式设置 `runtime.github_retry_attempts > 1`
 - GitHub repo 现在默认允许从 `git remote origin` 推导；如果你显式配置了 `github.repo`，则以配置值为准
 - 已验证 live 路径会先打印 `preflight/start/done` 级别的 progress，而不是整段静默
-- `--doctor-config` 现在也会检查 GitHub runtime retry 配置和 GitHub profile action / workflow 配置是否自洽
+- `--doctor-config` 现在也会检查 GitHub runtime retry 配置、GitHub profile action / workflow 配置，以及 pipeline 依赖引用 / 循环是否自洽
 
 v2 仍未完成：
 

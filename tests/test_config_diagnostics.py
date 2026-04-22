@@ -75,6 +75,92 @@ class ConfigDiagnosticsTests(unittest.TestCase):
         self.assertEqual(target.status, CheckStatus.FAILED)
         self.assertIn("unknown assignment", target.message)
 
+    def test_doctor_reports_unknown_pipeline_dependency_reference(self) -> None:
+        content = textwrap.dedent(
+            """
+            runtime:
+              pipeline: demo
+            profiles:
+              claude_local:
+                agent: claude
+                mode: cli
+            managed_agents:
+              triage_agent:
+                kind: claude
+                profile: claude_local
+            assignments:
+              triage_local:
+                agent: triage_agent
+            pipelines:
+              demo:
+                - id: triage
+                  title: Triage
+                  assignment: triage_local
+                  prompt_template: test
+                - id: publish_branch
+                  title: Publish
+                  assignment: triage_local
+                  depends_on:
+                    - review
+                  prompt_template: test
+            """
+        ).strip()
+
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            config = load_app_config(handle.name)
+
+        checks = diagnose_app_config(config)
+        target = next(check for check in checks if check.name == "pipeline:demo:publish_branch:depends_on")
+
+        self.assertEqual(target.status, CheckStatus.FAILED)
+        self.assertIn("unknown dependencies", target.message)
+
+    def test_doctor_reports_circular_pipeline_dependencies(self) -> None:
+        content = textwrap.dedent(
+            """
+            runtime:
+              pipeline: demo
+            profiles:
+              claude_local:
+                agent: claude
+                mode: cli
+            managed_agents:
+              triage_agent:
+                kind: claude
+                profile: claude_local
+            assignments:
+              triage_local:
+                agent: triage_agent
+            pipelines:
+              demo:
+                - id: triage
+                  title: Triage
+                  assignment: triage_local
+                  depends_on:
+                    - review
+                  prompt_template: test
+                - id: review
+                  title: Review
+                  assignment: triage_local
+                  depends_on:
+                    - triage
+                  prompt_template: test
+            """
+        ).strip()
+
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            config = load_app_config(handle.name)
+
+        checks = diagnose_app_config(config)
+        target = next(check for check in checks if check.name == "pipeline:demo:cycles")
+
+        self.assertEqual(target.status, CheckStatus.FAILED)
+        self.assertIn("circular dependencies", target.message)
+
     def test_doctor_reports_invalid_github_retry_runtime(self) -> None:
         content = textwrap.dedent(
             """

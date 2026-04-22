@@ -159,7 +159,7 @@ python3 main_v2.py --preflight-only --steps draft_pr,dispatch_review
 成功接通后，`collect_review` 会把 workflow status / conclusion 和 failed jobs 摘要回流到结果 artifacts。
 当前默认还会对 `workflow_view` 做一个很短的轮询等待，配置项是
 `runtime.github_workflow_view_poll_attempts` 和 `runtime.github_workflow_view_poll_interval_seconds`。
-如果你只想单独验证 GitHub review workflow，而不想先经过本地 `triage/implement/review`，可以改用 `github_bridge_smoke` pipeline。
+如果你只想单独验证 GitHub review workflow，而不想先经过本地 `triage/implement/review`，可以改用 `github_bridge_smoke` pipeline。它只跑 `dispatch_review -> collect_review`，不会经过 `commit_changes` 和 `publish_branch`。
 
 ### 第三步：dry-run
 
@@ -191,7 +191,7 @@ python3 main_v2.py --live --request "修复登录页报错" --steps triage,imple
 如果这时前面已经成功 `sync_issue`，`update_issue` 现在仍会继续，把“无需代码改动”的结果回写到现有 issue；但 `draft_pr / dispatch_review / collect_review` 仍会保持跳过。
 如果你希望网络类 GitHub 失败自动重试，可以把 `runtime.github_retry_attempts` 调到大于 `1`，并用 `runtime.github_retry_backoff_seconds` 控制间隔；默认是关闭的。
 当前默认已经允许在没填 `github.repo` 时从 `git remote origin` 推导仓库；如果你想固定目标仓库，可以显式设置 `github.repo` 或 `OPENCLAW_GITHUB_REPO`。
-`--doctor-config` 现在还会检查这些 GitHub runtime 配置和 GitHub profile action / workflow 配置是否自洽。
+`--doctor-config` 现在还会检查这些 GitHub runtime 配置、GitHub profile action / workflow 配置，以及 pipeline 依赖引用 / 循环是否自洽。
 
 如果当前 live 总是被本地 `claude/codex` 环境挡住，可以先单独做 GitHub smoke test：
 

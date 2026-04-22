@@ -139,6 +139,108 @@ class ConfigLoaderTests(unittest.TestCase):
         self.assertTrue(profile.hermes_yolo)
         self.assertEqual(config.managed_agents["hermes_supervisor"].kind, AgentType.HERMES)
 
+    def test_load_app_config_expands_composed_pipeline_definitions(self) -> None:
+        content = textwrap.dedent(
+            """
+            runtime:
+              pipeline: child
+            profiles:
+              cli_local:
+                agent: claude
+                mode: cli
+            managed_agents:
+              triage_agent:
+                kind: claude
+                profile: cli_local
+            assignments:
+              triage_local:
+                agent: triage_agent
+            pipelines:
+              base:
+                - id: triage
+                  title: Base triage
+                  assignment: triage_local
+                  prompt_template: base triage
+                - id: review
+                  title: Base review
+                  assignment: triage_local
+                  prompt_template: base review
+              child:
+                extends: base
+                steps:
+                  - id: triage
+                    title: Child triage
+                  - id: record_summary
+                    title: Child summary
+                    assignment: triage_local
+                    insert_after: review
+                    prompt_template: child summary
+            """
+        ).strip()
+
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            config = load_app_config(handle.name)
+
+        child_steps = config.pipelines["child"]
+        self.assertEqual([step.id for step in child_steps], ["triage", "review", "record_summary"])
+        self.assertEqual(child_steps[0].title, "Child triage")
+        self.assertEqual(child_steps[2].assignment, "triage_local")
+        self.assertEqual(child_steps[2].depends_on, [])
+
+    def test_load_app_config_can_remove_steps_from_composed_pipelines(self) -> None:
+        content = textwrap.dedent(
+            """
+            runtime:
+              pipeline: child
+            profiles:
+              cli_local:
+                agent: claude
+                mode: cli
+            managed_agents:
+              triage_agent:
+                kind: claude
+                profile: cli_local
+            assignments:
+              triage_local:
+                agent: triage_agent
+            pipelines:
+              base:
+                - id: triage
+                  title: Base triage
+                  assignment: triage_local
+                  prompt_template: base triage
+                - id: review
+                  title: Base review
+                  assignment: triage_local
+                  prompt_template: base review
+                - id: publish_branch
+                  title: Base publish
+                  assignment: triage_local
+                  depends_on:
+                    - review
+                  prompt_template: base publish
+              child:
+                extends: base
+                remove_steps:
+                  - review
+                steps:
+                  - id: publish_branch
+                    depends_on:
+                      - triage
+            """
+        ).strip()
+
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            config = load_app_config(handle.name)
+
+        child_steps = config.pipelines["child"]
+        self.assertEqual([step.id for step in child_steps], ["triage", "publish_branch"])
+        self.assertEqual(child_steps[1].depends_on, ["triage"])
+
     def test_load_app_config_reads_cli_unset_env_fields(self) -> None:
         content = textwrap.dedent(
             """

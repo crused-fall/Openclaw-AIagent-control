@@ -18,6 +18,7 @@ class WebUiStaticTests(unittest.TestCase):
         )
 
         self.assertIn("function channelHealthStatus(channels)", source)
+        self.assertIn("!Array.isArray(channels) || !channels.length", source)
         self.assertIn('${makeStatusChip(channelHealthStatus(channels))}', source)
         self.assertNotIn(
             '${makeStatusChip(channels.every((item) => item.probeOk) ? "passed" : "warning")}',

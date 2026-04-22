@@ -157,6 +157,19 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("healthRaw", payload)
         self.assertNotIn("knownAgents", payload)
 
+    async def test_health_unhandled_error_still_carries_security_headers(self) -> None:
+        with mock.patch(
+            "openclaw_v2.web._openclaw_health_snapshot",
+            side_effect=RuntimeError("health probe failed"),
+        ):
+            response = await self.client.get("/api/system/health?agentId=openclaw-control-ext")
+
+        self.assertEqual(response.status, 500)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("Internal server error", await response.text())
+
     async def test_bootstrap_allows_in_repo_config_override(self) -> None:
         alt_dir = os.path.join(self.repo_path, "configs")
         os.makedirs(alt_dir, exist_ok=True)

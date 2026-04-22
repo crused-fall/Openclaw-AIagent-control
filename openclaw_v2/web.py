@@ -142,7 +142,15 @@ async def _security_headers_middleware(
     except web.HTTPException as error_response:
         _apply_security_headers(error_response)
         raise
+    except Exception as error:
+        error_response = web.HTTPInternalServerError(text="Internal server error.")
+        _apply_security_headers(error_response)
+        raise error_response from error
     return _apply_security_headers(response)
+
+
+async def _security_headers_on_prepare(request: web.Request, response: web.StreamResponse) -> None:
+    _apply_security_headers(response)
 
 
 def _validate_dashboard_runtime_roots(
@@ -1726,6 +1734,7 @@ def create_web_app(
     app[APP_WORKTREES_ROOT] = str(
         _canonical_path(resolve_runtime_path(resolved_repo_path, startup_config.runtime.worktrees_dir))
     )
+    app.on_response_prepare.append(_security_headers_on_prepare)
 
     app.router.add_get("/", _index_handler)
     app.router.add_get("/api/bootstrap", _bootstrap_handler)
