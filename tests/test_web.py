@@ -98,6 +98,7 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("demo_pipeline", payload["snapshot"]["pipelines"])
         self.assertEqual(payload["snapshot"]["currentPlan"][0]["id"], "implement")
         self.assertEqual(payload["repoPath"], _normalized_path(self.repo_path))
+        self.assertEqual(payload["worktreesRoot"], "/tmp/openclaw-worktrees")
         self.assertIn("defaultOpenClawAgentId", payload)
         self.assertIn("housekeeping", payload)
         self.assertEqual(payload["housekeeping"]["confirmationToken"], self.housekeeping_headers["X-OpenClaw-Housekeeping-Token"])

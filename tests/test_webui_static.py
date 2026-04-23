@@ -42,6 +42,16 @@ class WebUiStaticTests(unittest.TestCase):
             source.split("function preflightSnapshotStatus(checks)")[0],
         )
 
+    def test_housekeeping_status_is_rendered_from_bootstrap_scope(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderHousekeepingStatus(bootstrap)", source)
+        self.assertIn("bootstrap?.housekeeping?.confirmationToken", source)
+        self.assertIn('["Worktrees", bootstrap.worktreesRoot]', source)
+        self.assertIn("renderHousekeepingStatus(bootstrap);", source)
+
 
 if __name__ == "__main__":
     unittest.main()

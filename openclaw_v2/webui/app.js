@@ -1256,6 +1256,7 @@ function renderWorkspaceMetrics(bootstrap) {
     ["Repo root", bootstrap.repoPath],
     ["Config", bootstrap.configPath],
     ["Artifacts", bootstrap.artifactsRoot],
+    ["Worktrees", bootstrap.worktreesRoot],
   ];
   elements.workspaceMetrics.innerHTML = statCards
     .map(
@@ -1279,6 +1280,16 @@ function renderWorkspaceMetrics(bootstrap) {
       ),
     )
     .join("");
+}
+
+function renderHousekeepingStatus(bootstrap) {
+  const tokenReady = Boolean(bootstrap?.housekeeping?.confirmationToken);
+  const repoRoot = compactPath(bootstrap?.repoPath || "", 4);
+  const artifactsRoot = compactPath(bootstrap?.artifactsRoot || "", 4);
+  const worktreesRoot = compactPath(bootstrap?.worktreesRoot || "", 4);
+  elements.housekeepingStatus.textContent = tokenReady
+    ? `Token-protected cleanup is scoped to ${repoRoot}; artifacts: ${artifactsRoot}; worktrees: ${worktreesRoot}.`
+    : "Cleanup and prune will lock to the current repo scope after bootstrap loads.";
 }
 
 function renderPipelines(bootstrap) {
@@ -1582,6 +1593,7 @@ function renderBootstrap(bootstrap) {
   renderStepGrid();
   renderRequestPresets();
   renderWorkspaceMetrics(bootstrap);
+  renderHousekeepingStatus(bootstrap);
   renderLaunchBrief();
   renderHeroStatus();
   renderPipelineRadar();

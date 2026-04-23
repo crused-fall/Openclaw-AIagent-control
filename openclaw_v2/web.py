@@ -1449,6 +1449,7 @@ async def _bootstrap_handler(request: web.Request) -> web.Response:
         "configPath": config_path,
         "git": _git_status_snapshot(repo_path),
         "artifactsRoot": artifacts_root,
+        "worktreesRoot": resolve_runtime_path(repo_path, config.runtime.worktrees_dir),
         "housekeeping": {
             "confirmationToken": str(request.app[APP_HOUSEKEEPING_TOKEN]),
         },
