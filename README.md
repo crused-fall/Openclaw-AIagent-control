@@ -182,6 +182,7 @@ python3 main_v2.py --web --web-host 127.0.0.1 --web-port 8766
 
 `--web` 会启动一个本地 Mission Control Web UI，用来集中做 pipeline 启动、diagnose / preflight / doctor、OpenClaw 健康检查、run artifacts 浏览，以及最近运行的清理。
 当前页面还带了一个 Readiness Gate，会结合请求内容、step 选择、repo git 状态、OpenClaw health / memory、fallback 解析和最近一次 preflight 结果及其来源，帮助你在真正 live 前先看风险。
+GitHub Bridge 面板会把 branch / issue / PR / review workflow 汇成一个总览状态卡，方便你快速判断尾链是不是已经跑通。
 出于安全原因，Web UI 默认绑定启动它时的 `repo_path + config_path`。
 如果需要切换到别的仓库或配置，请重新启动 Web UI，而不是在页面里临时改路径；历史清理、prune 和健康检查也只会作用在当前仓库范围内。
 Housekeeping 还会额外校验 run manifest 里的 `workspace_repo_root / workspace_path / branch_name`，只清理由当前仓库生成、且落在受管 worktrees 根里的对象。

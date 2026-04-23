@@ -52,6 +52,16 @@ class WebUiStaticTests(unittest.TestCase):
         self.assertIn('["Worktrees", bootstrap.worktreesRoot]', source)
         self.assertIn("renderHousekeepingStatus(bootstrap);", source)
 
+    def test_github_bridge_status_is_aggregated_for_reviewers(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function githubBridgeStatus(github, overview, runId)", source)
+        self.assertIn("const bridgeState = githubBridgeStatus(github, overview, runId);", source)
+        self.assertIn("<strong>Bridge state</strong>", source)
+        self.assertIn("Workflow ${workflowId || \"n/a\"} succeeded.", source)
+
 
 if __name__ == "__main__":
     unittest.main()

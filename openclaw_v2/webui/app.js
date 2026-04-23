@@ -163,6 +163,72 @@ function safeExternalUrl(value) {
   return /^https?:\/\//i.test(text) ? text : "";
 }
 
+function githubBridgeStatus(github, overview, runId) {
+  const repo = String(github?.repo || overview?.repo || "").trim();
+  const branch = String(github?.branch || "").trim();
+  const issue = github?.issue || null;
+  const pr = github?.pr || null;
+  const workflow = github?.workflow || null;
+  const workflowId = String(workflow?.id || workflow?.stepId || runId || "").trim();
+  const workflowStatus = String(workflow?.status || "").trim().toLowerCase();
+  const workflowConclusion = String(workflow?.conclusion || "").trim().toLowerCase();
+
+  if (!repo) {
+    return {
+      status: "warning",
+      label: "Unresolved",
+      detail: "GitHub repo has not been resolved yet.",
+    };
+  }
+  if (!branch) {
+    return {
+      status: "warning",
+      label: "Repo ready",
+      detail: "Branch will surface after publish_branch.",
+    };
+  }
+  if (!issue) {
+    return {
+      status: "warning",
+      label: "Branch published",
+      detail: "Planning issue is still pending.",
+    };
+  }
+  if (!pr) {
+    return {
+      status: "warning",
+      label: "Issue synced",
+      detail: "Draft PR is still pending.",
+    };
+  }
+  if (!workflow) {
+    return {
+      status: "warning",
+      label: "PR ready",
+      detail: "Review workflow has not been attached yet.",
+    };
+  }
+  if (workflowConclusion === "success") {
+    return {
+      status: "passed",
+      label: "Review complete",
+      detail: `Workflow ${workflowId || "n/a"} succeeded.`,
+    };
+  }
+  if (["failure", "cancelled", "timed_out"].includes(workflowConclusion)) {
+    return {
+      status: "blocked",
+      label: "Review failed",
+      detail: `Workflow ${workflowId || "n/a"} ended ${workflowConclusion || workflowStatus || "unknown"}.`,
+    };
+  }
+  return {
+    status: "warning",
+    label: "Review in flight",
+    detail: `Workflow ${workflowId || "n/a"} is ${workflowStatus || "pending"}.`,
+  };
+}
+
 function channelHealthStatus(channels) {
   if (!Array.isArray(channels) || !channels.length) {
     return "warning";
@@ -885,6 +951,7 @@ function renderGitHubBridge() {
   const repoUrl = repo ? `https://github.com/${repo}` : "";
   const runId = activeRunId();
   const checks = github.checks || [];
+  const bridgeState = githubBridgeStatus(github, overview, runId);
 
   if (!repo && !cards.length && !checks.length) {
     elements.githubBridge.innerHTML = `<div class="empty-state">Run a GitHub-enabled pipeline or load a run with branch / issue / PR artifacts.</div>`;
@@ -893,6 +960,14 @@ function renderGitHubBridge() {
 
   elements.githubBridge.innerHTML = `
     <div class="bridge-grid">
+      <article class="bridge-card">
+        <div class="result-card-header">
+          <strong>Bridge state</strong>
+          ${makeStatusChip(bridgeState.status)}
+        </div>
+        <p>${escapeHtml(bridgeState.label)}</p>
+        <small>${escapeHtml(bridgeState.detail)}</small>
+      </article>
       <article class="bridge-card">
         <div class="result-card-header">
           <strong>Repository</strong>
