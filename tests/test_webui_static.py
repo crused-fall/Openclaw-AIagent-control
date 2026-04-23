@@ -57,10 +57,12 @@ class WebUiStaticTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        self.assertIn("function currentGitHubBridgeState()", source)
         self.assertIn("function githubBridgeStatus(github, overview, runId)", source)
-        self.assertIn("const bridgeState = githubBridgeStatus(github, overview, runId);", source)
+        self.assertIn("const bridgeState = currentGitHubBridgeState();", source)
         self.assertIn("<strong>Bridge state</strong>", source)
         self.assertIn("Workflow ${workflowId || \"n/a\"} succeeded.", source)
+        self.assertIn("GitHub bridge: ${bridgeState.label} (${bridgeState.status})", source)
 
 
 if __name__ == "__main__":

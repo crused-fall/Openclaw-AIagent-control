@@ -229,6 +229,14 @@ function githubBridgeStatus(github, overview, runId) {
   };
 }
 
+function currentGitHubBridgeState() {
+  return githubBridgeStatus(
+    activeRunInsights()?.github || {},
+    state.bootstrap?.integrations?.github || {},
+    activeRunId(),
+  );
+}
+
 function channelHealthStatus(channels) {
   if (!Array.isArray(channels) || !channels.length) {
     return "warning";
@@ -951,7 +959,7 @@ function renderGitHubBridge() {
   const repoUrl = repo ? `https://github.com/${repo}` : "";
   const runId = activeRunId();
   const checks = github.checks || [];
-  const bridgeState = githubBridgeStatus(github, overview, runId);
+  const bridgeState = currentGitHubBridgeState();
 
   if (!repo && !cards.length && !checks.length) {
     elements.githubBridge.innerHTML = `<div class="empty-state">Run a GitHub-enabled pipeline or load a run with branch / issue / PR artifacts.</div>`;
@@ -1862,6 +1870,7 @@ function generateRunSummaryText() {
     return "";
   }
   const runResult = runPayload.runResult;
+  const bridgeState = currentGitHubBridgeState();
   const results = runResult.results || [];
   const counts = formatCounts(statusCounts(results));
   const actionable = actionableResults(results);
@@ -1871,6 +1880,7 @@ function generateRunSummaryText() {
     `Request: ${runPayload.request || "n/a"}`,
     `Success: ${runResult.success ? "yes" : "no"}`,
     `Artifacts: ${runResult.artifacts_dir || "n/a"}`,
+    `GitHub bridge: ${bridgeState.label} (${bridgeState.status})`,
     `Status counts: ${counts}`,
   ];
   if (actionable.length) {
@@ -1888,6 +1898,7 @@ function generateIssueUpdateText() {
     return "";
   }
   const runResult = runPayload.runResult;
+  const bridgeState = currentGitHubBridgeState();
   const results = runResult.results || [];
   const actionable = actionableResults(results);
   const lines = [
@@ -1897,6 +1908,7 @@ function generateIssueUpdateText() {
     `- Pipeline: ${runPayload.pipeline || "n/a"}`,
     `- Request: ${runPayload.request || "n/a"}`,
     `- Success: ${runResult.success ? "yes" : "no"}`,
+    `- GitHub bridge: ${bridgeState.label} (${bridgeState.status})`,
     `- Status counts: ${formatCounts(statusCounts(results))}`,
   ];
   if (actionable.length) {
@@ -1916,6 +1928,7 @@ function generatePrNoteText() {
     return "";
   }
   const runResult = runPayload.runResult;
+  const bridgeState = currentGitHubBridgeState();
   const branch = primaryBranch(runResult);
   const readiness = readinessFacts()
     .map((fact) => `${fact.label}:${fact.value}`)
@@ -1928,6 +1941,7 @@ function generatePrNoteText() {
     `Request: ${runPayload.request || "n/a"}`,
     `Branch: ${branch || "n/a"}`,
     `Readiness: ${readiness}`,
+    `GitHub bridge: ${bridgeState.label} (${bridgeState.status})`,
     `Status counts: ${formatCounts(statusCounts(runResult.results || []))}`,
   ];
   return lines.join("\n");
