@@ -291,6 +291,70 @@ class GitHubExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("workflow", result.artifacts["github_recovery_hint"])
         self.assertIn("does not have enough permission", result.artifacts["blocked_reason"])
 
+    async def test_live_pr_create_repository_unavailable_is_blocked_with_actionable_hint(self) -> None:
+        context = ExecutionContext(
+            run_id="run-1",
+            user_request="test",
+            repo_path="/tmp/repo",
+            dry_run=False,
+            artifacts_dir="/tmp/artifacts",
+            worktrees_dir="/tmp/worktrees",
+        )
+        work_item = WorkItem(
+            id="draft_pr",
+            title="Draft PR",
+            profile="copilot_pr",
+            agent=AgentType.COPILOT,
+            mode=ExecutionMode.GITHUB,
+            prompt_template="",
+            metadata={"primary_pr_ref": "42", "source_branch": "feature/test"},
+        )
+        profile = self.config.profiles["copilot_pr"]
+
+        with mock.patch(
+            "openclaw_v2.executors.github.asyncio.create_subprocess_exec",
+            new=mock.AsyncMock(return_value=_FakeProcess(1, "", "repository not found")),
+        ):
+            result = await self.executor.execute(work_item, profile, context, "hello")
+
+        self.assertEqual(result.status, TaskStatus.BLOCKED)
+        self.assertEqual(result.artifacts["github_failure_kind"], "repository_unavailable")
+        self.assertFalse(result.artifacts["github_retryable"])
+        self.assertEqual(result.artifacts["blocked_reason"], "GitHub repository is unavailable.")
+        self.assertIn("Confirm `github.repo`", result.artifacts["github_recovery_hint"])
+
+    async def test_live_workflow_dispatch_missing_workflow_is_blocked_with_actionable_hint(self) -> None:
+        context = ExecutionContext(
+            run_id="run-1",
+            user_request="test",
+            repo_path="/tmp/repo",
+            dry_run=False,
+            artifacts_dir="/tmp/artifacts",
+            worktrees_dir="/tmp/worktrees",
+        )
+        work_item = WorkItem(
+            id="dispatch_review",
+            title="Dispatch review",
+            profile="github_review_workflow",
+            agent=AgentType.COPILOT,
+            mode=ExecutionMode.GITHUB,
+            prompt_template="",
+            metadata={"source_branch": "feature/test"},
+        )
+        profile = self.config.profiles["github_review_workflow"]
+
+        with mock.patch(
+            "openclaw_v2.executors.github.asyncio.create_subprocess_exec",
+            new=mock.AsyncMock(return_value=_FakeProcess(1, "", "workflow not found")),
+        ):
+            result = await self.executor.execute(work_item, profile, context, "hello")
+
+        self.assertEqual(result.status, TaskStatus.BLOCKED)
+        self.assertEqual(result.artifacts["github_failure_kind"], "workflow_missing")
+        self.assertFalse(result.artifacts["github_retryable"])
+        self.assertEqual(result.artifacts["blocked_reason"], "GitHub workflow is missing.")
+        self.assertIn(".github/workflows", result.artifacts["github_recovery_hint"])
+
     async def test_live_workflow_view_succeeds_for_completed_success_run(self) -> None:
         context = ExecutionContext(
             run_id="run-1",

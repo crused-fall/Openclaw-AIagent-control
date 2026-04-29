@@ -962,6 +962,8 @@ function renderGitHubBridge() {
   const repo = github.repo || overview.repo || "";
   const branch = github.branch || "";
   const repoUrl = repo ? `https://github.com/${repo}` : "";
+  const safeRepoUrl = safeExternalUrl(repoUrl);
+  const safeWorkflowUrl = safeExternalUrl(workflow?.url);
   const runId = activeRunId();
   const checks = github.checks || [];
   const bridgeState = currentGitHubBridgeState();
@@ -988,7 +990,7 @@ function renderGitHubBridge() {
         </div>
         <p>${escapeHtml(repo || "Repository not resolved yet")}</p>
         <small>${escapeHtml(`Base branch: ${overview.baseBranch || "main"}`)}</small>
-        ${repoUrl ? `<a class="bridge-link" href="${escapeHtml(repoUrl)}" target="_blank" rel="noreferrer">Open repo</a>` : ""}
+        ${safeRepoUrl ? `<a class="bridge-link" href="${escapeHtml(safeRepoUrl)}" target="_blank" rel="noreferrer">Open repo</a>` : ""}
       </article>
       <article class="bridge-card">
         <div class="result-card-header">
@@ -998,8 +1000,8 @@ function renderGitHubBridge() {
         <p>${escapeHtml(runId || "No run loaded")}</p>
         <small>${escapeHtml(branch ? `Branch: ${branch}` : "Branch will surface after publish_branch.")}</small>
         ${
-          workflow?.url
-            ? `<a class="bridge-link" href="${escapeHtml(workflow.url)}" target="_blank" rel="noreferrer">Open latest review workflow</a>`
+          safeWorkflowUrl
+            ? `<a class="bridge-link" href="${escapeHtml(safeWorkflowUrl)}" target="_blank" rel="noreferrer">Open latest review workflow</a>`
             : ""
         }
       </article>

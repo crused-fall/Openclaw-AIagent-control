@@ -19,6 +19,7 @@
 - `main_v2.py` 已可作为统一入口
 - 支持 `--steps`、`--request`、`--live`、`--preflight-only`
 - 支持 `--list-managed-agents`、`--doctor-config`、`--diagnose-plan`
+- `--doctor-config` 已有 CLI 回归测试并合并到 main，锁定配置诊断路径不会误进入交互模式
 - 支持 `--web` 本地 Mission Control 控制台
 - live 运行时会输出 step 级 progress
 
@@ -49,6 +50,8 @@
 - GitHub 步骤 CLI 会打印 `github:` 摘要
 - GitHub bridge 的失败会分类为 auth / repository / workflow / reference / network / unknown
 - GitHub 失败结果会保留 `stderr`、retryability 和恢复提示
+- GitHub bridge 的 `repository_unavailable` / `workflow_missing` 失败分支已补上回归测试，和现有 auth / permission / reference / network 路径一起覆盖主要失败形态
+- GitHub bridge 面板里的 repo / workflow 外链也已统一走 `safeExternalUrl`，避免把非 http(s) URL 直接挂到 `href`
 - GitHub bridge 已支持显式配置的网络类自动重试
 - GitHub repo 已支持显式开启的 `origin` fallback
 - `gh issue create` 如果因为仓库里缺少 labels 失败，会自动去掉 labels 重试一次，并把被忽略的 labels 回写到结果

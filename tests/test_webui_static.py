@@ -59,6 +59,8 @@ class WebUiStaticTests(unittest.TestCase):
 
         self.assertIn("function currentGitHubBridgeState()", source)
         self.assertIn("function currentGitHubWorkflow()", source)
+        self.assertIn("const safeRepoUrl = safeExternalUrl(repoUrl);", source)
+        self.assertIn("const safeWorkflowUrl = safeExternalUrl(workflow?.url);", source)
         self.assertIn("function githubBridgeStatus(github, overview, runId)", source)
         self.assertIn("const bridgeState = currentGitHubBridgeState();", source)
         self.assertIn("<strong>Bridge state</strong>", source)
@@ -66,6 +68,8 @@ class WebUiStaticTests(unittest.TestCase):
         self.assertIn("GitHub bridge: ${bridgeState.label} (${bridgeState.status})", source)
         self.assertIn("Latest review workflow: ${workflow?.url || \"n/a\"}", source)
         self.assertIn('Open latest review workflow', source)
+        self.assertNotIn('href="${escapeHtml(repoUrl)}"', source)
+        self.assertNotIn('href="${escapeHtml(workflow.url)}"', source)
 
 
 if __name__ == "__main__":
