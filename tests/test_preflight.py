@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from typing import Optional
 from unittest import mock
 
 from openclaw_v2.config import load_app_config
@@ -191,7 +192,7 @@ class PreflightOpenClawTests(unittest.IsolatedAsyncioTestCase):
             )
         ]
 
-        def fake_which(command: str) -> str | None:
+        def fake_which(command: str) -> Optional[str]:
             if command in {"git", "hermes"}:
                 return f"/usr/bin/{command}"
             return None
