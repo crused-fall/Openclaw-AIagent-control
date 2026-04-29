@@ -75,6 +75,54 @@ class ConfigLoaderTests(unittest.TestCase):
         self.assertEqual(config.assignments["triage_local"].required_capabilities, ["triage"])
         self.assertEqual(config.pipelines["demo"][0].assignment, "triage_local")
 
+    def test_load_app_config_reads_hermes_profile_fields(self) -> None:
+        content = textwrap.dedent(
+            """
+            profiles:
+              hermes_local:
+                agent: hermes
+                mode: hermes
+                hermes_provider: copilot
+                hermes_model: gpt-5
+                hermes_toolsets: [file, terminal]
+                hermes_skills: [repo-review]
+                hermes_source: tool
+                hermes_max_turns: 24
+                hermes_yolo: true
+            managed_agents:
+              hermes_supervisor:
+                kind: hermes
+                profile: hermes_local
+                capabilities: [triage, review]
+            assignments:
+              triage_local:
+                agent: hermes_supervisor
+            pipelines:
+              demo:
+                - id: triage
+                  title: Triage
+                  assignment: triage_local
+                  prompt_template: test
+            """
+        ).strip()
+
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            config = load_app_config(handle.name)
+
+        profile = config.profiles["hermes_local"]
+        self.assertEqual(profile.agent, AgentType.HERMES)
+        self.assertEqual(profile.mode, ExecutionMode.HERMES)
+        self.assertEqual(profile.hermes_provider, "copilot")
+        self.assertEqual(profile.hermes_model, "gpt-5")
+        self.assertEqual(profile.hermes_toolsets, ["file", "terminal"])
+        self.assertEqual(profile.hermes_skills, ["repo-review"])
+        self.assertEqual(profile.hermes_source, "tool")
+        self.assertEqual(profile.hermes_max_turns, 24)
+        self.assertTrue(profile.hermes_yolo)
+        self.assertEqual(config.managed_agents["hermes_supervisor"].kind, AgentType.HERMES)
+
     def test_load_app_config_reads_cli_unset_env_fields(self) -> None:
         content = textwrap.dedent(
             """

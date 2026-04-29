@@ -15,6 +15,7 @@ v1 的关键词路由原型继续保留，但不再代表项目长期方向。
 - 长期目标仍然是 OpenClaw 风格的统一总控
 - 当前真正落地的控制层是 `main_v2.py` + `openclaw_v2/`
 - `ExecutionMode.OPENCLAW` 只是已接入的一种执行路径，不等于仓库已经由外部 OpenClaw 完全接管
+- `ExecutionMode.HERMES` 当前定位为本机监督 / 记录执行路径，不承担默认实现步骤
 
 ## 分层映射
 
@@ -46,6 +47,7 @@ v1 的关键词路由原型继续保留，但不再代表项目长期方向。
 ### 3. Execution Layer
 
 - `executors/cli.py`
+- `executors/hermes.py`
 - `executors/openclaw.py`
 - `executors/github.py`
 
@@ -53,6 +55,7 @@ v1 的关键词路由原型继续保留，但不再代表项目长期方向。
 
 - 统一执行接口
 - 把本地 CLI、本机 OpenClaw、GitHub 协作接进同一条编排链
+- 把 Hermes 这类本机 supervisor / recorder executor 接进同一条编排链
 - 将 stdout / stderr / 结果结构化成 `AgentResult`
 
 ### 3.5 Managed-Agent Registry
@@ -118,6 +121,22 @@ request
 
 1. `dispatch_review`
 2. `collect_review`
+
+另有一条 Hermes 监督变体：
+
+`mission_control_hermes_supervised`
+
+1. `triage`（Hermes）
+2. `implement`（本地 CLI）
+3. `review`（Hermes）
+4. `commit_changes`
+5. `publish_branch`
+6. `sync_issue`
+7. `record_summary`（Hermes）
+8. `update_issue`
+9. `draft_pr`
+10. `dispatch_review`
+11. `collect_review`
 
 这条链专门用于绕过本地 `triage/implement/review`，单独验证 review workflow 的触发和状态回流。
 
