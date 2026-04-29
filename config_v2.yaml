@@ -865,6 +865,270 @@ pipelines:
           建议使用的实现分支：
           {primary_branch_name}
 
+  mission_control_hermes_supervised:
+    - id: triage
+      title: Triage user request with local Hermes
+      assignment: triage_hermes
+      metadata:
+        export_branch: false
+      prompt_template: |
+        你是 OpenClaw 的需求拆解与监督 agent，当前由 Hermes 承担。
+        运行编号：{run_id}
+        仓库路径：{repo_path}
+        Artifacts 目录：{artifacts_dir}
+
+        用户请求：
+        {user_request}
+
+        如果请求与当前仓库不匹配、缺少关键文件或模块、或者信息不足以安全继续，请严格先输出两行，不要加粗、不要列表、不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
+        请输出：
+        1. 任务拆分
+        2. 风险点
+        3. 实施顺序
+
+    - id: implement
+      title: Implement main changes locally
+      assignment: implement_local
+      depends_on:
+        - triage
+      metadata:
+        export_branch: true
+        expects_file_changes: true
+      prompt_template: |
+        你是 OpenClaw 的本地实现 agent。
+        基于以下用户请求和依赖结果，在本地工作区准备实现方案。
+        工作目录：{workspace_path}
+        分支名：{branch_name}
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        请先确认用户请求对应的目标文件、模块或页面在当前仓库中确实存在。
+        如果请求与仓库不匹配、目标代码不存在、或关键信息缺失，请不要编造实现方案，严格先输出两行，不要加粗、不要列表、不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
+        请重点关注：
+        1. 需要修改的文件
+        2. 实施步骤
+        3. 验证方式
+
+    - id: review
+      title: Review implementation before publish with Hermes
+      assignment: review_hermes
+      depends_on:
+        - implement
+      prompt_template: |
+        你是 OpenClaw 的本地审阅与监督 agent，当前由 Hermes 承担。
+        请基于实现结果判断当前分支是否适合进入 GitHub 协作流程。
+
+        实现步骤可能运行在独立 worktree / 分支中，这属于预期，不要因为改动尚未回到仓库根目录就判断为流程错误。
+        如果依赖结果提供了实现分支或实现工作目录，请优先基于这些实现产物审阅；下游 `commit_changes` / `publish_branch` 会继续在实现分支上处理。
+        不要建议把改动手工复制回当前仓库根目录，除非依赖结果明确显示实现分支或实现工作目录缺失。
+
+        工作目录：
+        {workspace_path}
+
+        实现分支：
+        {source_branch}
+
+        实现工作目录：
+        {source_workspace_path}
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        如果实现结果不足以继续、需求与仓库不匹配、或者必须先补充人工信息，请严格先输出两行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: blocked
+        OPENCLAW_BLOCK_REASON: <一句话说明阻塞原因>
+
+        如果可以继续，请严格先输出下面这一行，不要加任何 Markdown 修饰：
+        OPENCLAW_STATUS: ready
+
+        请输出：
+        1. 主要风险
+        2. 建议补充验证
+        3. 是否建议发布到 GitHub 流程
+
+    - id: commit_changes
+      title: Commit implementation changes locally
+      assignment: commit_changes_local
+      depends_on:
+        - implement
+        - review
+      metadata:
+        export_branch: true
+        requires_workspace_changes: true
+        requires_dependency_branch: true
+        reuse_source_workspace: true
+        commits_workspace_changes: true
+      prompt_template: |
+        OpenClaw: apply requested changes
+
+    - id: publish_branch
+      title: Publish implementation branch to origin
+      assignment: publish_branch_local
+      depends_on:
+        - commit_changes
+        - review
+      metadata:
+        export_branch: true
+        requires_origin_remote: true
+        requires_workspace_changes: true
+        requires_dependency_branch: true
+        requires_committed_dependency_changes: true
+      prompt_template: |
+        将当前实现分支推送到 origin，供 GitHub PR 和 workflow 使用。
+        工作目录：{workspace_path}
+        分支名：{branch_name}
+
+        用户请求：
+        {user_request}
+
+        来源分支：
+        {source_branch}
+
+    - id: sync_issue
+      title: Sync planning issue to GitHub
+      assignment: sync_issue_bridge
+      depends_on:
+        - triage
+      prompt_template: |
+        请把以下任务分析整理成 GitHub issue，便于异步跟踪。
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+    - id: record_summary
+      title: Record collaboration summary with Hermes
+      assignment: record_summary_hermes
+      depends_on:
+        - publish_branch
+        - review
+        - sync_issue
+      metadata:
+        allow_noop_skipped_dependencies:
+          - publish_branch
+      prompt_template: |
+        你是 OpenClaw 的记录员 agent，当前由 Hermes 承担。
+        请基于已有依赖结果整理一份异步协作记录，供后续 issue / PR / review 使用。
+
+        要求：
+        - 只根据依赖结果总结，不要编造不存在的提交、分支、PR、workflow 结果
+        - 如果 `publish_branch` 因为无文件改动而跳过，要明确写明是 noop，而不是失败
+        - 这是记录与总结步骤，不要修改代码或 Git 状态
+
+        用户请求：
+        {user_request}
+
+        当前实现分支：
+        {primary_branch_name}
+
+        目标 issue：
+        {primary_issue_ref}
+
+        {dependency_summaries}
+
+        请输出：
+        1. 执行摘要
+        2. 关键风险与未决点
+        3. 建议同步到 issue / PR 的简短说明
+        4. 下一步建议
+
+    - id: update_issue
+      title: Update GitHub issue with implementation status
+      assignment: update_issue_bridge
+      depends_on:
+        - publish_branch
+        - review
+        - sync_issue
+        - record_summary
+      metadata:
+        allow_noop_skipped_dependencies:
+          - publish_branch
+      prompt_template: |
+        请把本地实现结果回写到现有 GitHub issue，作为阶段性进展更新。
+
+        用户请求：
+        {user_request}
+
+        当前实现分支：
+        {primary_branch_name}
+
+        目标 issue：
+        {primary_issue_ref}
+
+        {dependency_summaries}
+
+    - id: draft_pr
+      title: Prepare GitHub draft PR summary
+      assignment: draft_pr_bridge
+      depends_on:
+        - publish_branch
+        - review
+        - sync_issue
+        - record_summary
+        - update_issue
+      prompt_template: |
+        请把本地实现结果整理为 Draft PR 描述，便于后续人工审核和合并。
+
+        用户请求：
+        {user_request}
+
+        {dependency_summaries}
+
+        建议使用的实现分支：
+        {primary_branch_name}
+
+    - id: dispatch_review
+      title: Trigger GitHub review workflow
+      assignment: dispatch_review_bridge
+      depends_on:
+        - publish_branch
+        - review
+        - draft_pr
+      prompt_template: |
+        请触发 GitHub review workflow，对以下实现分支执行异步检查。
+
+        用户请求：
+        {user_request}
+
+        推荐分支：
+        {primary_branch_name}
+
+        {dependency_summaries}
+
+    - id: collect_review
+      title: Collect GitHub review workflow status
+      assignment: collect_review_bridge
+      depends_on:
+        - dispatch_review
+      prompt_template: |
+        请收集当前 GitHub review workflow 的最新状态，便于 OpenClaw 回流异步检查结果。
+
+        用户请求：
+        {user_request}
+
+        目标 workflow run：
+        {primary_workflow_run_ref}
+
+        {dependency_summaries}
+
   github_bridge_smoke:
     extends: mission_control_default
     remove_steps:
