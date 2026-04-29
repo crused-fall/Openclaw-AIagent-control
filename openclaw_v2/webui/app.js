@@ -237,6 +237,10 @@ function currentGitHubBridgeState() {
   );
 }
 
+function currentGitHubWorkflow() {
+  return activeRunInsights()?.github?.workflow || null;
+}
+
 function channelHealthStatus(channels) {
   if (!Array.isArray(channels) || !channels.length) {
     return "warning";
@@ -954,6 +958,7 @@ function renderGitHubBridge() {
   const overview = state.bootstrap?.integrations?.github || {};
   const github = activeRunInsights()?.github || {};
   const cards = github.cards || [];
+  const workflow = currentGitHubWorkflow();
   const repo = github.repo || overview.repo || "";
   const branch = github.branch || "";
   const repoUrl = repo ? `https://github.com/${repo}` : "";
@@ -992,6 +997,11 @@ function renderGitHubBridge() {
         </div>
         <p>${escapeHtml(runId || "No run loaded")}</p>
         <small>${escapeHtml(branch ? `Branch: ${branch}` : "Branch will surface after publish_branch.")}</small>
+        ${
+          workflow?.url
+            ? `<a class="bridge-link" href="${escapeHtml(workflow.url)}" target="_blank" rel="noreferrer">Open latest review workflow</a>`
+            : ""
+        }
       </article>
       <article class="bridge-card">
         <div class="result-card-header">
@@ -1871,6 +1881,7 @@ function generateRunSummaryText() {
   }
   const runResult = runPayload.runResult;
   const bridgeState = currentGitHubBridgeState();
+  const workflow = currentGitHubWorkflow();
   const results = runResult.results || [];
   const counts = formatCounts(statusCounts(results));
   const actionable = actionableResults(results);
@@ -1881,6 +1892,7 @@ function generateRunSummaryText() {
     `Success: ${runResult.success ? "yes" : "no"}`,
     `Artifacts: ${runResult.artifacts_dir || "n/a"}`,
     `GitHub bridge: ${bridgeState.label} (${bridgeState.status})`,
+    `Latest review workflow: ${workflow?.url || "n/a"}`,
     `Status counts: ${counts}`,
   ];
   if (actionable.length) {
@@ -1899,6 +1911,7 @@ function generateIssueUpdateText() {
   }
   const runResult = runPayload.runResult;
   const bridgeState = currentGitHubBridgeState();
+  const workflow = currentGitHubWorkflow();
   const results = runResult.results || [];
   const actionable = actionableResults(results);
   const lines = [
@@ -1909,6 +1922,7 @@ function generateIssueUpdateText() {
     `- Request: ${runPayload.request || "n/a"}`,
     `- Success: ${runResult.success ? "yes" : "no"}`,
     `- GitHub bridge: ${bridgeState.label} (${bridgeState.status})`,
+    `- Latest review workflow: ${workflow?.url || "n/a"}`,
     `- Status counts: ${formatCounts(statusCounts(results))}`,
   ];
   if (actionable.length) {
@@ -1929,6 +1943,7 @@ function generatePrNoteText() {
   }
   const runResult = runPayload.runResult;
   const bridgeState = currentGitHubBridgeState();
+  const workflow = currentGitHubWorkflow();
   const branch = primaryBranch(runResult);
   const readiness = readinessFacts()
     .map((fact) => `${fact.label}:${fact.value}`)
@@ -1942,6 +1957,7 @@ function generatePrNoteText() {
     `Branch: ${branch || "n/a"}`,
     `Readiness: ${readiness}`,
     `GitHub bridge: ${bridgeState.label} (${bridgeState.status})`,
+    `Latest review workflow: ${workflow?.url || "n/a"}`,
     `Status counts: ${formatCounts(statusCounts(runResult.results || []))}`,
   ];
   return lines.join("\n");

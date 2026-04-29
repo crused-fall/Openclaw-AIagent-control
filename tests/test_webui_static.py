@@ -58,11 +58,14 @@ class WebUiStaticTests(unittest.TestCase):
         )
 
         self.assertIn("function currentGitHubBridgeState()", source)
+        self.assertIn("function currentGitHubWorkflow()", source)
         self.assertIn("function githubBridgeStatus(github, overview, runId)", source)
         self.assertIn("const bridgeState = currentGitHubBridgeState();", source)
         self.assertIn("<strong>Bridge state</strong>", source)
         self.assertIn("Workflow ${workflowId || \"n/a\"} succeeded.", source)
         self.assertIn("GitHub bridge: ${bridgeState.label} (${bridgeState.status})", source)
+        self.assertIn("Latest review workflow: ${workflow?.url || \"n/a\"}", source)
+        self.assertIn('Open latest review workflow', source)
 
 
 if __name__ == "__main__":
