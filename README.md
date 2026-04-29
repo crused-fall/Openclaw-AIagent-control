@@ -177,7 +177,17 @@ python3 main_v2.py --preflight-only --steps publish_branch,draft_pr
 python3 main_v2.py --list-managed-agents
 python3 main_v2.py --doctor-config
 python3 main_v2.py --diagnose-plan --steps triage,implement
+python3 main_v2.py --web --web-host 127.0.0.1 --web-port 8766
 ```
+
+`--web` 会启动一个本地 Mission Control Web UI，用来集中做 pipeline 启动、diagnose / preflight / doctor、OpenClaw 健康检查、run artifacts 浏览，以及最近运行的清理。
+当前页面还带了一个 Readiness Gate，会结合请求内容、step 选择、repo git 状态、OpenClaw health / memory、fallback 解析和最近一次 preflight 结果及其来源，帮助你在真正 live 前先看风险。
+GitHub Bridge 面板会把 branch / issue / PR / review workflow 汇成一个总览状态卡，方便你快速判断尾链是不是已经跑通。
+出于安全原因，Web UI 默认绑定启动它时的 `repo_path + config_path`。
+如果需要切换到别的仓库或配置，请重新启动 Web UI，而不是在页面里临时改路径；历史清理、prune 和健康检查也只会作用在当前仓库范围内。
+Housekeeping 还会额外校验 run manifest 里的 `workspace_repo_root / workspace_path / branch_name`，只清理由当前仓库生成、且落在受管 worktrees 根里的对象。
+对于 `cleanup / prune` 这类危险操作，Web UI 现在还要求当前 dashboard 会话提供后端下发的 confirmation token，不再只依赖前端弹窗确认。
+即使 `configPath` 指向 repo 内的另一份配置，Web UI 也不会接受它改写 `runtime.artifacts_dir / runtime.worktrees_dir`；要切换这些根路径，需要直接用那份配置重新启动 dashboard。
 
 如果要临时改 agent 分配，不必改 pipeline step。本次运行前覆盖 assignment 即可，例如：
 
@@ -291,7 +301,7 @@ v2 已验证：
 - GitHub bridge 已支持可配置的网络类自动重试；默认关闭，需要显式设置 `runtime.github_retry_attempts > 1`
 - GitHub repo 现在默认允许从 `git remote origin` 推导；如果你显式配置了 `github.repo`，则以配置值为准
 - 已验证 live 路径会先打印 `preflight/start/done` 级别的 progress，而不是整段静默
-- `--doctor-config` 现在也会检查 GitHub runtime retry 配置和 GitHub profile action / workflow 配置是否自洽
+- `--doctor-config` 现在也会检查 GitHub runtime retry 配置、GitHub profile action / workflow 配置，以及 pipeline 依赖引用 / 循环是否自洽
 
 v2 仍未完成：
 

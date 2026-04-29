@@ -52,6 +52,22 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Validate config references across profiles, managed_agents, assignments, and pipelines, then exit.",
     )
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Start the Mission Control Web UI.",
+    )
+    parser.add_argument(
+        "--web-host",
+        default="127.0.0.1",
+        help="Host to bind the Mission Control Web UI.",
+    )
+    parser.add_argument(
+        "--web-port",
+        type=int,
+        default=8765,
+        help="Port to bind the Mission Control Web UI.",
+    )
     return parser.parse_args()
 
 
@@ -406,6 +422,30 @@ async def main() -> None:
         ]
     )
 
+    if args.web:
+        if any(
+            [
+                args.request,
+                args.list_steps,
+                args.preflight_only,
+                args.list_managed_agents,
+                args.diagnose_plan,
+                args.doctor_config,
+            ]
+        ):
+            raise SystemExit(
+                "--web cannot be combined with --request or inspection-only flags."
+            )
+        from openclaw_v2.web import run_web_server
+
+        await run_web_server(
+            config_path=os.path.abspath(args.config),
+            repo_path=repo_path,
+            host=args.web_host,
+            port=args.web_port,
+        )
+        return
+
     if args.live and not (args.list_steps or args.preflight_only):
         _validate_live_policy(
             orchestrator,
@@ -460,4 +500,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

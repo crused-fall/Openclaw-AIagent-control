@@ -2,12 +2,28 @@ import tempfile
 import textwrap
 import unittest
 from unittest import mock
+from types import SimpleNamespace
 
 from openclaw_v2.config import _load_yaml, load_app_config
 from openclaw_v2.models import AgentType, ExecutionMode
 
 
 class ConfigLoaderTests(unittest.TestCase):
+    def test_load_yaml_ruby_fallback_uses_safe_load(self) -> None:
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write("runtime:\n  pipeline: demo\n")
+            handle.flush()
+            with mock.patch("openclaw_v2.config.yaml", None):
+                with mock.patch(
+                    "openclaw_v2.config.subprocess.run",
+                    return_value=SimpleNamespace(stdout="{}", stderr="", returncode=0),
+                ) as run_mock:
+                    _load_yaml(handle.name)
+
+        command = run_mock.call_args.args[0]
+        self.assertIn("YAML.safe_load", command[4])
+        self.assertNotIn("YAML.load_file", command[4])
+
     def test_load_yaml_falls_back_without_pyyaml(self) -> None:
         content = textwrap.dedent(
             """
@@ -122,6 +138,108 @@ class ConfigLoaderTests(unittest.TestCase):
         self.assertEqual(profile.hermes_max_turns, 24)
         self.assertTrue(profile.hermes_yolo)
         self.assertEqual(config.managed_agents["hermes_supervisor"].kind, AgentType.HERMES)
+
+    def test_load_app_config_expands_composed_pipeline_definitions(self) -> None:
+        content = textwrap.dedent(
+            """
+            runtime:
+              pipeline: child
+            profiles:
+              cli_local:
+                agent: claude
+                mode: cli
+            managed_agents:
+              triage_agent:
+                kind: claude
+                profile: cli_local
+            assignments:
+              triage_local:
+                agent: triage_agent
+            pipelines:
+              base:
+                - id: triage
+                  title: Base triage
+                  assignment: triage_local
+                  prompt_template: base triage
+                - id: review
+                  title: Base review
+                  assignment: triage_local
+                  prompt_template: base review
+              child:
+                extends: base
+                steps:
+                  - id: triage
+                    title: Child triage
+                  - id: record_summary
+                    title: Child summary
+                    assignment: triage_local
+                    insert_after: review
+                    prompt_template: child summary
+            """
+        ).strip()
+
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            config = load_app_config(handle.name)
+
+        child_steps = config.pipelines["child"]
+        self.assertEqual([step.id for step in child_steps], ["triage", "review", "record_summary"])
+        self.assertEqual(child_steps[0].title, "Child triage")
+        self.assertEqual(child_steps[2].assignment, "triage_local")
+        self.assertEqual(child_steps[2].depends_on, [])
+
+    def test_load_app_config_can_remove_steps_from_composed_pipelines(self) -> None:
+        content = textwrap.dedent(
+            """
+            runtime:
+              pipeline: child
+            profiles:
+              cli_local:
+                agent: claude
+                mode: cli
+            managed_agents:
+              triage_agent:
+                kind: claude
+                profile: cli_local
+            assignments:
+              triage_local:
+                agent: triage_agent
+            pipelines:
+              base:
+                - id: triage
+                  title: Base triage
+                  assignment: triage_local
+                  prompt_template: base triage
+                - id: review
+                  title: Base review
+                  assignment: triage_local
+                  prompt_template: base review
+                - id: publish_branch
+                  title: Base publish
+                  assignment: triage_local
+                  depends_on:
+                    - review
+                  prompt_template: base publish
+              child:
+                extends: base
+                remove_steps:
+                  - review
+                steps:
+                  - id: publish_branch
+                    depends_on:
+                      - triage
+            """
+        ).strip()
+
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            config = load_app_config(handle.name)
+
+        child_steps = config.pipelines["child"]
+        self.assertEqual([step.id for step in child_steps], ["triage", "publish_branch"])
+        self.assertEqual(child_steps[1].depends_on, ["triage"])
 
     def test_load_app_config_reads_cli_unset_env_fields(self) -> None:
         content = textwrap.dedent(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -33,7 +34,7 @@ class HybridOrchestrator:
     @staticmethod
     def _make_run_id() -> str:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        return f"run-{timestamp}"
+        return f"run-{timestamp}-{uuid.uuid4().hex[:6]}"
 
     def build_plan(self, selected_steps: list[str] | None = None) -> list[WorkItem]:
         return self.planner.build_plan(selected_steps=selected_steps)

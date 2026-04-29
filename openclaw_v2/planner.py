@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import heapq
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -34,11 +35,10 @@ class PipelinePlanner:
         pipeline_steps = self.config.pipelines[pipeline_name]
         step_map = {step.id: step for step in pipeline_steps}
         selected_step_set = self._resolve_selected_steps(step_map, selected_steps)
+        ordered_pipeline_steps = self._order_pipeline_steps(pipeline_steps, selected_step_set)
 
         work_items: list[WorkItem] = []
-        for step in pipeline_steps:
-            if selected_step_set is not None and step.id not in selected_step_set:
-                continue
+        for step in ordered_pipeline_steps:
             assignment_name = step.assignment.strip()
             assignment_source = ""
             profile_name = step.profile.strip()
@@ -218,6 +218,68 @@ class PipelinePlanner:
             resolved.add(step_id)
             step = step_map[step_id]
             for dependency_id in step.depends_on:
+                if dependency_id not in step_map:
+                    raise ValueError(
+                        f"Pipeline step `{step_id}` references unknown dependency `{dependency_id}`."
+                    )
                 if dependency_id not in resolved:
                     queue.append(dependency_id)
         return resolved
+
+    @staticmethod
+    def _order_pipeline_steps(
+        pipeline_steps: list[WorkItem],
+        selected_step_set: set[str] | None,
+    ) -> list[WorkItem]:
+        step_lookup = {step.id: step for step in pipeline_steps}
+        order_index = {step.id: index for index, step in enumerate(pipeline_steps)}
+
+        selected_ids = [
+            step.id
+            for step in pipeline_steps
+            if selected_step_set is None or step.id in selected_step_set
+        ]
+        selected_id_set = set(selected_ids)
+        indegree: dict[str, int] = {step_id: 0 for step_id in selected_ids}
+        dependents: dict[str, list[str]] = {step_id: [] for step_id in selected_ids}
+
+        for step_id in selected_ids:
+            step = step_lookup[step_id]
+            for dependency_id in step.depends_on:
+                if dependency_id not in step_lookup:
+                    raise ValueError(
+                        f"Pipeline step `{step_id}` references unknown dependency `{dependency_id}`."
+                    )
+                if dependency_id not in selected_id_set:
+                    continue
+                indegree[step_id] += 1
+                dependents[dependency_id].append(step_id)
+
+        ready: list[tuple[int, str]] = [
+            (order_index[step_id], step_id)
+            for step_id, degree in indegree.items()
+            if degree == 0
+        ]
+        heapq.heapify(ready)
+
+        ordered_ids: list[str] = []
+        while ready:
+            _, step_id = heapq.heappop(ready)
+            ordered_ids.append(step_id)
+            for dependent_id in dependents[step_id]:
+                indegree[dependent_id] -= 1
+                if indegree[dependent_id] == 0:
+                    heapq.heappush(ready, (order_index[dependent_id], dependent_id))
+
+        if len(ordered_ids) != len(selected_ids):
+            unresolved = [
+                step_id
+                for step_id, degree in indegree.items()
+                if degree > 0
+            ]
+            raise ValueError(
+                "Pipeline contains circular dependencies among selected steps: "
+                f"{', '.join(unresolved)}"
+            )
+
+        return [step_lookup[step_id] for step_id in ordered_ids]

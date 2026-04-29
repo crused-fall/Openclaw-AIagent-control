@@ -122,6 +122,8 @@ request
 1. `dispatch_review`
 2. `collect_review`
 
+它只跑 `dispatch_review -> collect_review`，不会经过 `commit_changes` 和 `publish_branch`。
+
 另有一条 Hermes 监督变体：
 
 `mission_control_hermes_supervised`
@@ -138,7 +140,7 @@ request
 10. `dispatch_review`
 11. `collect_review`
 
-这条链专门用于绕过本地 `triage/implement/review`，单独验证 review workflow 的触发和状态回流。
+这条链用于让 Hermes 同时承担 supervisor / recorder，不承担 `implement`。
 
 设计原则：
 

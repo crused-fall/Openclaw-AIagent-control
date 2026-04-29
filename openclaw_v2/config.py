@@ -4,6 +4,8 @@ import json
 import os
 import re
 import subprocess
+from collections import deque
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -417,6 +419,25 @@ def diagnose_app_config(config: AppConfig) -> list[PreflightCheck]:
                 )
             )
 
+        for step in steps:
+            missing_dependencies = [dependency for dependency in step.depends_on if dependency not in step_ids]
+            if not missing_dependencies:
+                continue
+            checks.append(
+                PreflightCheck(
+                    name=f"pipeline:{pipeline_name}:{step.id}:depends_on",
+                    status=CheckStatus.FAILED,
+                    message=(
+                        f"Pipeline `{pipeline_name}` step `{step.id}` references unknown dependencies: "
+                        f"{', '.join(missing_dependencies)}."
+                    ),
+                    details={
+                        "step_id": step.id,
+                        "dependencies": list(step.depends_on),
+                    },
+                )
+            )
+
         if duplicate_ids:
             checks.append(
                 PreflightCheck(
@@ -429,7 +450,314 @@ def diagnose_app_config(config: AppConfig) -> list[PreflightCheck]:
                 )
             )
 
+        if not duplicate_ids:
+            cycle_nodes = _find_pipeline_cycle_nodes(steps)
+            if cycle_nodes:
+                checks.append(
+                    PreflightCheck(
+                        name=f"pipeline:{pipeline_name}:cycles",
+                        status=CheckStatus.FAILED,
+                        message=(
+                            f"Pipeline `{pipeline_name}` contains circular dependencies among steps: "
+                            f"{', '.join(cycle_nodes)}."
+                        ),
+                        details={"steps": cycle_nodes},
+                    )
+                )
+
     return checks
+
+
+def _normalize_pipeline_step_spec(raw_step: Any, pipeline_name: str) -> dict[str, Any]:
+    if not isinstance(raw_step, dict):
+        raise ValueError(f"Pipeline `{pipeline_name}` contains a step that is not a mapping.")
+
+    step_id = str(raw_step.get("id", "")).strip()
+    if not step_id:
+        raise ValueError(f"Pipeline `{pipeline_name}` contains a step without an id.")
+
+    payload: dict[str, Any] = {"id": step_id}
+    for key in ("title", "profile", "assignment", "prompt_template"):
+        if key in raw_step and raw_step[key] is not None:
+            payload[key] = raw_step[key]
+
+    if "depends_on" in raw_step:
+        depends_on = raw_step["depends_on"]
+        if depends_on is None:
+            payload["depends_on"] = []
+        elif isinstance(depends_on, list):
+            payload["depends_on"] = [str(item).strip() for item in depends_on if str(item).strip()]
+        else:
+            raise ValueError(
+                f"Pipeline `{pipeline_name}` step `{step_id}` must use a list for depends_on."
+            )
+
+    if "metadata" in raw_step:
+        metadata = raw_step["metadata"]
+        if metadata is None:
+            payload["metadata"] = {}
+        elif isinstance(metadata, dict):
+            payload["metadata"] = dict(metadata)
+        else:
+            raise ValueError(
+                f"Pipeline `{pipeline_name}` step `{step_id}` must use a mapping for metadata."
+            )
+
+    if "insert_before" in raw_step and raw_step["insert_before"] is not None:
+        payload["insert_before"] = str(raw_step["insert_before"]).strip()
+    if "insert_after" in raw_step and raw_step["insert_after"] is not None:
+        payload["insert_after"] = str(raw_step["insert_after"]).strip()
+    if "remove" in raw_step:
+        payload["remove"] = bool(raw_step["remove"])
+
+    return payload
+
+
+def _find_pipeline_cycle_nodes(steps: list[PipelineStepConfig]) -> list[str]:
+    if not steps:
+        return []
+
+    step_map = {step.id: step for step in steps}
+    indegree = {step.id: 0 for step in steps}
+    dependents: dict[str, list[str]] = {step.id: [] for step in steps}
+
+    for step in steps:
+        for dependency in step.depends_on:
+            if dependency not in step_map:
+                return []
+            indegree[step.id] += 1
+            dependents[dependency].append(step.id)
+
+    queue = deque(step_id for step_id, degree in indegree.items() if degree == 0)
+    visited_count = 0
+
+    while queue:
+        step_id = queue.popleft()
+        visited_count += 1
+        for dependent_id in dependents[step_id]:
+            indegree[dependent_id] -= 1
+            if indegree[dependent_id] == 0:
+                queue.append(dependent_id)
+
+    if visited_count == len(steps):
+        return []
+
+    return [step_id for step_id, degree in indegree.items() if degree > 0]
+
+
+def _strip_pipeline_step_controls(step: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in step.items()
+        if key not in {"insert_before", "insert_after", "remove"}
+    }
+
+
+def _prune_pipeline_step_dependencies(
+    steps: list[dict[str, Any]],
+    removed_step_ids: set[str],
+) -> list[dict[str, Any]]:
+    if not removed_step_ids:
+        return steps
+
+    pruned_steps: list[dict[str, Any]] = []
+    for step in steps:
+        depends_on = [dependency for dependency in step.get("depends_on", []) if dependency not in removed_step_ids]
+        if depends_on == list(step.get("depends_on", [])):
+            pruned_steps.append(step)
+            continue
+
+        updated_step = deepcopy(step)
+        updated_step["depends_on"] = depends_on
+        pruned_steps.append(updated_step)
+    return pruned_steps
+
+
+def _merge_pipeline_step_payload(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = deepcopy(base)
+    for key, value in override.items():
+        if key in {"id", "insert_before", "insert_after", "remove"}:
+            continue
+        if key == "metadata":
+            merged_metadata = dict(merged.get("metadata", {}))
+            merged_metadata.update(value)
+            merged["metadata"] = merged_metadata
+            continue
+        if key == "depends_on":
+            merged["depends_on"] = list(value)
+            continue
+        merged[key] = value
+    return merged
+
+
+def _find_pipeline_step_index(steps: list[dict[str, Any]], step_id: str) -> int | None:
+    for index, step in enumerate(steps):
+        if step.get("id") == step_id:
+            return index
+    return None
+
+
+def _apply_pipeline_step_spec(
+    steps: list[dict[str, Any]],
+    raw_step: Any,
+    pipeline_name: str,
+) -> list[dict[str, Any]]:
+    payload = _normalize_pipeline_step_spec(raw_step, pipeline_name)
+    step_id = payload["id"]
+    remove = bool(payload.get("remove", False))
+    insert_before = str(payload.get("insert_before", "")).strip()
+    insert_after = str(payload.get("insert_after", "")).strip()
+
+    if remove:
+        if insert_before or insert_after:
+            raise ValueError(
+                f"Pipeline `{pipeline_name}` step `{step_id}` cannot both remove and reposition a step."
+            )
+        remaining = [step for step in steps if step.get("id") != step_id]
+        if len(remaining) == len(steps):
+            raise ValueError(
+                f"Pipeline `{pipeline_name}` cannot remove step `{step_id}` because it does not exist."
+            )
+        return remaining
+
+    if insert_before and insert_after:
+        raise ValueError(
+            f"Pipeline `{pipeline_name}` step `{step_id}` cannot use both insert_before and insert_after."
+        )
+
+    existing_index = _find_pipeline_step_index(steps, step_id)
+    if existing_index is not None:
+        merged = _merge_pipeline_step_payload(steps[existing_index], payload)
+        if insert_before or insert_after:
+            anchor_id = insert_before or insert_after
+            if anchor_id == step_id:
+                raise ValueError(
+                    f"Pipeline `{pipeline_name}` step `{step_id}` cannot be repositioned relative to itself."
+                )
+            stepped = [step for index, step in enumerate(steps) if index != existing_index]
+            anchor_index = _find_pipeline_step_index(stepped, anchor_id)
+            if anchor_index is None:
+                raise ValueError(
+                    f"Pipeline `{pipeline_name}` step `{step_id}` references unknown insertion anchor `{anchor_id}`."
+                )
+            insert_index = anchor_index if insert_before else anchor_index + 1
+            stepped.insert(insert_index, _strip_pipeline_step_controls(merged))
+            return stepped
+
+        steps[existing_index] = _strip_pipeline_step_controls(merged)
+        return steps
+
+    if "title" not in payload or "prompt_template" not in payload:
+        raise ValueError(
+            f"Pipeline `{pipeline_name}` introduces step `{step_id}` without a title or prompt_template."
+        )
+
+    new_step = _strip_pipeline_step_controls(payload)
+    if insert_before or insert_after:
+        anchor_id = insert_before or insert_after
+        anchor_index = _find_pipeline_step_index(steps, anchor_id)
+        if anchor_index is None:
+            raise ValueError(
+                f"Pipeline `{pipeline_name}` step `{step_id}` references unknown insertion anchor `{anchor_id}`."
+            )
+        insert_index = anchor_index if insert_before else anchor_index + 1
+        steps = list(steps)
+        steps.insert(insert_index, new_step)
+        return steps
+
+    steps = list(steps)
+    steps.append(new_step)
+    return steps
+
+
+def _resolve_pipeline_payloads(
+    pipeline_name: str,
+    raw_pipelines: dict[str, Any],
+    resolved: dict[str, list[dict[str, Any]]],
+    stack: list[str],
+) -> list[dict[str, Any]]:
+    if pipeline_name in resolved:
+        return deepcopy(resolved[pipeline_name])
+
+    if pipeline_name in stack:
+        cycle = " -> ".join([*stack, pipeline_name])
+        raise ValueError(f"Circular pipeline inheritance detected: {cycle}")
+
+    if pipeline_name not in raw_pipelines:
+        raise ValueError(f"Unknown pipeline referenced by extends: {pipeline_name}")
+
+    stack.append(pipeline_name)
+    try:
+        raw_pipeline = raw_pipelines[pipeline_name]
+        if isinstance(raw_pipeline, list):
+            steps = [_normalize_pipeline_step_spec(raw_step, pipeline_name) for raw_step in raw_pipeline]
+        elif isinstance(raw_pipeline, dict):
+            extends_name = str(raw_pipeline.get("extends", "")).strip()
+            steps = []
+            removed_step_ids: set[str] = set()
+            if extends_name:
+                steps = _resolve_pipeline_payloads(extends_name, raw_pipelines, resolved, stack)
+
+            remove_steps = raw_pipeline.get("remove_steps", [])
+            if remove_steps:
+                if not isinstance(remove_steps, list):
+                    raise ValueError(
+                        f"Pipeline `{pipeline_name}` must use a list for remove_steps."
+                    )
+                remove_ids = [str(item).strip() for item in remove_steps if str(item).strip()]
+                for remove_id in remove_ids:
+                    before_count = len(steps)
+                    steps = [step for step in steps if step.get("id") != remove_id]
+                    if len(steps) == before_count:
+                        raise ValueError(
+                            f"Pipeline `{pipeline_name}` cannot remove step `{remove_id}` because it does not exist."
+                        )
+                removed_step_ids.update(remove_ids)
+
+            raw_steps = raw_pipeline.get("steps", [])
+            if raw_steps is None:
+                raw_steps = []
+            if not isinstance(raw_steps, list):
+                raise ValueError(f"Pipeline `{pipeline_name}` must use a list for steps.")
+            for raw_step in raw_steps:
+                steps = _apply_pipeline_step_spec(steps, raw_step, pipeline_name)
+
+            if removed_step_ids:
+                final_step_ids = {str(step.get("id", "")).strip() for step in steps}
+                prunable_step_ids = {
+                    step_id for step_id in removed_step_ids if step_id and step_id not in final_step_ids
+                }
+                if prunable_step_ids:
+                    steps = _prune_pipeline_step_dependencies(steps, prunable_step_ids)
+        else:
+            raise ValueError(
+                f"Pipeline `{pipeline_name}` must be defined as a list or mapping."
+            )
+
+        resolved[pipeline_name] = deepcopy(steps)
+        return deepcopy(steps)
+    finally:
+        stack.pop()
+
+
+def _coerce_pipeline_step_config(raw_step: dict[str, Any]) -> PipelineStepConfig:
+    step_id = str(raw_step.get("id", "")).strip()
+    title = str(raw_step.get("title") or "")
+    prompt_template = str(raw_step.get("prompt_template") or "")
+    if not step_id or not title.strip() or not prompt_template.strip():
+        raise ValueError(
+            f"Pipeline step `{step_id or 'unknown'}` must define a non-empty title and prompt_template."
+        )
+
+    return PipelineStepConfig(
+        id=step_id,
+        title=title,
+        profile=str(raw_step.get("profile") or ""),
+        assignment=str(raw_step.get("assignment") or ""),
+        prompt_template=prompt_template,
+        depends_on=[str(item).strip() for item in raw_step.get("depends_on", []) if str(item).strip()],
+        metadata=dict(raw_step.get("metadata", {})),
+    )
 
 
 def _expand_env(value: Any) -> Any:
@@ -459,7 +787,12 @@ def _load_yaml(path: str) -> dict[str, Any]:
         "-rjson",
         "-ryaml",
         "-e",
-        "path = ARGV.fetch(0); data = YAML.load_file(path) || {}; puts JSON.generate(data)",
+        (
+            "path = ARGV.fetch(0); "
+            "raw = File.read(path); "
+            "data = YAML.safe_load(raw, aliases: true) || {}; "
+            "puts JSON.generate(data)"
+        ),
         path,
     ]
     try:
@@ -551,22 +884,22 @@ def load_app_config(path: str) -> AppConfig:
             fallback=fallback,
         )
 
+    raw_pipelines = data.get("pipelines", {}) or {}
+    if not isinstance(raw_pipelines, dict):
+        raise ValueError("Config `pipelines` must be a mapping of pipeline names to definitions.")
+    resolved_pipelines: dict[str, list[dict[str, Any]]] = {}
     pipelines: dict[str, list[PipelineStepConfig]] = {}
-    for pipeline_name, raw_steps in data.get("pipelines", {}).items():
-        steps: list[PipelineStepConfig] = []
-        for raw_step in raw_steps:
-            steps.append(
-                PipelineStepConfig(
-                    id=raw_step["id"],
-                    title=raw_step["title"],
-                    profile=raw_step.get("profile", ""),
-                    assignment=raw_step.get("assignment", ""),
-                    prompt_template=raw_step["prompt_template"],
-                    depends_on=raw_step.get("depends_on", []),
-                    metadata=raw_step.get("metadata", {}),
-                )
-            )
-        pipelines[pipeline_name] = steps
+    for pipeline_name in raw_pipelines:
+        resolved_steps = _resolve_pipeline_payloads(
+            pipeline_name,
+            raw_pipelines,
+            resolved_pipelines,
+            [],
+        )
+        pipelines[pipeline_name] = [
+            _coerce_pipeline_step_config(raw_step)
+            for raw_step in resolved_steps
+        ]
 
     return AppConfig(
         runtime=runtime,

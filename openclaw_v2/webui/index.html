@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenClaw Mission Control</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="wash wash-a"></div>
+    <div class="wash wash-b"></div>
+    <main class="shell">
+      <aside class="rail">
+        <section class="panel brand-panel">
+          <p class="eyebrow">OpenClaw v2</p>
+          <h1>Mission Control Deck</h1>
+          <p class="lede">
+            Plan, preflight, launch, and inspect the CLI plus GitHub workflow
+            pipeline from one control surface.
+          </p>
+        </section>
+
+        <section class="panel compact-panel">
+          <div class="panel-head">
+            <h2>Workspace</h2>
+            <button id="refresh-bootstrap" class="ghost-button" type="button">
+              Refresh
+            </button>
+          </div>
+          <dl class="metric-grid" id="workspace-metrics"></dl>
+        </section>
+
+        <section class="panel compact-panel">
+          <div class="panel-head">
+            <h2>OpenClaw Health</h2>
+            <button id="check-health" class="ghost-button" type="button">
+              Check
+            </button>
+          </div>
+          <label class="field">
+            <span>Agent id</span>
+            <input id="health-agent-id" type="text" autocomplete="off" />
+          </label>
+          <div id="health-panel" class="stack">
+            <div class="empty-state">Health snapshot has not been loaded yet.</div>
+          </div>
+        </section>
+
+        <section class="panel compact-panel">
+          <div class="panel-head">
+            <h2>Recent Runs</h2>
+          </div>
+          <div id="recent-runs" class="stack"></div>
+        </section>
+
+        <section class="panel compact-panel">
+          <div class="panel-head">
+            <h2>Housekeeping</h2>
+          </div>
+          <label class="field">
+            <span>Keep latest runs</span>
+            <input id="prune-keep-latest" type="number" min="0" value="10" />
+          </label>
+          <button id="prune-runs" class="action-button secondary" type="button">
+            Prune old runs
+          </button>
+          <div id="housekeeping-status" class="subtle">
+            Cleanup and prune will be token-protected and scoped to this repo/worktree set once bootstrap loads.
+          </div>
+        </section>
+      </aside>
+
+      <section class="deck">
+        <header class="hero panel">
+          <div class="hero-copy">
+            <p class="eyebrow">Hybrid CLI + GitHub orchestration</p>
+            <h2>Run the project like a control room, not a terminal maze.</h2>
+            <p class="lede">
+              Use dry-run to inspect the plan, then escalate to live mode when
+              the pipeline looks clean.
+            </p>
+          </div>
+          <div class="hero-board">
+            <div id="launch-brief" class="launch-brief"></div>
+            <div class="hero-status" id="hero-status"></div>
+          </div>
+        </header>
+
+        <section class="panel flight-plan">
+          <div class="panel-head">
+            <h2>Pipeline Radar</h2>
+            <span class="subtle">See the effective route, dependencies, and execution owners before you launch.</span>
+          </div>
+          <div id="pipeline-radar" class="pipeline-radar">
+            <div class="empty-state">Load a pipeline to inspect the effective route.</div>
+          </div>
+        </section>
+
+        <section class="insight-grid">
+          <section class="panel flight-plan">
+            <div class="panel-head">
+              <h2>Pipeline DAG</h2>
+              <span class="subtle">Stage-map the dependency graph before you commit to a route.</span>
+            </div>
+            <div id="pipeline-dag" class="pipeline-dag">
+              <div class="empty-state">Load a pipeline to render its staged dependency graph.</div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>GitHub Bridge</h2>
+              <span class="subtle">Track the branch, issue, PR, and review workflow for the active run.</span>
+            </div>
+            <div id="github-bridge" class="stack">
+              <div class="empty-state">Run a GitHub-enabled pipeline or load a recent run to surface collaboration links.</div>
+            </div>
+          </section>
+        </section>
+
+        <section class="panel workbench">
+          <div class="panel-head">
+            <h2>Launch Pad</h2>
+            <span class="subtle">Explicit steps stay safer in live mode.</span>
+          </div>
+
+          <form id="control-form" class="control-form">
+            <label class="field">
+              <span>Repo path</span>
+              <input id="repo-path" name="repoPath" type="text" autocomplete="off" readonly />
+              <small class="subtle">Bound to the repo root that started this dashboard.</small>
+            </label>
+
+            <label class="field">
+              <span>Config path</span>
+              <input id="config-path" name="configPath" type="text" autocomplete="off" readonly />
+              <small class="subtle">Limited to the configured file or another config inside this repo.</small>
+            </label>
+
+            <label class="field">
+              <span>Pipeline</span>
+              <select id="pipeline" name="pipeline"></select>
+            </label>
+
+            <label class="field toggle-field">
+              <span>Mode</span>
+              <button id="mode-toggle" type="button" class="mode-toggle" aria-pressed="false">
+                <span class="toggle-pill"></span>
+                <span class="toggle-copy">Dry-run</span>
+              </button>
+            </label>
+
+            <label class="field field-full">
+              <span>Request</span>
+              <textarea
+                id="request"
+                name="request"
+                rows="5"
+                placeholder="Describe the change or diagnostic you want the pipeline to run."
+              ></textarea>
+              <div id="request-presets" class="preset-row"></div>
+            </label>
+
+            <fieldset class="field field-full">
+              <div class="field-head">
+                <legend>Steps</legend>
+                <div class="step-actions">
+                  <button id="select-none" type="button" class="ghost-button">Clear</button>
+                  <button id="select-all" type="button" class="ghost-button">All</button>
+                </div>
+              </div>
+              <div id="step-grid" class="step-grid"></div>
+            </fieldset>
+
+            <div class="action-row field-full">
+              <button data-action="diagnose" class="action-button secondary" type="button">
+                Diagnose plan
+              </button>
+              <button data-action="preflight" class="action-button secondary" type="button">
+                Run preflight
+              </button>
+              <button data-action="doctor" class="action-button secondary" type="button">
+                Doctor config
+              </button>
+              <button data-action="run" class="action-button primary" type="button">
+                Launch pipeline
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Readiness Gate</h2>
+            <span id="readiness-state-slot"><span class="status-chip neutral">Unchecked</span></span>
+          </div>
+          <div id="readiness-summary" class="subtle">
+            The gate will evaluate your current request, steps, repo state, and health snapshot.
+          </div>
+          <div id="readiness-checks" class="check-grid">
+            <div class="empty-state">Readiness checks will appear here.</div>
+          </div>
+        </section>
+
+        <section class="insight-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Hermes Control</h2>
+              <span class="subtle">Monitor supervisor and recorder coverage without pulling Hermes into implement.</span>
+            </div>
+            <div id="hermes-panel" class="stack">
+              <div class="empty-state">Hermes roles and runtime checks will appear here.</div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Run Compare</h2>
+              <span class="subtle">Contrast two recent runs to see route, GitHub, and Hermes deltas.</span>
+            </div>
+            <div class="compare-controls">
+              <label class="field">
+                <span>Left run</span>
+                <select id="compare-left-run"></select>
+              </label>
+              <label class="field">
+                <span>Right run</span>
+                <select id="compare-right-run"></select>
+              </label>
+            </div>
+            <div id="run-compare" class="stack">
+              <div class="empty-state">Pick two recent runs to compare their execution signatures.</div>
+            </div>
+          </section>
+        </section>
+
+        <section class="results-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Task Feed</h2>
+              <div class="task-controls">
+                <button id="cancel-task" class="ghost-button" type="button" disabled>
+                  Cancel
+                </button>
+                <span id="task-state-slot"><span id="task-state" class="status-chip neutral">Idle</span></span>
+              </div>
+            </div>
+            <div id="task-meta" class="task-meta"></div>
+            <div id="task-progress" class="progress-log empty-state">
+              No task running yet.
+            </div>
+          </section>
+
+          <div class="output-stack">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Output</h2>
+                <div class="task-controls output-controls">
+                  <select id="result-filter" class="compact-select">
+                    <option value="all">All results</option>
+                    <option value="actionable">Actionable only</option>
+                    <option value="failed-blocked">Failed + blocked</option>
+                    <option value="skipped">Skipped</option>
+                    <option value="succeeded">Succeeded</option>
+                  </select>
+                  <button id="copy-run-summary" class="ghost-button" type="button" disabled>
+                    Copy run summary
+                  </button>
+                  <button id="copy-issue-update" class="ghost-button" type="button" disabled>
+                    Copy issue update
+                  </button>
+                  <button id="copy-pr-note" class="ghost-button" type="button" disabled>
+                    Copy PR note
+                  </button>
+                </div>
+              </div>
+              <div id="copy-feedback" class="subtle">
+                Plan, preflight, run summary, and step results.
+              </div>
+              <div id="output-pane" class="output-pane empty-state">
+                Start with Diagnose plan or Run preflight to populate this deck.
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Run Files</h2>
+                <div class="task-controls">
+                  <button id="cleanup-current-run" class="ghost-button" type="button" disabled>
+                    Cleanup run
+                  </button>
+                  <span id="artifact-context" class="subtle">Load a run to browse prompts, logs, and results.</span>
+                </div>
+              </div>
+              <div id="artifact-list" class="artifact-list empty-state">
+                No run artifacts loaded yet.
+              </div>
+              <div id="artifact-viewer" class="artifact-viewer empty-state">
+                Pick a file from the run to preview it here.
+              </div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <template id="status-chip-template">
+      <span class="status-chip"></span>
+    </template>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

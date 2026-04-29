@@ -106,6 +106,38 @@ class PipelineConfigTests(unittest.TestCase):
         self.assertEqual(work_items["implement"].profile, "openclaw_local")
         self.assertEqual(work_items["implement"].mode, ExecutionMode.OPENCLAW)
 
+    def test_hybrid_default_pipeline_omits_review_and_rethreads_follow_up_steps(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        config.runtime.pipeline = "hybrid_default"
+        planner = PipelinePlanner(config)
+
+        plan = planner.build_plan()
+        work_items = {item.id: item for item in plan}
+
+        self.assertEqual(
+            [item.id for item in plan],
+            [
+                "triage",
+                "implement",
+                "commit_changes",
+                "publish_branch",
+                "sync_issue",
+                "update_issue",
+                "draft_pr",
+                "dispatch_review",
+                "collect_review",
+            ],
+        )
+        self.assertNotIn("review", work_items)
+        self.assertEqual(work_items["commit_changes"].depends_on, ["implement"])
+        self.assertEqual(work_items["publish_branch"].depends_on, ["commit_changes"])
+        self.assertEqual(work_items["update_issue"].depends_on, ["publish_branch", "sync_issue"])
+        self.assertEqual(
+            work_items["draft_pr"].depends_on,
+            ["publish_branch", "sync_issue", "update_issue"],
+        )
+        self.assertEqual(work_items["dispatch_review"].depends_on, ["publish_branch", "draft_pr"])
+
     def test_hermes_supervised_pipeline_uses_hermes_for_supervision_and_recording(self) -> None:
         config = load_app_config("config_v2.yaml")
         config.runtime.pipeline = "mission_control_hermes_supervised"
@@ -114,6 +146,22 @@ class PipelineConfigTests(unittest.TestCase):
         plan = planner.build_plan()
         work_items = {item.id: item for item in plan}
 
+        self.assertEqual(
+            [item.id for item in plan],
+            [
+                "triage",
+                "implement",
+                "review",
+                "commit_changes",
+                "publish_branch",
+                "sync_issue",
+                "record_summary",
+                "update_issue",
+                "draft_pr",
+                "dispatch_review",
+                "collect_review",
+            ],
+        )
         self.assertEqual(work_items["triage"].profile, "hermes_local")
         self.assertEqual(work_items["triage"].assignment, "triage_hermes")
         self.assertEqual(work_items["triage"].managed_agent, "hermes_supervisor")
@@ -136,6 +184,99 @@ class PipelineConfigTests(unittest.TestCase):
             sorted(work_items["draft_pr"].depends_on),
             ["publish_branch", "record_summary", "review", "sync_issue", "update_issue"],
         )
+
+    def test_planner_orders_steps_by_dependencies_even_if_config_is_out_of_order(self) -> None:
+        content = textwrap.dedent(
+            """
+            runtime:
+              pipeline: demo
+            profiles:
+              cli_local:
+                agent: claude
+                mode: cli
+            managed_agents:
+              first_agent:
+                kind: claude
+                profile: cli_local
+              second_agent:
+                kind: claude
+                profile: cli_local
+            assignments:
+              first_local:
+                agent: first_agent
+              second_local:
+                agent: second_agent
+            pipelines:
+              demo:
+                - id: second
+                  title: Second
+                  assignment: second_local
+                  depends_on:
+                    - first
+                  prompt_template: second
+                - id: first
+                  title: First
+                  assignment: first_local
+                  prompt_template: first
+            """
+        ).strip()
+
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            config = load_app_config(handle.name)
+
+        planner = PipelinePlanner(config)
+        plan = planner.build_plan()
+
+        self.assertEqual([item.id for item in plan], ["first", "second"])
+        self.assertEqual(plan[0].assignment, "first_local")
+        self.assertEqual(plan[1].depends_on, ["first"])
+
+    def test_planner_rejects_circular_dependencies(self) -> None:
+        content = textwrap.dedent(
+            """
+            runtime:
+              pipeline: demo
+            profiles:
+              cli_local:
+                agent: claude
+                mode: cli
+            managed_agents:
+              first_agent:
+                kind: claude
+                profile: cli_local
+            assignments:
+              first_local:
+                agent: first_agent
+            pipelines:
+              demo:
+                - id: first
+                  title: First
+                  assignment: first_local
+                  depends_on:
+                    - second
+                  prompt_template: first
+                - id: second
+                  title: Second
+                  assignment: first_local
+                  depends_on:
+                    - first
+                  prompt_template: second
+            """
+        ).strip()
+
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            config = load_app_config(handle.name)
+
+        planner = PipelinePlanner(config)
+
+        with self.assertRaises(ValueError) as error:
+            planner.build_plan()
+
+        self.assertIn("circular dependencies", str(error.exception))
 
     def test_github_bridge_smoke_pipeline_only_contains_review_workflow_steps(self) -> None:
         config = load_app_config("config_v2.yaml")
