@@ -77,6 +77,7 @@
 - Web UI 对 repo 内替代配置的支持已进一步收紧：允许调整 pipeline/assignment，但不允许改写 dashboard 绑定的 artifacts/worktrees roots
 - Web UI 的安全头现在覆盖 4xx / 5xx 响应，未捕获异常会回落到干净的内部错误响应
 - Web UI 的 artifact file 预览现在会拒绝逃逸 run 目录的路径，避免通过 `../` 之类的相对路径越界读取
+- Web UI 的 history compare 接口现在会拒绝非 list / 少于两个 runIds 的请求，避免比较入口接收无效输入
 
 ## 部分完成
 

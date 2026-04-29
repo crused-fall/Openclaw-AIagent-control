@@ -352,6 +352,15 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["comparison"]["hermesSessionDelta"], 1)
         self.assertTrue(any(item["stepId"] == "publish_branch" for item in payload["comparison"]["stepDiffs"]))
 
+    async def test_history_compare_endpoint_rejects_invalid_run_ids_payloads(self) -> None:
+        response = await self.client.post("/api/history/compare", json={"runIds": "run-a"})
+        self.assertEqual(response.status, 400)
+        self.assertIn("runIds must be a list", await response.text())
+
+        response = await self.client.post("/api/history/compare", json={"runIds": ["run-a"]})
+        self.assertEqual(response.status, 400)
+        self.assertIn("Two run ids are required", await response.text())
+
     async def test_cleanup_endpoint_removes_run_directory(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-cleanup")
         os.makedirs(run_dir, exist_ok=True)
