@@ -369,6 +369,21 @@ class MainV2PolicyTests(unittest.TestCase):
 
 
 class MainV2WebModeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_main_runs_doctor_config_and_exits_without_prompting(self) -> None:
+        with (
+            mock.patch.object(sys, "argv", ["main_v2.py", "--doctor-config"]),
+            mock.patch("builtins.input", side_effect=AssertionError("doctor-config should not prompt")),
+            io.StringIO() as buffer,
+            redirect_stdout(buffer),
+        ):
+            await main()
+            output = buffer.getvalue()
+
+        self.assertIn("Preflight:", output)
+        self.assertIn("runtime:github_retry_attempts", output)
+        self.assertIn("pipeline:mission_control_default:dispatch_review", output)
+        self.assertNotIn("OpenClaw v2 已启动", output)
+
     async def test_main_starts_web_server_with_expected_args(self) -> None:
         class FakeOrchestrator:
             def __init__(self, config) -> None:
