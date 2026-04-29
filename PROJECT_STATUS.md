@@ -76,6 +76,7 @@
 - housekeeping 危险操作已要求当前 dashboard 会话携带服务端确认 token，降低绕过前端弹窗直接调用接口的风险
 - Web UI 对 repo 内替代配置的支持已进一步收紧：允许调整 pipeline/assignment，但不允许改写 dashboard 绑定的 artifacts/worktrees roots
 - Web UI 的安全头现在覆盖 4xx / 5xx 响应，未捕获异常会回落到干净的内部错误响应
+- Web UI 的 artifact file 预览现在会拒绝逃逸 run 目录的路径，避免通过 `../` 之类的相对路径越界读取
 
 ## 部分完成
 

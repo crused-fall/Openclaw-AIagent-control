@@ -270,6 +270,17 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         file_payload = await file_response.json()
         self.assertIn("hello prompt", file_payload["content"])
 
+    async def test_history_file_endpoint_rejects_path_escape_attempts(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-escape")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-escape", "plan": [], "results": [], "success": True}, handle)
+
+        response = await self.client.get("/api/history/run-escape/file?path=../summary.json")
+
+        self.assertEqual(response.status, 400)
+        self.assertIn("escapes run directory", await response.text())
+
     async def test_history_compare_endpoint_returns_step_and_bridge_deltas(self) -> None:
         runs_root = os.path.join(self.repo_path, ".openclaw", "runs")
         os.makedirs(runs_root, exist_ok=True)
