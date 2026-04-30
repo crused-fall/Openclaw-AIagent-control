@@ -80,6 +80,7 @@
 - Web UI 的 history compare 接口现在会拒绝非 list / 少于两个 runIds 的请求，避免比较入口接收无效输入
 - Web API 的 JSON 入口现在会把坏 JSON 统一转换成 `400 Invalid JSON body.`，不再让解析错误冒泡成 `500`
 - Web UI 的 history prune 接口现在会拒绝非整数 `keepLatest`，避免无效保留策略输入漏成 `500`
+- Web API 的 JSON 入口现在还会拒绝非对象 JSON body，避免数组 / 标量 payload 触发 handler 内部异常
 
 ## 部分完成
 

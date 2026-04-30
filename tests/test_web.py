@@ -763,6 +763,11 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 400)
         self.assertIn("Invalid JSON", await response.text())
 
+    async def test_task_create_rejects_non_object_json_payloads(self) -> None:
+        response = await self.client.post("/api/tasks", json=["run"])
+        self.assertEqual(response.status, 400)
+        self.assertIn("must be an object", await response.text())
+
     async def test_task_create_rejects_config_override_that_changes_worktrees_root(self) -> None:
         alt_dir = os.path.join(self.repo_path, "configs")
         os.makedirs(alt_dir, exist_ok=True)
