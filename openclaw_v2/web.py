@@ -67,6 +67,15 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+async def _read_json_body(request: web.Request, *, default: Any | None = None) -> Any:
+    if not request.can_read_body:
+        return {} if default is None else default
+    try:
+        return await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise web.HTTPBadRequest(text="Invalid JSON body.") from error
+
+
 def _resolve_user_path(raw_path: str, base_path: str | None = None) -> str:
     expanded = os.path.expanduser((raw_path or "").strip())
     if not expanded:
@@ -1469,7 +1478,7 @@ async def _bootstrap_handler(request: web.Request) -> web.Response:
 
 
 async def _task_create_handler(request: web.Request) -> web.Response:
-    payload = await request.json()
+    payload = await _read_json_body(request, default={})
     action = str(payload.get("action", "")).strip()
     if action not in {"diagnose", "preflight", "doctor", "run"}:
         raise web.HTTPBadRequest(text="Unsupported action.")
@@ -1593,7 +1602,7 @@ async def _history_cleanup_handler(request: web.Request) -> web.Response:
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
     run_id = request.match_info["run_id"]
-    body = await request.json() if request.can_read_body else {}
+    body = await _read_json_body(request, default={})
     remove_worktrees = bool(body.get("removeWorktrees", True))
     remove_artifacts = bool(body.get("removeArtifacts", True))
     try:
@@ -1624,7 +1633,7 @@ async def _history_prune_handler(request: web.Request) -> web.Response:
         _validate_dashboard_runtime_roots(request.app, repo_path=repo_path, config=config)
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
-    body = await request.json() if request.can_read_body else {}
+    body = await _read_json_body(request, default={})
     keep_latest = max(0, int(body.get("keepLatest", 10)))
     remove_worktrees = bool(body.get("removeWorktrees", True))
     remove_artifacts = bool(body.get("removeArtifacts", True))
@@ -1650,7 +1659,7 @@ async def _history_compare_handler(request: web.Request) -> web.Response:
         _validate_dashboard_runtime_roots(request.app, repo_path=repo_path, config=config)
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
-    body = await request.json() if request.can_read_body else {}
+    body = await _read_json_body(request, default={})
     run_ids = body.get("runIds", [])
     if not isinstance(run_ids, list):
         raise web.HTTPBadRequest(text="runIds must be a list.")
