@@ -1634,7 +1634,10 @@ async def _history_prune_handler(request: web.Request) -> web.Response:
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
     body = await _read_json_body(request, default={})
-    keep_latest = max(0, int(body.get("keepLatest", 10)))
+    try:
+        keep_latest = max(0, int(body.get("keepLatest", 10)))
+    except (TypeError, ValueError) as error:
+        raise web.HTTPBadRequest(text="keepLatest must be an integer.") from error
     remove_worktrees = bool(body.get("removeWorktrees", True))
     remove_artifacts = bool(body.get("removeArtifacts", True))
     payload = await asyncio.to_thread(

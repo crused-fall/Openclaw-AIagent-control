@@ -495,6 +495,15 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(os.path.exists(os.path.join(runs_root, "run-a")))
         self.assertFalse(os.path.exists(os.path.join(runs_root, "run-b")))
 
+    async def test_prune_endpoint_rejects_non_numeric_keep_latest(self) -> None:
+        response = await self.client.post(
+            "/api/history/prune",
+            json={"keepLatest": "abc"},
+            headers=self.housekeeping_headers,
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("keepLatest", await response.text())
+
     async def test_prune_endpoint_requires_housekeeping_token(self) -> None:
         response = await self.client.post("/api/history/prune", json={"keepLatest": 1})
         self.assertEqual(response.status, 403)
