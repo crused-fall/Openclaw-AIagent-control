@@ -1275,6 +1275,34 @@ def _resolve_request_payload(
     return repo_path, config_path, config
 
 
+def _validate_task_submission(action: str, payload: dict[str, Any], config: Any) -> None:
+    if action == "doctor":
+        return
+
+    selected_steps = _selected_steps(payload)
+
+    if action == "run":
+        user_request = str(payload.get("request", "")).strip()
+        if not user_request:
+            raise web.HTTPBadRequest(text="Request text is required before running the pipeline.")
+        live = _read_json_bool_field(payload, "live", False)
+        config.runtime.dry_run = not live
+    else:
+        live = False
+
+    orchestrator = HybridOrchestrator(config)
+    if action == "run" and live:
+        _validate_live_policy(
+            orchestrator,
+            selected_steps=selected_steps,
+            require_step_selection=config.runtime.require_step_selection_for_live,
+            allow_fallback_in_live=config.runtime.allow_fallback_in_live,
+            allowed_live_steps=config.runtime.allowed_live_steps,
+        )
+    else:
+        orchestrator.build_plan(selected_steps=selected_steps)
+
+
 async def _execute_dashboard_action(
     app: web.Application,
     task: DashboardTask,
@@ -1480,7 +1508,10 @@ async def _bootstrap_handler(request: web.Request) -> web.Response:
     if pipeline:
         config.runtime.pipeline = pipeline
     orchestrator = HybridOrchestrator(config)
-    plan = orchestrator.build_plan()
+    try:
+        plan = orchestrator.build_plan()
+    except ValueError as error:
+        raise web.HTTPBadRequest(text=str(error)) from error
     artifacts_root = resolve_runtime_path(repo_path, config.runtime.artifacts_dir)
     github_overview = await _build_github_overview(config, repo_path)
     payload = {
@@ -1512,12 +1543,9 @@ async def _task_create_handler(request: web.Request) -> web.Response:
     action = str(payload.get("action", "")).strip()
     if action not in {"diagnose", "preflight", "doctor", "run"}:
         raise web.HTTPBadRequest(text="Unsupported action.")
-    if action in {"diagnose", "preflight", "run"}:
-        _selected_steps(payload)
-    if action == "run":
-        _read_json_bool_field(payload, "live", False)
     try:
-        _resolve_request_payload(request.app, payload)
+        _, _, config = _resolve_request_payload(request.app, payload)
+        _validate_task_submission(action, payload, config)
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
     task = request.app[APP_TASK_MANAGER].submit(action, payload)

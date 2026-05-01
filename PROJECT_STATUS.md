@@ -81,6 +81,8 @@
 - Web API 的 JSON 入口现在会把坏 JSON 统一转换成 `400 Invalid JSON body.`，不再让解析错误冒泡成 `500`
 - Web API 的任务创建现在会拒绝非布尔的 `live`，避免字符串值误入 live 模式
 - Web API 的任务创建现在会严格校验 `steps` 形状，避免非字符串列表项进入后台执行
+- Web API 的任务创建现在会在入队前拒绝空请求文本和未知 step id，避免先返回 `202` 再异步失败
+- Web UI 的 bootstrap 接口现在会把未知 pipeline override 直接拒绝为 `400`，不再让首页请求落成 `500`
 - Web API 的 housekeeping cleanup / prune 现在会拒绝非布尔的 `removeWorktrees` / `removeArtifacts`，避免字符串值被误判为 `true`
 - Web UI 的 history prune 接口现在会拒绝非整数 `keepLatest`，避免无效保留策略输入漏成 `500`
 - Web API 的 history prune 现在也会拒绝布尔型 `keepLatest`，避免 `true` 被误当成 `1`

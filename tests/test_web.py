@@ -9,7 +9,7 @@ from unittest import mock
 from aiohttp.test_utils import TestClient, TestServer
 
 from openclaw_v2.models import AgentResult, AgentType, ExecutionMode, RunResult, TaskStatus, WorkItem
-from openclaw_v2.web import APP_HOUSEKEEPING_TOKEN, create_web_app
+from openclaw_v2.web import APP_HOUSEKEEPING_TOKEN, APP_TASK_MANAGER, create_web_app
 
 
 def _write_minimal_config(path: str) -> None:
@@ -181,6 +181,14 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         payload = await response.json()
         self.assertEqual(payload["configPath"], _normalized_path(alt_config_path))
+
+    async def test_bootstrap_rejects_unknown_pipeline_override(self) -> None:
+        response = await self.client.get("/api/bootstrap", params={"pipeline": "missing_pipeline"})
+        self.assertEqual(response.status, 400)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("missing_pipeline", await response.text())
 
     async def test_bootstrap_rejects_in_repo_config_override_that_changes_artifacts_root(self) -> None:
         alt_dir = os.path.join(self.repo_path, "configs")
@@ -848,6 +856,45 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["X-Frame-Options"], "DENY")
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertIn("steps must be a comma-separated string", await response.text())
+        self.assertEqual(len(self.app[APP_TASK_MANAGER].tasks), 0)
+
+    async def test_task_create_rejects_blank_run_request_without_queuing_task(self) -> None:
+        response = await self.client.post(
+            "/api/tasks",
+            json={
+                "action": "run",
+                "repoPath": self.repo_path,
+                "configPath": self.config_path,
+                "request": "   ",
+                "steps": ["implement"],
+                "live": False,
+            },
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("Request text is required", await response.text())
+        self.assertEqual(len(self.app[APP_TASK_MANAGER].tasks), 0)
+
+    async def test_task_create_rejects_unknown_steps_without_queuing_task(self) -> None:
+        response = await self.client.post(
+            "/api/tasks",
+            json={
+                "action": "run",
+                "repoPath": self.repo_path,
+                "configPath": self.config_path,
+                "request": "Demo run",
+                "steps": ["missing-step"],
+                "live": False,
+            },
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("Unknown step ids", await response.text())
+        self.assertEqual(len(self.app[APP_TASK_MANAGER].tasks), 0)
 
     async def test_task_create_rejects_config_override_that_changes_worktrees_root(self) -> None:
         alt_dir = os.path.join(self.repo_path, "configs")
