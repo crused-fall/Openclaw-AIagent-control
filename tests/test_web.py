@@ -579,6 +579,18 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertIn("keepLatest must be an integer", await response.text())
 
+    async def test_prune_endpoint_rejects_negative_keep_latest(self) -> None:
+        response = await self.client.post(
+            "/api/history/prune",
+            json={"keepLatest": -1},
+            headers=self.housekeeping_headers,
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("greater than or equal to 0", await response.text())
+
     async def test_prune_endpoint_rejects_non_boolean_remove_flags(self) -> None:
         response = await self.client.post(
             "/api/history/prune",

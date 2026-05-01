@@ -87,6 +87,7 @@
 - Web API 的 housekeeping cleanup / prune 现在会拒绝非布尔的 `removeWorktrees` / `removeArtifacts`，避免字符串值被误判为 `true`
 - Web UI 的 history prune 接口现在会拒绝非整数 `keepLatest`，避免无效保留策略输入漏成 `500`
 - Web API 的 history prune 现在也会拒绝布尔型 `keepLatest`，避免 `true` 被误当成 `1`
+- Web API 的 history prune 现在还会拒绝负数 `keepLatest`，避免错误输入被静默钳成 `0` 后误删全部历史
 - Web API 的 JSON 入口现在还会拒绝非对象 JSON body，避免数组 / 标量 payload 触发 handler 内部异常
 
 ## 部分完成
