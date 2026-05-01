@@ -246,11 +246,25 @@ def _load_preflight_report(artifacts_dir: str) -> dict[str, Any] | None:
 
 def _step_status_map(summary: dict[str, Any]) -> dict[str, str]:
     statuses: dict[str, str] = {}
-    for item in summary.get("results", []) or []:
+    for item in _summary_results(summary):
         step_id = str(item.get("work_item_id", "")).strip()
         if step_id:
             statuses[step_id] = str(item.get("status", "unknown")).strip() or "unknown"
     return statuses
+
+
+def _summary_plan(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    plan = summary.get("plan", [])
+    if not isinstance(plan, list):
+        return []
+    return [item for item in plan if isinstance(item, dict)]
+
+
+def _summary_results(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    results = summary.get("results", [])
+    if not isinstance(results, list):
+        return []
+    return [item for item in results if isinstance(item, dict)]
 
 
 def _extract_github_repo_from_url(url: str) -> str:
@@ -395,8 +409,8 @@ def _summarize_run_insights(
     default_github_repo: str = "",
     github_base_branch: str = "main",
 ) -> dict[str, Any]:
-    results = summary.get("results", []) or []
-    plan = summary.get("plan", []) or []
+    results = _summary_results(summary)
+    plan = _summary_plan(summary)
     plan_titles = {
         str(item.get("id", "")).strip(): str(item.get("title", "")).strip()
         for item in plan
@@ -567,10 +581,10 @@ def _compare_run_histories(left: dict[str, Any], right: dict[str, Any]) -> dict[
     right_status_map = _step_status_map(right_summary)
     ordered_steps: list[str] = []
     for source in (
-        left_summary.get("plan", []) or [],
-        right_summary.get("plan", []) or [],
-        left_summary.get("results", []) or [],
-        right_summary.get("results", []) or [],
+        _summary_plan(left_summary),
+        _summary_plan(right_summary),
+        _summary_results(left_summary),
+        _summary_results(right_summary),
     ):
         for item in source:
             if not isinstance(item, dict):
@@ -646,6 +660,8 @@ def _summarize_recent_runs(
                 summary = json.load(handle)
         except json.JSONDecodeError:
             continue
+        if not isinstance(summary, dict):
+            continue
 
         context: dict[str, Any] = {}
         if context_path.exists():
@@ -654,9 +670,11 @@ def _summarize_recent_runs(
                     context = json.load(handle)
             except json.JSONDecodeError:
                 context = {}
+            if not isinstance(context, dict):
+                context = {}
         preflight = _load_preflight_report(str(run_dir))
 
-        results = summary.get("results", [])
+        results = _summary_results(summary)
         status_counts: dict[str, int] = {}
         for item in results:
             status = str(item.get("status", "unknown"))
@@ -669,7 +687,7 @@ def _summarize_recent_runs(
                 "artifactsDir": str(run_dir),
                 "request": context.get("user_request", ""),
                 "repoPath": context.get("repo_path", ""),
-                "stepCount": len(summary.get("plan", [])),
+                "stepCount": len(_summary_plan(summary)),
                 "resultCount": len(results),
                 "statusCounts": status_counts,
                 "updatedAt": datetime.fromtimestamp(run_dir.stat().st_mtime, timezone.utc).isoformat(),
@@ -1400,6 +1418,8 @@ def _read_run_history(
             summary = json.load(handle)
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError(f"Run summary is not valid JSON for {run_id}.") from error
+    if not isinstance(summary, dict):
+        raise ValueError(f"Run summary must be a JSON object for {run_id}.")
 
     context_path = run_dir / "context.json"
     context = {}
@@ -1409,6 +1429,8 @@ def _read_run_history(
                 context = json.load(handle)
         except (json.JSONDecodeError, UnicodeDecodeError) as error:
             raise ValueError(f"Run context is not valid JSON for {run_id}.") from error
+        if not isinstance(context, dict):
+            raise ValueError(f"Run context must be a JSON object for {run_id}.")
 
     preflight = _load_preflight_report(str(run_dir))
     updated_at = datetime.fromtimestamp(run_dir.stat().st_mtime, timezone.utc).isoformat()
@@ -1743,6 +1765,8 @@ async def _history_compare_handler(request: web.Request) -> web.Response:
         if not isinstance(run_id, str) or not run_id.strip():
             raise web.HTTPBadRequest(text="runIds must contain non-empty strings.")
         normalized_ids.append(run_id.strip())
+    if normalized_ids[0] == normalized_ids[1]:
+        raise web.HTTPBadRequest(text="runIds must reference two different runs.")
 
     try:
         left = _read_run_history(repo_path, config_path, normalized_ids[0])
@@ -1760,7 +1784,7 @@ async def _history_compare_handler(request: web.Request) -> web.Response:
                     "updatedAt": left["updatedAt"],
                     "request": left["context"].get("user_request", ""),
                     "success": bool(left.get("summary", {}).get("success", False)),
-                    "stepCount": len(left.get("summary", {}).get("plan", []) or []),
+                    "stepCount": len(_summary_plan(left.get("summary", {}))),
                     "insights": left["insights"],
                 },
                 {
@@ -1768,7 +1792,7 @@ async def _history_compare_handler(request: web.Request) -> web.Response:
                     "updatedAt": right["updatedAt"],
                     "request": right["context"].get("user_request", ""),
                     "success": bool(right.get("summary", {}).get("success", False)),
-                    "stepCount": len(right.get("summary", {}).get("plan", []) or []),
+                    "stepCount": len(_summary_plan(right.get("summary", {}))),
                     "insights": right["insights"],
                 },
             ],

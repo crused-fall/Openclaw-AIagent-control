@@ -190,6 +190,30 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertIn("missing_pipeline", await response.text())
 
+    async def test_bootstrap_skips_runs_with_non_object_summary_json(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-array-summary")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump([], handle)
+
+        response = await self.client.get("/api/bootstrap")
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertFalse(any(item["runId"] == "run-array-summary" for item in payload["recentRuns"]))
+
+    async def test_bootstrap_tolerates_non_list_summary_sections(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-weird-summary")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-weird-summary", "plan": {}, "results": {}, "success": True}, handle)
+
+        response = await self.client.get("/api/bootstrap")
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        recent = next(item for item in payload["recentRuns"] if item["runId"] == "run-weird-summary")
+        self.assertEqual(recent["stepCount"], 0)
+        self.assertEqual(recent["resultCount"], 0)
+
     async def test_bootstrap_rejects_in_repo_config_override_that_changes_artifacts_root(self) -> None:
         alt_dir = os.path.join(self.repo_path, "configs")
         os.makedirs(alt_dir, exist_ok=True)
@@ -292,6 +316,30 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertIn("Run summary is not valid JSON", await response.text())
 
+    async def test_history_endpoint_rejects_non_object_summary_json(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-array-summary")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump([], handle)
+
+        response = await self.client.get("/api/history/run-array-summary")
+
+        self.assertEqual(response.status, 400)
+        self.assertIn("Run summary must be a JSON object", await response.text())
+
+    async def test_history_endpoint_rejects_non_object_context_json(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-array-context")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-array-context", "plan": [], "results": [], "success": True}, handle)
+        with open(os.path.join(run_dir, "context.json"), "w", encoding="utf-8") as handle:
+            json.dump([], handle)
+
+        response = await self.client.get("/api/history/run-array-context")
+
+        self.assertEqual(response.status, 400)
+        self.assertIn("Run context must be a JSON object", await response.text())
+
     async def test_history_endpoint_tolerates_malformed_preflight_json(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-bad-preflight")
         os.makedirs(os.path.join(run_dir, "metadata"), exist_ok=True)
@@ -305,6 +353,19 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         payload = await response.json()
         self.assertIsNone(payload["preflight"])
+
+    async def test_history_endpoint_tolerates_non_list_summary_sections(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-weird-summary")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-weird-summary", "plan": {}, "results": {}, "success": True}, handle)
+
+        response = await self.client.get("/api/history/run-weird-summary")
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["insights"]["statusCounts"], {})
+        self.assertEqual(payload["insights"]["stepIds"], [])
 
     async def test_history_file_endpoint_rejects_path_escape_attempts(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-escape")
@@ -404,6 +465,10 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.post("/api/history/compare", json={"runIds": ["run-a", 123]})
         self.assertEqual(response.status, 400)
         self.assertIn("runIds must contain non-empty strings", await response.text())
+
+        response = await self.client.post("/api/history/compare", json={"runIds": ["run-a", "run-a"]})
+        self.assertEqual(response.status, 400)
+        self.assertIn("two different runs", await response.text())
 
     async def test_cleanup_endpoint_removes_run_directory(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-cleanup")
