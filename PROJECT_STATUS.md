@@ -80,6 +80,7 @@
 - Web UI 的 history compare 接口现在会拒绝非 list / 非字符串项 / 非恰好两个 / 非不同 run 的 `runIds` 请求，避免比较入口静默接受歧义输入
 - Web API 的 JSON 入口现在会把坏 JSON 统一转换成 `400 Invalid JSON body.`，不再让解析错误冒泡成 `500`
 - Web UI 的 run history / recent runs 读取现在会把损坏、非对象、或嵌套 `plan/results` 形状异常的 run 元数据做保守降级处理；损坏的 `preflight.json` 会按缺失处理，避免浏览历史时炸出 `500`
+- Web UI 的 health snapshot 现在会对 `openclaw health --json` 的 `channelOrder` / `channels` / `agents` / `defaultAgentId` 做保守解析，避免健康页被坏 payload 拖成 `500`
 - Web API 的任务创建现在会拒绝非布尔的 `live`，避免字符串值误入 live 模式
 - Web API 的任务创建现在会严格校验 `steps` 形状，避免非字符串列表项进入后台执行
 - Web API 的任务创建现在会在入队前拒绝空请求文本和未知 step id，避免先返回 `202` 再异步失败

@@ -158,6 +158,32 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("healthRaw", payload)
         self.assertNotIn("knownAgents", payload)
 
+    async def test_health_endpoint_tolerates_malformed_openclaw_health_payload(self) -> None:
+        malformed_health = {
+            "ok": True,
+            "channelOrder": "not-a-list",
+            "channels": "not-a-dict",
+            "channelLabels": "not-a-dict",
+            "agents": "not-a-list",
+            "defaultAgentId": 123,
+        }
+        with mock.patch(
+            "openclaw_v2.web._command_snapshot",
+            side_effect=[
+                {"ok": True, "stdout": json.dumps(malformed_health), "stderr": "", "exitCode": 0},
+                {"ok": True, "stdout": "Gateway: ok", "stderr": "", "exitCode": 0},
+                {"ok": True, "stdout": "Embeddings: ready", "stderr": "", "exitCode": 0},
+            ],
+        ):
+            response = await self.client.get("/api/system/health?agentId=openclaw-control-ext")
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertTrue(payload["healthOk"])
+        self.assertEqual(payload["defaultAgentId"], "")
+        self.assertFalse(payload["targetAgentPresent"])
+        self.assertEqual(payload["channels"], [])
+
     async def test_health_unhandled_error_still_carries_security_headers(self) -> None:
         with mock.patch(
             "openclaw_v2.web._openclaw_health_snapshot",

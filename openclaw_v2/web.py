@@ -98,6 +98,36 @@ def _read_json_int_field(payload: dict[str, Any], field_name: str, default: int)
     return value
 
 
+def _json_bool_value(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
+
+
+def _json_string_value(value: Any, default: str = "") -> str:
+    if isinstance(value, str):
+        return value.strip()
+    return default
+
+
+def _json_object_value(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def _json_object_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _json_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
 def _resolve_user_path(raw_path: str, base_path: str | None = None) -> str:
     expanded = os.path.expanduser((raw_path or "").strip())
     if not expanded:
@@ -527,8 +557,8 @@ def _summarize_run_insights(
                     "sessionId": str(artifacts.get("hermes_session_id", "")).strip(),
                     "provider": str(artifacts.get("hermes_provider", "")).strip(),
                     "model": str(artifacts.get("hermes_model", "")).strip(),
-                    "toolsets": list(artifacts.get("hermes_toolsets", []) or []),
-                    "skills": list(artifacts.get("hermes_skills", []) or []),
+                    "toolsets": _json_string_list(artifacts.get("hermes_toolsets", [])),
+                    "skills": _json_string_list(artifacts.get("hermes_skills", [])),
                 }
             )
 
@@ -998,31 +1028,38 @@ def _openclaw_health_snapshot(agent_id: str) -> dict[str, Any]:
     health_payload: dict[str, Any] = {}
     if health_capture["stdout"]:
         try:
-            health_payload = json.loads(health_capture["stdout"])
+            health_payload = _json_object_value(json.loads(health_capture["stdout"]))
         except json.JSONDecodeError:
             health_payload = {}
 
+    channel_order = _json_string_list(health_payload.get("channelOrder", []))
+    channels_payload = _json_object_value(health_payload.get("channels"))
+    channel_labels = _json_object_value(health_payload.get("channelLabels"))
     channels: list[dict[str, Any]] = []
-    for channel_name in health_payload.get("channelOrder", []):
-        channel_data = (health_payload.get("channels") or {}).get(channel_name, {})
-        probe = channel_data.get("probe") or {}
+    for channel_name in channel_order:
+        channel_data = _json_object_value(channels_payload.get(channel_name))
+        probe = _json_object_value(channel_data.get("probe"))
         channels.append(
             {
                 "name": channel_name,
-                "label": (health_payload.get("channelLabels") or {}).get(channel_name, channel_name),
-                "configured": bool(channel_data.get("configured")),
-                "running": bool(channel_data.get("running")),
-                "probeOk": bool(probe.get("ok")),
+                "label": _json_string_value(channel_labels.get(channel_name), channel_name) or channel_name,
+                "configured": _json_bool_value(channel_data.get("configured")),
+                "running": _json_bool_value(channel_data.get("running")),
+                "probeOk": _json_bool_value(probe.get("ok")),
                 "lastError": channel_data.get("lastError"),
             }
         )
 
-    agent_ids = [str(item.get("agentId", "")) for item in health_payload.get("agents", [])]
+    agent_ids = [
+        _json_string_value(item.get("agentId"))
+        for item in _json_object_list(health_payload.get("agents"))
+        if _json_string_value(item.get("agentId"))
+    ]
     return {
         "checkedAt": _utc_now(),
         "agentId": agent_id,
-        "healthOk": bool(health_payload.get("ok")),
-        "defaultAgentId": health_payload.get("defaultAgentId", ""),
+        "healthOk": _json_bool_value(health_payload.get("ok")),
+        "defaultAgentId": _json_string_value(health_payload.get("defaultAgentId")),
         "targetAgentPresent": agent_id in agent_ids,
         "channels": channels,
         "gateway": _public_command_snapshot(gateway_capture),
