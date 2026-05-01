@@ -84,6 +84,23 @@ async def _read_json_body(
     return payload
 
 
+def _read_json_bool_field(payload: dict[str, Any], field_name: str, default: bool) -> bool:
+    value = payload.get(field_name, default)
+    if isinstance(value, bool):
+        return value
+    raise web.HTTPBadRequest(text=f"{field_name} must be a boolean.")
+
+
+def _read_json_int_field(payload: dict[str, Any], field_name: str, default: int) -> int:
+    value = payload.get(field_name, default)
+    if isinstance(value, bool):
+        raise web.HTTPBadRequest(text=f"{field_name} must be an integer.")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as error:
+        raise web.HTTPBadRequest(text=f"{field_name} must be an integer.") from error
+
+
 def _resolve_user_path(raw_path: str, base_path: str | None = None) -> str:
     expanded = os.path.expanduser((raw_path or "").strip())
     if not expanded:
@@ -1292,7 +1309,7 @@ async def _execute_dashboard_action(
     if not user_request:
         raise ValueError("Request text is required before running the pipeline.")
 
-    live = bool(payload.get("live", False))
+    live = _read_json_bool_field(payload, "live", False)
     config.runtime.dry_run = not live
     orchestrator = HybridOrchestrator(config)
     if live:
@@ -1490,6 +1507,8 @@ async def _task_create_handler(request: web.Request) -> web.Response:
     action = str(payload.get("action", "")).strip()
     if action not in {"diagnose", "preflight", "doctor", "run"}:
         raise web.HTTPBadRequest(text="Unsupported action.")
+    if action == "run":
+        _read_json_bool_field(payload, "live", False)
     try:
         _resolve_request_payload(request.app, payload)
     except (FileNotFoundError, ValueError) as error:
@@ -1611,8 +1630,8 @@ async def _history_cleanup_handler(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(text=str(error)) from error
     run_id = request.match_info["run_id"]
     body = await _read_json_body(request, default={}, require_object=True)
-    remove_worktrees = bool(body.get("removeWorktrees", True))
-    remove_artifacts = bool(body.get("removeArtifacts", True))
+    remove_worktrees = _read_json_bool_field(body, "removeWorktrees", True)
+    remove_artifacts = _read_json_bool_field(body, "removeArtifacts", True)
     try:
         payload = await asyncio.to_thread(
             _cleanup_run_history,
@@ -1642,12 +1661,9 @@ async def _history_prune_handler(request: web.Request) -> web.Response:
     except (FileNotFoundError, ValueError) as error:
         raise web.HTTPBadRequest(text=str(error)) from error
     body = await _read_json_body(request, default={}, require_object=True)
-    try:
-        keep_latest = max(0, int(body.get("keepLatest", 10)))
-    except (TypeError, ValueError) as error:
-        raise web.HTTPBadRequest(text="keepLatest must be an integer.") from error
-    remove_worktrees = bool(body.get("removeWorktrees", True))
-    remove_artifacts = bool(body.get("removeArtifacts", True))
+    keep_latest = max(0, _read_json_int_field(body, "keepLatest", 10))
+    remove_worktrees = _read_json_bool_field(body, "removeWorktrees", True)
+    remove_artifacts = _read_json_bool_field(body, "removeArtifacts", True)
     payload = await asyncio.to_thread(
         _prune_run_history,
         repo_path,

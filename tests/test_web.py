@@ -390,6 +390,24 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertIn("confirmation token", await response.text())
 
+    async def test_cleanup_endpoint_rejects_non_boolean_remove_flags(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-bad-flags")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-bad-flags", "plan": [], "results": [], "success": True}, handle)
+
+        response = await self.client.post(
+            "/api/history/run-bad-flags/cleanup",
+            json={"removeArtifacts": "false"},
+            headers=self.housekeeping_headers,
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("Content-Security-Policy", response.headers)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("removeArtifacts must be a boolean", await response.text())
+
     async def test_cleanup_endpoint_skips_workspace_manifests_outside_repo_scope(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-suspicious")
         workspaces_dir = os.path.join(run_dir, "workspaces")
@@ -503,6 +521,32 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status, 400)
         self.assertIn("keepLatest", await response.text())
+
+    async def test_prune_endpoint_rejects_boolean_keep_latest(self) -> None:
+        response = await self.client.post(
+            "/api/history/prune",
+            json={"keepLatest": True},
+            headers=self.housekeeping_headers,
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("Content-Security-Policy", response.headers)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("keepLatest must be an integer", await response.text())
+
+    async def test_prune_endpoint_rejects_non_boolean_remove_flags(self) -> None:
+        response = await self.client.post(
+            "/api/history/prune",
+            json={"keepLatest": 1, "removeWorktrees": "false"},
+            headers=self.housekeeping_headers,
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("Content-Security-Policy", response.headers)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("removeWorktrees must be a boolean", await response.text())
 
     async def test_prune_endpoint_requires_housekeeping_token(self) -> None:
         response = await self.client.post("/api/history/prune", json={"keepLatest": 1})
@@ -767,6 +811,24 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.post("/api/tasks", json=["run"])
         self.assertEqual(response.status, 400)
         self.assertIn("must be an object", await response.text())
+
+    async def test_task_create_rejects_non_boolean_live_flag(self) -> None:
+        response = await self.client.post(
+            "/api/tasks",
+            json={
+                "action": "run",
+                "repoPath": self.repo_path,
+                "configPath": self.config_path,
+                "request": "Demo run",
+                "live": "false",
+            },
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("Content-Security-Policy", response.headers)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("live must be a boolean", await response.text())
 
     async def test_task_create_rejects_config_override_that_changes_worktrees_root(self) -> None:
         alt_dir = os.path.join(self.repo_path, "configs")
