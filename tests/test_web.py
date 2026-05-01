@@ -830,6 +830,25 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertIn("live must be a boolean", await response.text())
 
+    async def test_task_create_rejects_non_string_steps_items(self) -> None:
+        response = await self.client.post(
+            "/api/tasks",
+            json={
+                "action": "run",
+                "repoPath": self.repo_path,
+                "configPath": self.config_path,
+                "request": "Demo run",
+                "steps": [123],
+                "live": False,
+            },
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("Content-Security-Policy", response.headers)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("steps must be a comma-separated string", await response.text())
+
     async def test_task_create_rejects_config_override_that_changes_worktrees_root(self) -> None:
         alt_dir = os.path.join(self.repo_path, "configs")
         os.makedirs(alt_dir, exist_ok=True)

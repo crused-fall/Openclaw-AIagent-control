@@ -93,12 +93,9 @@ def _read_json_bool_field(payload: dict[str, Any], field_name: str, default: boo
 
 def _read_json_int_field(payload: dict[str, Any], field_name: str, default: int) -> int:
     value = payload.get(field_name, default)
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, int):
         raise web.HTTPBadRequest(text=f"{field_name} must be an integer.")
-    try:
-        return int(value)
-    except (TypeError, ValueError) as error:
-        raise web.HTTPBadRequest(text=f"{field_name} must be an integer.") from error
+    return value
 
 
 def _resolve_user_path(raw_path: str, base_path: str | None = None) -> str:
@@ -211,9 +208,17 @@ def _selected_steps(payload: dict[str, Any]) -> list[str] | None:
         values = [step.strip() for step in raw_steps.split(",") if step.strip()]
         return values or None
     if isinstance(raw_steps, list):
-        values = [str(step).strip() for step in raw_steps if str(step).strip()]
+        values: list[str] = []
+        for step in raw_steps:
+            if not isinstance(step, str):
+                raise web.HTTPBadRequest(text="steps must be a comma-separated string or a list of step ids.")
+            normalized = step.strip()
+            if normalized:
+                values.append(normalized)
         return values or None
-    return None
+    if raw_steps in ("", None):
+        return None
+    raise web.HTTPBadRequest(text="steps must be a comma-separated string or a list of step ids.")
 
 
 def _default_openclaw_agent_id(config: Any) -> str:
@@ -1507,6 +1512,8 @@ async def _task_create_handler(request: web.Request) -> web.Response:
     action = str(payload.get("action", "")).strip()
     if action not in {"diagnose", "preflight", "doctor", "run"}:
         raise web.HTTPBadRequest(text="Unsupported action.")
+    if action in {"diagnose", "preflight", "run"}:
+        _selected_steps(payload)
     if action == "run":
         _read_json_bool_field(payload, "live", False)
     try:
