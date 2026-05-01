@@ -1725,9 +1725,13 @@ async def _history_compare_handler(request: web.Request) -> web.Response:
     run_ids = body.get("runIds", [])
     if not isinstance(run_ids, list):
         raise web.HTTPBadRequest(text="runIds must be a list.")
-    normalized_ids = [str(run_id).strip() for run_id in run_ids if str(run_id).strip()]
-    if len(normalized_ids) < 2:
+    if len(run_ids) != 2:
         raise web.HTTPBadRequest(text="Two run ids are required for comparison.")
+    normalized_ids: list[str] = []
+    for run_id in run_ids:
+        if not isinstance(run_id, str) or not run_id.strip():
+            raise web.HTTPBadRequest(text="runIds must contain non-empty strings.")
+        normalized_ids.append(run_id.strip())
 
     try:
         left = _read_run_history(repo_path, config_path, normalized_ids[0])

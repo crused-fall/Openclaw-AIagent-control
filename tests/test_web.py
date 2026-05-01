@@ -369,6 +369,14 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 400)
         self.assertIn("Two run ids are required", await response.text())
 
+        response = await self.client.post("/api/history/compare", json={"runIds": ["run-a", "run-b", "run-c"]})
+        self.assertEqual(response.status, 400)
+        self.assertIn("Two run ids are required", await response.text())
+
+        response = await self.client.post("/api/history/compare", json={"runIds": ["run-a", 123]})
+        self.assertEqual(response.status, 400)
+        self.assertIn("runIds must contain non-empty strings", await response.text())
+
     async def test_cleanup_endpoint_removes_run_directory(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-cleanup")
         os.makedirs(run_dir, exist_ok=True)
