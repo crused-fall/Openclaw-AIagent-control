@@ -688,7 +688,7 @@ def _summarize_recent_runs(
         try:
             with summary_path.open("r", encoding="utf-8") as handle:
                 summary = json.load(handle)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             continue
         if not isinstance(summary, dict):
             continue
@@ -698,7 +698,7 @@ def _summarize_recent_runs(
             try:
                 with context_path.open("r", encoding="utf-8") as handle:
                     context = json.load(handle)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 context = {}
             if not isinstance(context, dict):
                 context = {}
@@ -771,7 +771,7 @@ def _load_run_workspace_manifests(run_dir: Path) -> list[dict[str, Any]]:
         try:
             with path.open("r", encoding="utf-8") as handle:
                 payload = json.load(handle)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             continue
         if isinstance(payload, dict):
             manifests.append(payload)

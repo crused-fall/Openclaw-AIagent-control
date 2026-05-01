@@ -227,6 +227,17 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         payload = await response.json()
         self.assertFalse(any(item["runId"] == "run-array-summary" for item in payload["recentRuns"]))
 
+    async def test_bootstrap_skips_runs_with_invalid_utf8_summary_json(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-bad-bytes")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "wb") as handle:
+            handle.write(b"\xff")
+
+        response = await self.client.get("/api/bootstrap")
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertFalse(any(item["runId"] == "run-bad-bytes" for item in payload["recentRuns"]))
+
     async def test_bootstrap_tolerates_non_list_summary_sections(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-weird-summary")
         os.makedirs(run_dir, exist_ok=True)
@@ -511,6 +522,24 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         payload = await response.json()
         self.assertEqual(payload["runId"], "run-cleanup")
         self.assertFalse(os.path.exists(run_dir))
+
+    async def test_cleanup_endpoint_skips_invalid_utf8_workspace_manifests(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-invalid-manifest")
+        workspaces_dir = os.path.join(run_dir, "workspaces")
+        os.makedirs(workspaces_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-invalid-manifest", "plan": [], "results": [], "success": True}, handle)
+        with open(os.path.join(workspaces_dir, "broken.json"), "wb") as handle:
+            handle.write(b"\xff")
+
+        response = await self.client.post(
+            "/api/history/run-invalid-manifest/cleanup",
+            json={"removeWorktrees": True, "removeArtifacts": False},
+            headers=self.housekeeping_headers,
+        )
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["operations"], [])
 
     async def test_cleanup_endpoint_requires_housekeeping_token(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-no-token")
