@@ -278,6 +278,34 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         file_payload = await file_response.json()
         self.assertIn("hello prompt", file_payload["content"])
 
+    async def test_history_endpoint_rejects_malformed_summary_json(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-bad-summary")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            handle.write("{")
+
+        response = await self.client.get("/api/history/run-bad-summary")
+
+        self.assertEqual(response.status, 400)
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("Run summary is not valid JSON", await response.text())
+
+    async def test_history_endpoint_tolerates_malformed_preflight_json(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-bad-preflight")
+        os.makedirs(os.path.join(run_dir, "metadata"), exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-bad-preflight", "plan": [], "results": [], "success": True}, handle)
+        with open(os.path.join(run_dir, "metadata", "preflight.json"), "w", encoding="utf-8") as handle:
+            handle.write("{")
+
+        response = await self.client.get("/api/history/run-bad-preflight")
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertIsNone(payload["preflight"])
+
     async def test_history_file_endpoint_rejects_path_escape_attempts(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-escape")
         os.makedirs(run_dir, exist_ok=True)

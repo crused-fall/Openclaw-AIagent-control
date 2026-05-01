@@ -79,6 +79,7 @@
 - Web UI 的 artifact file 预览现在会拒绝逃逸 run 目录的路径，避免通过 `../` 之类的相对路径越界读取
 - Web UI 的 history compare 接口现在会拒绝非 list / 非字符串项 / 非恰好两个 `runIds` 的请求，避免比较入口静默接受歧义输入
 - Web API 的 JSON 入口现在会把坏 JSON 统一转换成 `400 Invalid JSON body.`，不再让解析错误冒泡成 `500`
+- Web UI 的 run history 读取现在会把损坏的 `summary.json` / `context.json` 明确降级成 `400`，损坏的 `preflight.json` 会按缺失处理，避免浏览历史时炸出 `500`
 - Web API 的任务创建现在会拒绝非布尔的 `live`，避免字符串值误入 live 模式
 - Web API 的任务创建现在会严格校验 `steps` 形状，避免非字符串列表项进入后台执行
 - Web API 的任务创建现在会在入队前拒绝空请求文本和未知 step id，避免先返回 `202` 再异步失败

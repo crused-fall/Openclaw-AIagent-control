@@ -237,8 +237,11 @@ def _load_preflight_report(artifacts_dir: str) -> dict[str, Any] | None:
     preflight_path = os.path.join(artifacts_dir, "metadata", "preflight.json")
     if not os.path.exists(preflight_path):
         return None
-    with open(preflight_path, "r", encoding="utf-8") as handle:
-        return json.load(handle)
+    try:
+        with open(preflight_path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
 
 
 def _step_status_map(summary: dict[str, Any]) -> dict[str, str]:
@@ -1392,14 +1395,20 @@ def _read_run_history(
     if not summary_path.exists():
         raise FileNotFoundError(f"Run summary not found for {run_id}.")
 
-    with summary_path.open("r", encoding="utf-8") as handle:
-        summary = json.load(handle)
+    try:
+        with summary_path.open("r", encoding="utf-8") as handle:
+            summary = json.load(handle)
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError(f"Run summary is not valid JSON for {run_id}.") from error
 
     context_path = run_dir / "context.json"
     context = {}
     if context_path.exists():
-        with context_path.open("r", encoding="utf-8") as handle:
-            context = json.load(handle)
+        try:
+            with context_path.open("r", encoding="utf-8") as handle:
+                context = json.load(handle)
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise ValueError(f"Run context is not valid JSON for {run_id}.") from error
 
     preflight = _load_preflight_report(str(run_dir))
     updated_at = datetime.fromtimestamp(run_dir.stat().st_mtime, timezone.utc).isoformat()
