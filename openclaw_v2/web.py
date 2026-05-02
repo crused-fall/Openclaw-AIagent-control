@@ -276,7 +276,7 @@ def _load_preflight_report(artifacts_dir: str) -> dict[str, Any] | None:
     try:
         with open(preflight_path, "r", encoding="utf-8") as handle:
             return json.load(handle)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (FileNotFoundError, OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
 
 
@@ -357,9 +357,9 @@ def _build_hermes_overview(config: Any) -> dict[str, Any]:
                 "name": name,
                 "provider": profile.hermes_provider,
                 "model": profile.hermes_model,
-                "toolsets": list(profile.hermes_toolsets),
+                "toolsets": _json_string_list(profile.hermes_toolsets),
                 "source": profile.hermes_source,
-                "maxTurns": profile.hermes_max_turns,
+                "maxTurns": _json_int_value(profile.hermes_max_turns, 0),
             }
         )
 
@@ -388,7 +388,7 @@ def _build_hermes_overview(config: Any) -> dict[str, Any]:
                 if assignment_name and assignment_name in config.assignments:
                     managed_name = config.assignments[assignment_name].agent
             managed_agent = config.managed_agents.get(managed_name) if managed_name else None
-            capabilities = list(managed_agent.capabilities) if managed_agent else []
+            capabilities = _json_string_list(managed_agent.capabilities) if managed_agent else []
             hermes_steps.append(
                 {
                     "id": step.id,
@@ -396,7 +396,7 @@ def _build_hermes_overview(config: Any) -> dict[str, Any]:
                     "profile": profile_name,
                     "managedAgent": managed_name,
                     "assignment": step.assignment,
-                    "dependsOn": list(step.depends_on),
+                    "dependsOn": _json_string_list(step.depends_on),
                     "role": _hermes_role_from_capabilities(capabilities),
                     "capabilities": capabilities,
                 }
@@ -422,7 +422,8 @@ def _build_hermes_overview(config: Any) -> dict[str, Any]:
 async def _build_github_overview(config: Any, repo_path: str) -> dict[str, Any]:
     repo = config.github.repo.strip()
     repo_source = "config" if repo else "unconfigured"
-    if not repo and config.github.use_origin_remote_fallback:
+    use_origin_remote_fallback = _json_bool_value(config.github.use_origin_remote_fallback)
+    if not repo and use_origin_remote_fallback:
         resolved_repo, _, _ = await resolve_github_repo_from_origin(repo_path)
         if resolved_repo:
             repo = resolved_repo
@@ -433,7 +434,7 @@ async def _build_github_overview(config: Any, repo_path: str) -> dict[str, Any]:
         "repo": repo,
         "repoSource": repo_source,
         "baseBranch": config.github.base_branch,
-        "useOriginRemoteFallback": bool(config.github.use_origin_remote_fallback),
+        "useOriginRemoteFallback": use_origin_remote_fallback,
     }
 
 
@@ -683,11 +684,7 @@ def _summarize_recent_runs(
     if not root.exists():
         return runs
 
-    candidates = sorted(
-        [path for path in root.iterdir() if path.is_dir() and path.name.startswith("run-")],
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
+    candidates = _safe_run_directories(root)
 
     for run_dir in candidates[:limit]:
         summary_path = run_dir / "summary.json"
@@ -766,14 +763,40 @@ def _list_run_files(run_dir: Path, limit: int = 200) -> list[dict[str, Any]]:
     for path in sorted([item for item in run_dir.rglob("*") if item.is_file()])[:limit]:
         relative = path.relative_to(run_dir).as_posix()
         suffix = path.suffix.lower().lstrip(".")
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
         files.append(
             {
                 "path": relative,
-                "size": path.stat().st_size,
+                "size": size,
                 "kind": suffix or "file",
             }
         )
     return files
+
+
+def _safe_run_directories(root: Path) -> list[Path]:
+    if not root.exists():
+        return []
+    try:
+        entries = list(root.iterdir())
+    except OSError:
+        return []
+
+    candidates: list[tuple[float, Path]] = []
+    for path in entries:
+        try:
+            if not path.is_dir() or not path.name.startswith("run-"):
+                continue
+            updated_at = path.stat().st_mtime
+        except OSError:
+            continue
+        candidates.append((updated_at, path))
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return [path for _, path in candidates]
 
 
 def _load_run_workspace_manifests(run_dir: Path) -> list[dict[str, Any]]:
@@ -785,7 +808,7 @@ def _load_run_workspace_manifests(run_dir: Path) -> list[dict[str, Any]]:
         try:
             with path.open("r", encoding="utf-8") as handle:
                 payload = json.load(handle)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (FileNotFoundError, OSError, json.JSONDecodeError, UnicodeDecodeError):
             continue
         if isinstance(payload, dict):
             manifests.append(payload)
@@ -805,11 +828,16 @@ def _read_artifact_file(run_dir: Path, relative_path: str, limit: int = 200_000)
     except UnicodeDecodeError:
         content = raw.decode("utf-8", errors="replace")
         encoding = "utf-8-replaced"
+    size = len(raw)
+    try:
+        size = target.stat().st_size
+    except OSError:
+        pass
     return {
         "path": relative_path,
         "content": content,
         "truncated": truncated,
-        "size": target.stat().st_size,
+        "size": size,
         "encoding": encoding,
     }
 
@@ -1141,10 +1169,10 @@ def _serialize_plan_for_ui(plan: list[Any]) -> list[dict[str, Any]]:
 
 def _serialize_runtime_snapshot(runtime: Any) -> dict[str, Any]:
     return {
-        "dry_run": bool(runtime.dry_run),
-        "require_step_selection_for_live": bool(runtime.require_step_selection_for_live),
-        "allow_fallback_in_live": bool(runtime.allow_fallback_in_live),
-        "allowed_live_steps": list(runtime.allowed_live_steps),
+        "dry_run": _json_bool_value(runtime.dry_run),
+        "require_step_selection_for_live": _json_bool_value(runtime.require_step_selection_for_live),
+        "allow_fallback_in_live": _json_bool_value(runtime.allow_fallback_in_live),
+        "allowed_live_steps": _json_string_list(runtime.allowed_live_steps),
     }
 
 
@@ -1486,7 +1514,10 @@ def _read_run_history(
             raise ValueError(f"Run context must be a JSON object for {run_id}.")
 
     preflight = _load_preflight_report(str(run_dir))
-    updated_at = datetime.fromtimestamp(run_dir.stat().st_mtime, timezone.utc).isoformat()
+    try:
+        updated_at = datetime.fromtimestamp(run_dir.stat().st_mtime, timezone.utc).isoformat()
+    except OSError as error:
+        raise FileNotFoundError(f"Run summary not found for {run_id}.") from error
     return {
         "runId": run_id,
         "updatedAt": updated_at,
@@ -1549,11 +1580,7 @@ def _prune_run_history(
             "removed": [],
         }
 
-    run_dirs = sorted(
-        [path for path in root.iterdir() if path.is_dir() and path.name.startswith("run-")],
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
+    run_dirs = _safe_run_directories(root)
     removed: list[dict[str, Any]] = []
     for run_dir in run_dirs[keep_latest:]:
         removed.append(

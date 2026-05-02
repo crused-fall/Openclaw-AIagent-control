@@ -83,9 +83,15 @@
 - Web UI 的 health snapshot 现在会对 `openclaw health --json` 的 `channelOrder` / `channels` / `agents` / `defaultAgentId` 做保守解析，避免健康页被坏 payload 拖成 `500`
 - Web UI 的 recent runs / cleanup manifest 读取现在也会跳过坏字节输入，避免 `summary.json` / workspace manifest 的编码错误拖垮页面
 - Web UI 的 recent runs / history 读取现在能容忍 `summary.json` 在扫描或读取间消失，避免竞争条件把页面拖成 `500`
+- Web UI 的 history 文件列表和单文件读取现在也会容忍文件在 size/stat 阶段消失，避免 artifact browser 的竞态把页面拖成 `500`
+- Web UI 的 recent runs / housekeeping prune 现在也会跳过在排序阶段消失的 run 目录，避免目录级竞态把页面拖成 `500`
+- Web UI 的 history 详情页现在也会把 run 目录在更新时间戳阶段消失收敛成 404，避免目录级竞态冒成 `500`
+- Web UI 的 recent runs 现在也会把 `preflight.json` 在读取时消失收敛成缺失预检，避免首页因为预检竞态冒成 `500`
+- Web UI 的 cleanup manifest 读取现在也会跳过在读取时消失的 workspace manifest，避免 housekeeping 因竞态冒成 `500`
 - Web UI 的历史与概览里，`success` / `dry_run` 这类状态位现在只认真正的 JSON 布尔值，字符串值不再被误报为 `true`
 - Web UI 的 history compare 现在会对 malformed `statusCounts` / `workflow` / `sessionCount` 做保守降级，避免比较摘要被坏字段拖垮
 - Web UI 的 history compare 现在也会保守忽略非列表的 `plan/results`，避免摘要里的结构异常拖出 `500`
+- Web UI 的 runtime snapshot / Hermes overview / GitHub overview 现在会把字符串型布尔和坏列表保守降级，避免配置快照误报
 - Web API 的任务创建现在会拒绝非布尔的 `live`，避免字符串值误入 live 模式
 - Web API 的任务创建现在会严格校验 `steps` 形状，避免非字符串列表项进入后台执行
 - Web API 的任务创建现在会在入队前拒绝空请求文本和未知 step id，避免先返回 `202` 再异步失败

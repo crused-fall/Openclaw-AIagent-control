@@ -259,6 +259,56 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         payload = await response.json()
         self.assertFalse(any(item["runId"] == "run-vanish" for item in payload["recentRuns"]))
 
+    async def test_bootstrap_tolerates_preflight_disappearing_during_read(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-preflight-race")
+        metadata_dir = os.path.join(run_dir, "metadata")
+        os.makedirs(metadata_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-preflight-race", "plan": [], "results": [], "success": True}, handle)
+        with open(os.path.join(run_dir, "context.json"), "w", encoding="utf-8") as handle:
+            json.dump({"repo_path": self.repo_path, "user_request": "demo"}, handle)
+        with open(os.path.join(metadata_dir, "preflight.json"), "w", encoding="utf-8") as handle:
+            json.dump({"checks": [{"name": "noop", "status": "passed"}]}, handle)
+
+        real_open = open
+
+        def flaky_open(file, *args, **kwargs):
+            if isinstance(file, str) and file.endswith("/metadata/preflight.json"):
+                raise FileNotFoundError("preflight disappeared during read")
+            return real_open(file, *args, **kwargs)
+
+        with mock.patch("builtins.open", side_effect=flaky_open):
+            response = await self.client.get("/api/bootstrap")
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertTrue(any(item["runId"] == "run-preflight-race" for item in payload["recentRuns"]))
+
+    async def test_bootstrap_skips_runs_if_run_directory_stat_disappears_during_sort(self) -> None:
+        runs_root = os.path.join(self.repo_path, ".openclaw", "runs")
+        os.makedirs(runs_root, exist_ok=True)
+        for index, run_id in enumerate(["run-a", "run-stat-race", "run-c"], start=1):
+            run_dir = os.path.join(runs_root, run_id)
+            os.makedirs(run_dir, exist_ok=True)
+            with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+                json.dump({"run_id": run_id, "plan": [], "results": [], "success": True}, handle)
+            os.utime(run_dir, (index, index))
+
+        path_cls = Path(self.repo_path).__class__
+        real_stat = path_cls.stat
+
+        def flaky_stat(path_self, *args, **kwargs):
+            if path_self.name == "run-stat-race":
+                raise FileNotFoundError("run disappeared while sorting recent runs")
+            return real_stat(path_self, *args, **kwargs)
+
+        with mock.patch.object(path_cls, "stat", autospec=True, side_effect=flaky_stat):
+            response = await self.client.get("/api/bootstrap")
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertFalse(any(item["runId"] == "run-stat-race" for item in payload["recentRuns"]))
+
     async def test_bootstrap_tolerates_non_list_summary_sections(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-weird-summary")
         os.makedirs(run_dir, exist_ok=True)
@@ -298,6 +348,45 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(history_response.status, 200)
         history_payload = await history_response.json()
         self.assertFalse(history_payload["insights"]["dryRun"])
+
+    async def test_bootstrap_treats_runtime_snapshot_flags_and_lists_conservatively(self) -> None:
+        class DummyOrchestrator:
+            def __init__(self, config) -> None:
+                self.config = config
+
+            def build_plan(self, selected_steps=None):
+                return []
+
+        with mock.patch("openclaw_v2.web.load_app_config") as load_config, mock.patch(
+            "openclaw_v2.web.HybridOrchestrator",
+            DummyOrchestrator,
+        ):
+            config = load_config.return_value
+            config.runtime.pipeline = "demo_pipeline"
+            config.runtime.dry_run = "false"
+            config.runtime.require_step_selection_for_live = "false"
+            config.runtime.allow_fallback_in_live = "true"
+            config.runtime.allowed_live_steps = "implement"
+            config.runtime.artifacts_dir = ".openclaw/runs"
+            config.runtime.worktrees_dir = "/tmp/openclaw-worktrees"
+            config.github.repo = ""
+            config.github.base_branch = "main"
+            config.github.use_origin_remote_fallback = "true"
+            config.profiles = {}
+            config.managed_agents = {}
+            config.assignments = {}
+            config.pipelines = {"demo_pipeline": []}
+
+            response = await self.client.get("/api/bootstrap")
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        runtime = payload["snapshot"]["runtime"]
+        self.assertFalse(runtime["dry_run"])
+        self.assertFalse(runtime["require_step_selection_for_live"])
+        self.assertFalse(runtime["allow_fallback_in_live"])
+        self.assertEqual(runtime["allowed_live_steps"], [])
+        self.assertFalse(payload["integrations"]["github"]["useOriginRemoteFallback"])
 
     async def test_bootstrap_rejects_in_repo_config_override_that_changes_artifacts_root(self) -> None:
         alt_dir = os.path.join(self.repo_path, "configs")
@@ -387,6 +476,58 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         file_payload = await file_response.json()
         self.assertIn("hello prompt", file_payload["content"])
 
+    async def test_history_endpoint_skips_files_that_disappear_during_listing(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-list-race")
+        prompt_path = Path(run_dir) / "prompts" / "implement.txt"
+        os.makedirs(prompt_path.parent, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-list-race", "plan": [], "results": [], "success": True}, handle)
+        with open(os.path.join(run_dir, "context.json"), "w", encoding="utf-8") as handle:
+            json.dump({"repo_path": self.repo_path, "user_request": "demo"}, handle)
+        prompt_path.write_text("hello prompt\n", encoding="utf-8")
+
+        path_cls = prompt_path.__class__
+        real_stat = path_cls.stat
+
+        def flaky_is_file(path_self, *args, **kwargs):
+            return os.path.isfile(path_self)
+
+        def flaky_stat(path_self, *args, **kwargs):
+            if path_self.name == "implement.txt" and path_self.parent.name == "prompts":
+                raise FileNotFoundError("artifact disappeared during listing")
+            return real_stat(path_self, *args, **kwargs)
+
+        with mock.patch.object(path_cls, "is_file", autospec=True, side_effect=flaky_is_file):
+            with mock.patch.object(path_cls, "stat", autospec=True, side_effect=flaky_stat):
+                response = await self.client.get("/api/history/run-list-race")
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["runId"], "run-list-race")
+        self.assertEqual([item["path"] for item in payload["files"]], ["context.json", "summary.json"])
+
+    async def test_history_file_endpoint_returns_content_if_file_disappears_after_read(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-file-race")
+        prompt_text = "hello prompt\n"
+
+        class VanishingArtifact:
+            def read_bytes(self) -> bytes:
+                return prompt_text.encode("utf-8")
+
+            def stat(self):
+                raise FileNotFoundError("artifact disappeared after read")
+
+        with mock.patch("openclaw_v2.web._safe_run_path", return_value=VanishingArtifact()):
+            response = await self.client.get("/api/history/run-file-race/file?path=prompts/implement.txt")
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["path"], "prompts/implement.txt")
+        self.assertEqual(payload["content"], prompt_text)
+        self.assertEqual(payload["size"], len(prompt_text.encode("utf-8")))
+        self.assertFalse(payload["truncated"])
+        self.assertEqual(payload["encoding"], "utf-8")
+
     async def test_history_endpoint_rejects_malformed_summary_json(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-bad-summary")
         os.makedirs(run_dir, exist_ok=True)
@@ -454,6 +595,26 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
 
         with mock.patch.object(Path, "open", autospec=True, side_effect=flaky_open):
             response = await self.client.get("/api/history/run-vanish")
+
+        self.assertEqual(response.status, 404)
+        self.assertIn("Run summary not found", await response.text())
+
+    async def test_history_endpoint_returns_404_if_run_directory_disappears_during_stamp_read(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-stamp-vanish")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-stamp-vanish", "plan": [], "results": [], "success": True}, handle)
+
+        path_cls = Path(self.repo_path).__class__
+        real_stat = path_cls.stat
+
+        def flaky_stat(path_self, *args, **kwargs):
+            if path_self.as_posix().endswith("/run-stamp-vanish"):
+                raise FileNotFoundError("run directory disappeared during stamp read")
+            return real_stat(path_self, *args, **kwargs)
+
+        with mock.patch.object(path_cls, "stat", autospec=True, side_effect=flaky_stat):
+            response = await self.client.get("/api/history/run-stamp-vanish")
 
         self.assertEqual(response.status, 404)
         self.assertIn("Run summary not found", await response.text())
@@ -733,6 +894,35 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         payload = await response.json()
         self.assertEqual(payload["operations"], [])
 
+    async def test_cleanup_endpoint_skips_workspace_manifests_that_disappear_during_read(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-vanish-manifest")
+        workspaces_dir = os.path.join(run_dir, "workspaces")
+        os.makedirs(workspaces_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-vanish-manifest", "plan": [], "results": [], "success": True}, handle)
+        manifest_path = os.path.join(workspaces_dir, "implement.json")
+        with open(manifest_path, "w", encoding="utf-8") as handle:
+            json.dump({"workspace_path": run_dir, "branch_name": "openclaw-run-vanish-manifest-implement"}, handle)
+
+        path_cls = Path(self.repo_path).__class__
+        real_open = path_cls.open
+
+        def flaky_open(path_self, *args, **kwargs):
+            if path_self.name == "implement.json" and path_self.parent.name == "workspaces":
+                raise FileNotFoundError("workspace manifest disappeared during read")
+            return real_open(path_self, *args, **kwargs)
+
+        with mock.patch.object(path_cls, "open", autospec=True, side_effect=flaky_open):
+            response = await self.client.post(
+                "/api/history/run-vanish-manifest/cleanup",
+                json={"removeWorktrees": True, "removeArtifacts": False},
+                headers=self.housekeeping_headers,
+            )
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["operations"], [])
+
     async def test_cleanup_endpoint_requires_housekeeping_token(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-no-token")
         os.makedirs(run_dir, exist_ok=True)
@@ -868,6 +1058,38 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(os.path.exists(os.path.join(runs_root, "run-c")))
         self.assertFalse(os.path.exists(os.path.join(runs_root, "run-a")))
         self.assertFalse(os.path.exists(os.path.join(runs_root, "run-b")))
+
+    async def test_prune_endpoint_skips_runs_if_run_directory_stat_disappears_during_sort(self) -> None:
+        runs_root = os.path.join(self.repo_path, ".openclaw", "runs")
+        os.makedirs(runs_root, exist_ok=True)
+        for index, run_id in enumerate(["run-a", "run-stat-race", "run-c"], start=1):
+            run_dir = os.path.join(runs_root, run_id)
+            os.makedirs(run_dir, exist_ok=True)
+            with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+                json.dump({"run_id": run_id, "plan": [], "results": [], "success": True}, handle)
+            os.utime(run_dir, (index, index))
+
+        path_cls = Path(self.repo_path).__class__
+        real_stat = path_cls.stat
+
+        def flaky_stat(path_self, *args, **kwargs):
+            if path_self.name == "run-stat-race":
+                raise FileNotFoundError("run disappeared while sorting prune candidates")
+            return real_stat(path_self, *args, **kwargs)
+
+        with mock.patch.object(path_cls, "stat", autospec=True, side_effect=flaky_stat):
+            response = await self.client.post(
+                "/api/history/prune",
+                json={"keepLatest": 0},
+                headers=self.housekeeping_headers,
+            )
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(len(payload["removed"]), 2)
+        self.assertTrue(os.path.exists(os.path.join(runs_root, "run-stat-race")))
+        self.assertFalse(os.path.exists(os.path.join(runs_root, "run-a")))
+        self.assertFalse(os.path.exists(os.path.join(runs_root, "run-c")))
 
     async def test_prune_endpoint_rejects_non_numeric_keep_latest(self) -> None:
         response = await self.client.post(
