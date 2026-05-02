@@ -298,6 +298,44 @@ class PreflightOpenClawTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(checks[0].status, CheckStatus.WARNING)
         self.assertIn("no ready inference provider", checks[0].message)
 
+    def test_hermes_provider_preflight_tolerates_config_disappearing_during_read(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as home_dir:
+            hermes_home = os.path.join(home_dir, ".hermes")
+            os.makedirs(hermes_home, exist_ok=True)
+            config_path = os.path.join(hermes_home, "config.yaml")
+            with open(config_path, "w", encoding="utf-8") as handle:
+                handle.write("model:\n  provider: auto\n  base_url: https://openrouter.ai/api/v1\n")
+            with open(os.path.join(hermes_home, ".env"), "w", encoding="utf-8") as handle:
+                handle.write("OPENROUTER_API_KEY=test-key\n")
+
+            real_open = open
+
+            def flaky_open(file, *args, **kwargs):
+                if os.fspath(file) == config_path:
+                    raise FileNotFoundError("hermes config disappeared during read")
+                return real_open(file, *args, **kwargs)
+
+            with mock.patch.dict("os.environ", {"HOME": home_dir}, clear=True):
+                with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/hermes"):
+                    with mock.patch("builtins.open", side_effect=flaky_open):
+                        checks = runner._check_hermes_profiles(plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.PASSED)
+        self.assertIn("usable inference provider path", checks[0].message)
+
     def test_hermes_provider_preflight_checks_tool_call_support_for_custom_endpoint(self) -> None:
         config = load_app_config("config_v2.yaml")
         runner = PreflightRunner(config)

@@ -386,6 +386,8 @@ class PreflightRunner:
                 loaded = _load_yaml(config_path)
                 if isinstance(loaded, dict):
                     config_data = loaded
+            except (FileNotFoundError, OSError):
+                config_data = {}
             except Exception as error:
                 status = CheckStatus.WARNING if self.config.runtime.dry_run else CheckStatus.FAILED
                 checks.append(

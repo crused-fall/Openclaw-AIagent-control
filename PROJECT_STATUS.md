@@ -94,6 +94,7 @@
 - Web UI 的 history 文件枚举现在会把 artifact tree glob 失败收敛成空列表，不再把目录级竞态顶成 `404`
 - Web UI 的 cleanup manifest 枚举现在会把 workspace glob 失败收敛成空列表，不再把 manifest 竞态顶成 `404`
 - Hermes preflight 的 `.env` 读取现在也会把文件在 exists/open 之间消失收敛成空值，不再把 Hermes 前置检查拖成异常
+- Hermes preflight 的 `config.yaml` 读取现在也会把文件在 exists/open 之间消失收敛成空配置，不再把 Hermes 前置检查拖成异常
 - Web UI 的历史与概览里，`success` / `dry_run` 这类状态位现在只认真正的 JSON 布尔值，字符串值不再被误报为 `true`
 - Web UI 的 history compare 现在会对 malformed `statusCounts` / `workflow` / `sessionCount` 做保守降级，避免比较摘要被坏字段拖垮
 - Web UI 的 history compare 现在也会保守忽略非列表的 `plan/results`，避免摘要里的结构异常拖出 `500`
