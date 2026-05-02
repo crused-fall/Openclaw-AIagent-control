@@ -876,6 +876,27 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["runId"], "run-cleanup")
         self.assertFalse(os.path.exists(run_dir))
 
+    async def test_cleanup_endpoint_tolerates_run_directory_disappearing_before_artifact_delete(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-cleanup-race")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-cleanup-race", "plan": [], "results": [], "success": True}, handle)
+
+        def flaky_rmtree(path, *args, **kwargs):
+            raise FileNotFoundError("run directory disappeared before artifact delete")
+
+        with mock.patch("openclaw_v2.web.shutil.rmtree", side_effect=flaky_rmtree):
+            response = await self.client.post(
+                "/api/history/run-cleanup-race/cleanup",
+                json={"removeWorktrees": False, "removeArtifacts": True},
+                headers=self.housekeeping_headers,
+            )
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["runId"], "run-cleanup-race")
+        self.assertTrue(any(item["type"] == "artifacts_delete" for item in payload["operations"]))
+
     async def test_cleanup_endpoint_skips_invalid_utf8_workspace_manifests(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-invalid-manifest")
         workspaces_dir = os.path.join(run_dir, "workspaces")

@@ -992,17 +992,36 @@ def _cleanup_run_resources(
                 )
 
     if remove_artifacts and run_dir.exists():
-        shutil.rmtree(run_dir, ignore_errors=False)
-        operations.append(
-            {
-                "type": "artifacts_delete",
-                "path": str(run_dir),
-                "ok": True,
-                "exitCode": 0,
-                "stdout": "",
-                "stderr": "",
-            }
-        )
+        try:
+            shutil.rmtree(run_dir, ignore_errors=False)
+        except FileNotFoundError:
+            operations.append(
+                _cleanup_skip(
+                    "artifacts_delete",
+                    "Run directory is already absent.",
+                    path=str(run_dir),
+                )
+            )
+        except OSError as error:
+            operations.append(
+                _cleanup_skip(
+                    "artifacts_delete",
+                    "Run directory could not be removed.",
+                    path=str(run_dir),
+                    error=str(error),
+                )
+            )
+        else:
+            operations.append(
+                {
+                    "type": "artifacts_delete",
+                    "path": str(run_dir),
+                    "ok": True,
+                    "exitCode": 0,
+                    "stdout": "",
+                    "stderr": "",
+                }
+            )
 
     return {
         "runId": run_dir.name,
