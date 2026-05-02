@@ -88,6 +88,7 @@
 - Web UI 的 history 详情页现在也会把 run 目录在更新时间戳阶段消失收敛成 404，避免目录级竞态冒成 `500`
 - Web UI 的 recent runs 现在也会把 `preflight.json` 在读取时消失收敛成缺失预检，避免首页因为预检竞态冒成 `500`
 - Web UI 的 cleanup manifest 读取现在也会跳过在读取时消失的 workspace manifest，避免 housekeeping 因竞态冒成 `500`
+- Web UI 的 cleanup artifact 删除现在也会把 run 目录在删除时消失收敛成已缺失，不再把 housekeeping 因竞态拖成 `500`
 - Web UI 的历史与概览里，`success` / `dry_run` 这类状态位现在只认真正的 JSON 布尔值，字符串值不再被误报为 `true`
 - Web UI 的 history compare 现在会对 malformed `statusCounts` / `workflow` / `sessionCount` 做保守降级，避免比较摘要被坏字段拖垮
 - Web UI 的 history compare 现在也会保守忽略非列表的 `plan/results`，避免摘要里的结构异常拖出 `500`
