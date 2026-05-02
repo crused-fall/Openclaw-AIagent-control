@@ -389,16 +389,19 @@ class PreflightRunner:
             except (FileNotFoundError, OSError):
                 config_data = {}
             except Exception as error:
-                status = CheckStatus.WARNING if self.config.runtime.dry_run else CheckStatus.FAILED
-                checks.append(
-                    PreflightCheck(
-                        name="hermes_config",
-                        status=status,
-                        message=f"Hermes config could not be parsed: {error}",
-                        details={"config_path": config_path},
+                if not os.path.exists(config_path):
+                    config_data = {}
+                else:
+                    status = CheckStatus.WARNING if self.config.runtime.dry_run else CheckStatus.FAILED
+                    checks.append(
+                        PreflightCheck(
+                            name="hermes_config",
+                            status=status,
+                            message=f"Hermes config could not be parsed: {error}",
+                            details={"config_path": config_path},
+                        )
                     )
-                )
-                return checks
+                    return checks
 
         env_values = self._load_env_file_values(env_path)
         model_config = config_data.get("model", {})
