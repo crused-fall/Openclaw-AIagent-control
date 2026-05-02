@@ -611,16 +611,19 @@ class PreflightRunner:
         if not os.path.exists(path):
             return values
 
-        with open(path, "r", encoding="utf-8") as handle:
-            for raw_line in handle:
-                line = raw_line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                key = key.strip()
-                if not key or key in values:
-                    continue
-                values[key] = value.strip().strip('"').strip("'")
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                for raw_line in handle:
+                    line = raw_line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    if not key or key in values:
+                        continue
+                    values[key] = value.strip().strip('"').strip("'")
+        except (FileNotFoundError, OSError):
+            return values
         return values
 
     @staticmethod
