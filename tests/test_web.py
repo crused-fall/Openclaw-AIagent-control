@@ -528,6 +528,25 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(payload["truncated"])
         self.assertEqual(payload["encoding"], "utf-8")
 
+    async def test_history_file_endpoint_uses_original_size_when_stat_disappears_after_truncation(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-truncated-race")
+        prompt_text = "x" * 200_100
+
+        class TruncatedArtifact:
+            def read_bytes(self) -> bytes:
+                return prompt_text.encode("utf-8")
+
+            def stat(self):
+                raise FileNotFoundError("artifact disappeared after truncation")
+
+        with mock.patch("openclaw_v2.web._safe_run_path", return_value=TruncatedArtifact()):
+            response = await self.client.get("/api/history/run-truncated-race/file?path=prompts/implement.txt")
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["size"], len(prompt_text.encode("utf-8")))
+        self.assertTrue(payload["truncated"])
+
     async def test_history_endpoint_rejects_malformed_summary_json(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-bad-summary")
         os.makedirs(run_dir, exist_ok=True)
@@ -896,6 +915,27 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         payload = await response.json()
         self.assertEqual(payload["runId"], "run-cleanup-race")
         self.assertTrue(any(item["type"] == "artifacts_delete" for item in payload["operations"]))
+
+    async def test_cleanup_endpoint_marks_artifact_delete_errors_as_failures(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-cleanup-failure")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-cleanup-failure", "plan": [], "results": [], "success": True}, handle)
+
+        with mock.patch("openclaw_v2.web.shutil.rmtree", side_effect=PermissionError("denied")):
+            response = await self.client.post(
+                "/api/history/run-cleanup-failure/cleanup",
+                json={"removeWorktrees": False, "removeArtifacts": True},
+                headers=self.housekeeping_headers,
+            )
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        artifact_ops = [item for item in payload["operations"] if item["type"] == "artifacts_delete"]
+        self.assertEqual(len(artifact_ops), 1)
+        self.assertFalse(artifact_ops[0]["ok"])
+        self.assertNotIn("skipped", artifact_ops[0])
+        self.assertIn("denied", artifact_ops[0]["stderr"])
 
     async def test_cleanup_endpoint_skips_invalid_utf8_workspace_manifests(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-invalid-manifest")

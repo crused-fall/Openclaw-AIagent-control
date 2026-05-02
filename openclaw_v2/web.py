@@ -818,8 +818,9 @@ def _load_run_workspace_manifests(run_dir: Path) -> list[dict[str, Any]]:
 def _read_artifact_file(run_dir: Path, relative_path: str, limit: int = 200_000) -> dict[str, Any]:
     target = _safe_run_path(run_dir, relative_path)
     raw = target.read_bytes()
+    raw_size = len(raw)
     truncated = False
-    if len(raw) > limit:
+    if raw_size > limit:
         raw = raw[:limit]
         truncated = True
     try:
@@ -828,7 +829,7 @@ def _read_artifact_file(run_dir: Path, relative_path: str, limit: int = 200_000)
     except UnicodeDecodeError:
         content = raw.decode("utf-8", errors="replace")
         encoding = "utf-8-replaced"
-    size = len(raw)
+    size = raw_size
     try:
         size = target.stat().st_size
     except OSError:
@@ -867,6 +868,19 @@ def _cleanup_skip(operation_type: str, reason: str, **details: Any) -> dict[str,
         "exitCode": None,
         "stdout": "",
         "stderr": "",
+    }
+    payload.update(details)
+    return payload
+
+
+def _cleanup_failure(operation_type: str, reason: str, *, error: str, **details: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "type": operation_type,
+        "ok": False,
+        "reason": reason,
+        "exitCode": 1,
+        "stdout": "",
+        "stderr": error,
     }
     payload.update(details)
     return payload
@@ -1004,11 +1018,11 @@ def _cleanup_run_resources(
             )
         except OSError as error:
             operations.append(
-                _cleanup_skip(
+                _cleanup_failure(
                     "artifacts_delete",
                     "Run directory could not be removed.",
-                    path=str(run_dir),
                     error=str(error),
+                    path=str(run_dir),
                 )
             )
         else:
