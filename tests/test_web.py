@@ -607,6 +607,77 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(payload["runs"][0]["success"])
         self.assertFalse(payload["runs"][1]["success"])
 
+    async def test_history_compare_tolerates_malformed_insight_counts(self) -> None:
+        malformed_left = {
+            "runId": "left",
+            "updatedAt": "2026-05-01T00:00:00Z",
+            "summary": {"plan": [], "results": [], "success": True},
+            "context": {"user_request": "alpha"},
+            "insights": {
+                "statusCounts": {"succeeded": "oops"},
+                "github": {"branch": "branch-a", "workflow": "not-an-object"},
+                "hermes": {"sessionCount": "bad"},
+            },
+        }
+        malformed_right = {
+            "runId": "right",
+            "updatedAt": "2026-05-01T00:00:00Z",
+            "summary": {"plan": [], "results": [], "success": True},
+            "context": {"user_request": "beta"},
+            "insights": {
+                "statusCounts": {"succeeded": "still-bad"},
+                "github": {"branch": "branch-a", "workflow": "also-not-an-object"},
+                "hermes": {"sessionCount": "still-bad"},
+            },
+        }
+
+        with mock.patch(
+            "openclaw_v2.web._read_run_history",
+            side_effect=[malformed_left, malformed_right],
+        ):
+            response = await self.client.post("/api/history/compare", json={"runIds": ["left", "right"]})
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["comparison"]["hermesSessionDelta"], 0)
+        self.assertEqual(payload["comparison"]["countDiffs"][0]["left"], 0)
+        self.assertEqual(payload["comparison"]["countDiffs"][0]["right"], 0)
+
+    async def test_history_compare_tolerates_non_list_summary_sections(self) -> None:
+        malformed_left = {
+            "runId": "left",
+            "updatedAt": "2026-05-01T00:00:00Z",
+            "summary": {"plan": {}, "results": {}, "success": True},
+            "context": {"user_request": "alpha"},
+            "insights": {
+                "statusCounts": {},
+                "github": {"branch": "branch-a"},
+                "hermes": {"sessionCount": 0},
+            },
+        }
+        malformed_right = {
+            "runId": "right",
+            "updatedAt": "2026-05-01T00:00:00Z",
+            "summary": {"plan": {}, "results": {}, "success": True},
+            "context": {"user_request": "beta"},
+            "insights": {
+                "statusCounts": {},
+                "github": {"branch": "branch-b"},
+                "hermes": {"sessionCount": 0},
+            },
+        }
+
+        with mock.patch(
+            "openclaw_v2.web._read_run_history",
+            side_effect=[malformed_left, malformed_right],
+        ):
+            response = await self.client.post("/api/history/compare", json={"runIds": ["left", "right"]})
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["comparison"]["stepDiffs"], [])
+        self.assertTrue(payload["comparison"]["branchChanged"])
+
     async def test_history_compare_endpoint_rejects_invalid_run_ids_payloads(self) -> None:
         response = await self.client.post("/api/history/compare", json={"runIds": "run-a"})
         self.assertEqual(response.status, 400)

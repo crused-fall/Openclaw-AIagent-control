@@ -128,6 +128,12 @@ def _json_string_list(value: Any) -> list[str]:
     return [item.strip() for item in value if isinstance(item, str) and item.strip()]
 
 
+def _json_int_value(value: Any, default: int = 0) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return default
+    return value
+
+
 def _resolve_user_path(raw_path: str, base_path: str | None = None) -> str:
     expanded = os.path.expanduser((raw_path or "").strip())
     if not expanded:
@@ -605,8 +611,8 @@ def _summarize_run_insights(
 
 
 def _compare_run_histories(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
-    left_summary = left.get("summary", {}) if isinstance(left.get("summary"), dict) else {}
-    right_summary = right.get("summary", {}) if isinstance(right.get("summary"), dict) else {}
+    left_summary = _json_object_value(left.get("summary"))
+    right_summary = _json_object_value(right.get("summary"))
     left_status_map = _step_status_map(left_summary)
     right_status_map = _step_status_map(right_summary)
     ordered_steps: list[str] = []
@@ -623,15 +629,17 @@ def _compare_run_histories(left: dict[str, Any], right: dict[str, Any]) -> dict[
             if step_id and step_id not in ordered_steps:
                 ordered_steps.append(step_id)
 
-    left_counts = left.get("insights", {}).get("statusCounts", {})
-    right_counts = right.get("insights", {}).get("statusCounts", {})
+    left_insights = _json_object_value(left.get("insights"))
+    right_insights = _json_object_value(right.get("insights"))
+    left_counts = _json_object_value(left_insights.get("statusCounts"))
+    right_counts = _json_object_value(right_insights.get("statusCounts"))
     count_statuses = sorted(set(left_counts) | set(right_counts))
     count_diffs = [
         {
             "status": status,
-            "left": int(left_counts.get(status, 0)),
-            "right": int(right_counts.get(status, 0)),
-            "delta": int(right_counts.get(status, 0)) - int(left_counts.get(status, 0)),
+            "left": _json_int_value(left_counts.get(status, 0)),
+            "right": _json_int_value(right_counts.get(status, 0)),
+            "delta": _json_int_value(right_counts.get(status, 0)) - _json_int_value(left_counts.get(status, 0)),
         }
         for status in count_statuses
     ]
@@ -644,21 +652,22 @@ def _compare_run_histories(left: dict[str, Any], right: dict[str, Any]) -> dict[
         for step_id in ordered_steps
         if left_status_map.get(step_id, "missing") != right_status_map.get(step_id, "missing")
     ]
-    left_github = left.get("insights", {}).get("github", {})
-    right_github = right.get("insights", {}).get("github", {})
-    left_hermes = left.get("insights", {}).get("hermes", {})
-    right_hermes = right.get("insights", {}).get("hermes", {})
+    left_github = _json_object_value(left_insights.get("github"))
+    right_github = _json_object_value(right_insights.get("github"))
+    left_workflow = _json_object_value(left_github.get("workflow"))
+    right_workflow = _json_object_value(right_github.get("workflow"))
+    left_hermes = _json_object_value(left_insights.get("hermes"))
+    right_hermes = _json_object_value(right_insights.get("hermes"))
     return {
         "countDiffs": count_diffs,
         "stepDiffs": step_diffs,
         "branchChanged": left_github.get("branch", "") != right_github.get("branch", ""),
         "workflowChanged": (
-            (left_github.get("workflow") or {}).get("id", "")
-            != (right_github.get("workflow") or {}).get("id", "")
+            left_workflow.get("id", "")
+            != right_workflow.get("id", "")
         ),
-        "hermesSessionDelta": int(right_hermes.get("sessionCount", 0)) - int(
-            left_hermes.get("sessionCount", 0)
-        ),
+        "hermesSessionDelta": _json_int_value(right_hermes.get("sessionCount", 0))
+        - _json_int_value(left_hermes.get("sessionCount", 0)),
     }
 
 

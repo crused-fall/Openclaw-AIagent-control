@@ -84,6 +84,8 @@
 - Web UI 的 recent runs / cleanup manifest 读取现在也会跳过坏字节输入，避免 `summary.json` / workspace manifest 的编码错误拖垮页面
 - Web UI 的 recent runs / history 读取现在能容忍 `summary.json` 在扫描或读取间消失，避免竞争条件把页面拖成 `500`
 - Web UI 的历史与概览里，`success` / `dry_run` 这类状态位现在只认真正的 JSON 布尔值，字符串值不再被误报为 `true`
+- Web UI 的 history compare 现在会对 malformed `statusCounts` / `workflow` / `sessionCount` 做保守降级，避免比较摘要被坏字段拖垮
+- Web UI 的 history compare 现在也会保守忽略非列表的 `plan/results`，避免摘要里的结构异常拖出 `500`
 - Web API 的任务创建现在会拒绝非布尔的 `live`，避免字符串值误入 live 模式
 - Web API 的任务创建现在会严格校验 `steps` 形状，避免非字符串列表项进入后台执行
 - Web API 的任务创建现在会在入队前拒绝空请求文本和未知 step id，避免先返回 `202` 再异步失败
