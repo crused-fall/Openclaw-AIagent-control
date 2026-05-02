@@ -581,7 +581,7 @@ def _summarize_run_insights(
 
     return {
         "request": str(context.get("user_request", "")).strip(),
-        "dryRun": bool(context.get("dry_run", False)),
+        "dryRun": _json_bool_value(context.get("dry_run", False)),
         "stepIds": step_ids,
         "statusCounts": status_counts,
         "modeCounts": mode_counts,
@@ -688,7 +688,7 @@ def _summarize_recent_runs(
         try:
             with summary_path.open("r", encoding="utf-8") as handle:
                 summary = json.load(handle)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (FileNotFoundError, OSError, json.JSONDecodeError, UnicodeDecodeError):
             continue
         if not isinstance(summary, dict):
             continue
@@ -698,7 +698,7 @@ def _summarize_recent_runs(
             try:
                 with context_path.open("r", encoding="utf-8") as handle:
                     context = json.load(handle)
-            except (json.JSONDecodeError, UnicodeDecodeError):
+            except (FileNotFoundError, OSError, json.JSONDecodeError, UnicodeDecodeError):
                 context = {}
             if not isinstance(context, dict):
                 context = {}
@@ -710,17 +710,22 @@ def _summarize_recent_runs(
             status = str(item.get("status", "unknown"))
             status_counts[status] = status_counts.get(status, 0) + 1
 
+        try:
+            updated_at = datetime.fromtimestamp(run_dir.stat().st_mtime, timezone.utc).isoformat()
+        except OSError:
+            continue
+
         runs.append(
             {
                 "runId": summary.get("run_id", run_dir.name),
-                "success": bool(summary.get("success", False)),
+                "success": _json_bool_value(summary.get("success", False)),
                 "artifactsDir": str(run_dir),
                 "request": context.get("user_request", ""),
                 "repoPath": context.get("repo_path", ""),
                 "stepCount": len(_summary_plan(summary)),
                 "resultCount": len(results),
                 "statusCounts": status_counts,
-                "updatedAt": datetime.fromtimestamp(run_dir.stat().st_mtime, timezone.utc).isoformat(),
+                "updatedAt": updated_at,
                 "insights": _summarize_run_insights(
                     summary,
                     context,
@@ -1453,6 +1458,8 @@ def _read_run_history(
     try:
         with summary_path.open("r", encoding="utf-8") as handle:
             summary = json.load(handle)
+    except (FileNotFoundError, OSError) as error:
+        raise FileNotFoundError(f"Run summary not found for {run_id}.") from error
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError(f"Run summary is not valid JSON for {run_id}.") from error
     if not isinstance(summary, dict):
@@ -1464,8 +1471,8 @@ def _read_run_history(
         try:
             with context_path.open("r", encoding="utf-8") as handle:
                 context = json.load(handle)
-        except (json.JSONDecodeError, UnicodeDecodeError) as error:
-            raise ValueError(f"Run context is not valid JSON for {run_id}.") from error
+        except (FileNotFoundError, OSError, json.JSONDecodeError, UnicodeDecodeError):
+            context = {}
         if not isinstance(context, dict):
             raise ValueError(f"Run context must be a JSON object for {run_id}.")
 
@@ -1820,7 +1827,7 @@ async def _history_compare_handler(request: web.Request) -> web.Response:
                     "runId": left["runId"],
                     "updatedAt": left["updatedAt"],
                     "request": left["context"].get("user_request", ""),
-                    "success": bool(left.get("summary", {}).get("success", False)),
+                    "success": _json_bool_value(left.get("summary", {}).get("success", False)),
                     "stepCount": len(_summary_plan(left.get("summary", {}))),
                     "insights": left["insights"],
                 },
@@ -1828,7 +1835,7 @@ async def _history_compare_handler(request: web.Request) -> web.Response:
                     "runId": right["runId"],
                     "updatedAt": right["updatedAt"],
                     "request": right["context"].get("user_request", ""),
-                    "success": bool(right.get("summary", {}).get("success", False)),
+                    "success": _json_bool_value(right.get("summary", {}).get("success", False)),
                     "stepCount": len(_summary_plan(right.get("summary", {}))),
                     "insights": right["insights"],
                 },

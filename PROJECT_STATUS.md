@@ -82,6 +82,8 @@
 - Web UI 的 run history / recent runs 读取现在会把损坏、非对象、或嵌套 `plan/results` 形状异常的 run 元数据做保守降级处理；损坏的 `preflight.json` 会按缺失处理，避免浏览历史时炸出 `500`
 - Web UI 的 health snapshot 现在会对 `openclaw health --json` 的 `channelOrder` / `channels` / `agents` / `defaultAgentId` 做保守解析，避免健康页被坏 payload 拖成 `500`
 - Web UI 的 recent runs / cleanup manifest 读取现在也会跳过坏字节输入，避免 `summary.json` / workspace manifest 的编码错误拖垮页面
+- Web UI 的 recent runs / history 读取现在能容忍 `summary.json` 在扫描或读取间消失，避免竞争条件把页面拖成 `500`
+- Web UI 的历史与概览里，`success` / `dry_run` 这类状态位现在只认真正的 JSON 布尔值，字符串值不再被误报为 `true`
 - Web API 的任务创建现在会拒绝非布尔的 `live`，避免字符串值误入 live 模式
 - Web API 的任务创建现在会严格校验 `steps` 形状，避免非字符串列表项进入后台执行
 - Web API 的任务创建现在会在入队前拒绝空请求文本和未知 step id，避免先返回 `202` 再异步失败

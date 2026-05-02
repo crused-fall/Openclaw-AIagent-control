@@ -4,6 +4,7 @@ import os
 import tempfile
 import textwrap
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from aiohttp.test_utils import TestClient, TestServer
@@ -238,6 +239,26 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         payload = await response.json()
         self.assertFalse(any(item["runId"] == "run-bad-bytes" for item in payload["recentRuns"]))
 
+    async def test_bootstrap_skips_runs_if_summary_disappears_during_read(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-vanish")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-vanish", "plan": [], "results": [], "success": True}, handle)
+
+        real_open = Path.open
+
+        def flaky_open(path_self, *args, **kwargs):
+            if path_self.as_posix().endswith("/run-vanish/summary.json"):
+                raise FileNotFoundError("summary disappeared")
+            return real_open(path_self, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", autospec=True, side_effect=flaky_open):
+            response = await self.client.get("/api/bootstrap")
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertFalse(any(item["runId"] == "run-vanish" for item in payload["recentRuns"]))
+
     async def test_bootstrap_tolerates_non_list_summary_sections(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-weird-summary")
         os.makedirs(run_dir, exist_ok=True)
@@ -250,6 +271,33 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         recent = next(item for item in payload["recentRuns"] if item["runId"] == "run-weird-summary")
         self.assertEqual(recent["stepCount"], 0)
         self.assertEqual(recent["resultCount"], 0)
+
+    async def test_bootstrap_and_history_treat_string_flags_conservatively(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-string-flags")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "run_id": "run-string-flags",
+                    "plan": [],
+                    "results": [],
+                    "success": "false",
+                },
+                handle,
+            )
+        with open(os.path.join(run_dir, "context.json"), "w", encoding="utf-8") as handle:
+            json.dump({"repo_path": self.repo_path, "user_request": "flag demo", "dry_run": "false"}, handle)
+
+        bootstrap_response = await self.client.get("/api/bootstrap")
+        self.assertEqual(bootstrap_response.status, 200)
+        bootstrap_payload = await bootstrap_response.json()
+        bootstrap_recent = next(item for item in bootstrap_payload["recentRuns"] if item["runId"] == "run-string-flags")
+        self.assertFalse(bootstrap_recent["success"])
+
+        history_response = await self.client.get("/api/history/run-string-flags")
+        self.assertEqual(history_response.status, 200)
+        history_payload = await history_response.json()
+        self.assertFalse(history_payload["insights"]["dryRun"])
 
     async def test_bootstrap_rejects_in_repo_config_override_that_changes_artifacts_root(self) -> None:
         alt_dir = os.path.join(self.repo_path, "configs")
@@ -391,6 +439,25 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         payload = await response.json()
         self.assertIsNone(payload["preflight"])
 
+    async def test_history_endpoint_returns_404_if_summary_disappears_during_read(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-vanish")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-vanish", "plan": [], "results": [], "success": True}, handle)
+
+        real_open = Path.open
+
+        def flaky_open(path_self, *args, **kwargs):
+            if path_self.as_posix().endswith("/run-vanish/summary.json"):
+                raise FileNotFoundError("summary disappeared")
+            return real_open(path_self, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", autospec=True, side_effect=flaky_open):
+            response = await self.client.get("/api/history/run-vanish")
+
+        self.assertEqual(response.status, 404)
+        self.assertIn("Run summary not found", await response.text())
+
     async def test_history_endpoint_tolerates_non_list_summary_sections(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-weird-summary")
         os.makedirs(run_dir, exist_ok=True)
@@ -485,6 +552,60 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(payload["comparison"]["branchChanged"])
         self.assertEqual(payload["comparison"]["hermesSessionDelta"], 1)
         self.assertTrue(any(item["stepId"] == "publish_branch" for item in payload["comparison"]["stepDiffs"]))
+
+    async def test_history_compare_treats_string_success_flags_conservatively(self) -> None:
+        runs_root = os.path.join(self.repo_path, ".openclaw", "runs")
+        os.makedirs(runs_root, exist_ok=True)
+
+        run_a = os.path.join(runs_root, "run-string-a")
+        os.makedirs(run_a, exist_ok=True)
+        with open(os.path.join(run_a, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "run_id": "run-string-a",
+                    "plan": [{"id": "publish_branch", "title": "Publish branch"}],
+                    "results": [
+                        {
+                            "work_item_id": "publish_branch",
+                            "status": "succeeded",
+                            "mode": "cli",
+                            "artifacts": {"source_branch": "branch-a"},
+                        }
+                    ],
+                    "success": "true",
+                },
+                handle,
+            )
+        with open(os.path.join(run_a, "context.json"), "w", encoding="utf-8") as handle:
+            json.dump({"repo_path": self.repo_path, "user_request": "alpha"}, handle)
+
+        run_b = os.path.join(runs_root, "run-string-b")
+        os.makedirs(run_b, exist_ok=True)
+        with open(os.path.join(run_b, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "run_id": "run-string-b",
+                    "plan": [{"id": "publish_branch", "title": "Publish branch"}],
+                    "results": [
+                        {
+                            "work_item_id": "publish_branch",
+                            "status": "blocked",
+                            "mode": "cli",
+                            "artifacts": {"source_branch": "branch-b"},
+                        }
+                    ],
+                    "success": "false",
+                },
+                handle,
+            )
+        with open(os.path.join(run_b, "context.json"), "w", encoding="utf-8") as handle:
+            json.dump({"repo_path": self.repo_path, "user_request": "beta"}, handle)
+
+        response = await self.client.post("/api/history/compare", json={"runIds": ["run-string-a", "run-string-b"]})
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertFalse(payload["runs"][0]["success"])
+        self.assertFalse(payload["runs"][1]["success"])
 
     async def test_history_compare_endpoint_rejects_invalid_run_ids_payloads(self) -> None:
         response = await self.client.post("/api/history/compare", json={"runIds": "run-a"})
