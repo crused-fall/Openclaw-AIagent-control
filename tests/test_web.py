@@ -506,6 +506,30 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["runId"], "run-list-race")
         self.assertEqual([item["path"] for item in payload["files"]], ["context.json", "summary.json"])
 
+    async def test_history_endpoint_tolerates_artifact_tree_glob_failure(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-rglob-race")
+        os.makedirs(os.path.join(run_dir, "prompts"), exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-rglob-race", "plan": [], "results": [], "success": True}, handle)
+        with open(os.path.join(run_dir, "context.json"), "w", encoding="utf-8") as handle:
+            json.dump({"repo_path": self.repo_path, "user_request": "demo"}, handle)
+
+        path_cls = Path(self.repo_path).__class__
+        real_rglob = path_cls.rglob
+
+        def flaky_rglob(path_self, pattern):
+            if path_self.name == "run-rglob-race":
+                raise FileNotFoundError("artifact tree disappeared during glob")
+            return real_rglob(path_self, pattern)
+
+        with mock.patch.object(path_cls, "rglob", autospec=True, side_effect=flaky_rglob):
+            response = await self.client.get("/api/history/run-rglob-race")
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["runId"], "run-rglob-race")
+        self.assertEqual(payload["files"], [])
+
     async def test_history_file_endpoint_returns_content_if_file_disappears_after_read(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-file-race")
         prompt_text = "hello prompt\n"
@@ -976,6 +1000,32 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(path_cls, "open", autospec=True, side_effect=flaky_open):
             response = await self.client.post(
                 "/api/history/run-vanish-manifest/cleanup",
+                json={"removeWorktrees": True, "removeArtifacts": False},
+                headers=self.housekeeping_headers,
+            )
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["operations"], [])
+
+    async def test_cleanup_endpoint_tolerates_workspace_manifest_glob_failure(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-glob-race")
+        workspaces_dir = os.path.join(run_dir, "workspaces")
+        os.makedirs(workspaces_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-glob-race", "plan": [], "results": [], "success": True}, handle)
+
+        path_cls = Path(self.repo_path).__class__
+        real_glob = path_cls.glob
+
+        def flaky_glob(path_self, pattern):
+            if path_self.name == "workspaces" and pattern == "*.json":
+                raise FileNotFoundError("workspace manifest glob disappeared")
+            return real_glob(path_self, pattern)
+
+        with mock.patch.object(path_cls, "glob", autospec=True, side_effect=flaky_glob):
+            response = await self.client.post(
+                "/api/history/run-glob-race/cleanup",
                 json={"removeWorktrees": True, "removeArtifacts": False},
                 headers=self.housekeeping_headers,
             )

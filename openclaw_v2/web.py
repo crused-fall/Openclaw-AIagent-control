@@ -760,10 +760,16 @@ def _list_run_files(run_dir: Path, limit: int = 200) -> list[dict[str, Any]]:
     if not run_dir.exists():
         return []
     files: list[dict[str, Any]] = []
-    for path in sorted([item for item in run_dir.rglob("*") if item.is_file()])[:limit]:
+    try:
+        candidates = sorted(run_dir.rglob("*"))
+    except OSError:
+        return files
+    for path in candidates[:limit]:
         relative = path.relative_to(run_dir).as_posix()
         suffix = path.suffix.lower().lstrip(".")
         try:
+            if not path.is_file():
+                continue
             size = path.stat().st_size
         except OSError:
             continue
@@ -804,7 +810,11 @@ def _load_run_workspace_manifests(run_dir: Path) -> list[dict[str, Any]]:
     manifests: list[dict[str, Any]] = []
     if not workspaces_dir.exists():
         return manifests
-    for path in sorted(workspaces_dir.glob("*.json")):
+    try:
+        paths = sorted(workspaces_dir.glob("*.json"))
+    except OSError:
+        return manifests
+    for path in paths:
         try:
             with path.open("r", encoding="utf-8") as handle:
                 payload = json.load(handle)
