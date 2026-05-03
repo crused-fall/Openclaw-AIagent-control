@@ -71,6 +71,18 @@ class WebUiStaticTests(unittest.TestCase):
         self.assertNotIn('href="${escapeHtml(repoUrl)}"', source)
         self.assertNotIn('href="${escapeHtml(workflow.url)}"', source)
 
+    def test_hermes_panel_uses_overview_roles_and_active_run_roles(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderHermesPanel()", source)
+        self.assertIn("const overview = state.bootstrap?.integrations?.hermes || {};", source)
+        self.assertIn("const roles = hermes.roles || [];", source)
+        self.assertIn("<strong>Roles</strong>", source)
+        self.assertIn("No Hermes managed agent role", source)
+        self.assertIn('roles.length ? `from ${activeRunId()}` : "Load a Hermes-backed run to inspect session traces."', source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,12 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from openclaw_v2.models import AgentResult, AgentType, ExecutionMode, RunResult, TaskStatus, WorkItem
 from openclaw_v2.config import load_app_config
-from openclaw_v2.web import APP_HOUSEKEEPING_TOKEN, APP_TASK_MANAGER, create_web_app
+from openclaw_v2.web import (
+    APP_HOUSEKEEPING_TOKEN,
+    APP_TASK_MANAGER,
+    _summarize_run_insights,
+    create_web_app,
+)
 
 
 def _write_minimal_config(path: str) -> None:
@@ -113,7 +118,6 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("envPath", payload["integrations"]["hermes"])
         self.assertNotIn("managedAgents", payload["snapshot"])
         self.assertNotIn("assignments", payload["snapshot"])
-
     async def test_index_serves_readiness_and_output_controls(self) -> None:
         response = await self.client.get("/")
         self.assertEqual(response.status, 200)
@@ -1713,3 +1717,42 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status, 400)
         self.assertIn("cannot change the worktrees root", await response.text())
+
+
+class WebHermesInsightTests(unittest.TestCase):
+    def test_record_summary_is_classified_as_recorder_in_run_insights(self) -> None:
+        summary = {
+            "results": [
+                {
+                    "work_item_id": "record_summary",
+                    "status": "succeeded",
+                    "artifacts": {
+                        "hermes_session_id": "session-1",
+                        "hermes_provider": "custom",
+                        "hermes_model": "gpt-5",
+                        "hermes_toolsets": ["file"],
+                        "hermes_skills": ["repo-review"],
+                    },
+                },
+                {
+                    "work_item_id": "triage",
+                    "status": "succeeded",
+                    "artifacts": {"hermes_session_id": "session-2"},
+                },
+            ],
+            "plan": [],
+        }
+
+        insights = _summarize_run_insights(
+            summary,
+            {},
+            None,
+            default_github_repo="",
+            github_base_branch="main",
+        )
+
+        roles = {item["stepId"]: item["role"] for item in insights["hermes"]["roles"]}
+        self.assertEqual(roles["record_summary"], "recorder")
+        self.assertEqual(roles["triage"], "supervisor")
+        self.assertEqual(insights["hermes"]["sessionCount"], 2)
+        self.assertTrue(insights["hermes"]["used"])
