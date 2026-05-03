@@ -96,6 +96,7 @@
 - Web UI 的 cleanup artifact 删除在真实 OSError 下会返回 failure 记录，不再伪装成 skipped
 - Web UI 的 history 文件枚举现在会把 artifact tree glob 失败收敛成空列表，不再把目录级竞态顶成 `404`
 - Web UI 的 cleanup manifest 枚举现在会把 workspace glob 失败收敛成空列表，不再把 manifest 竞态顶成 `404`
+- Worktree cleanup 现在会把 `git worktree remove` 在 workspace 已经消失时的错误当成可恢复竞态，继续执行后续分支删除，不再因为工作区先消失就中断整段 cleanup
 - Hermes preflight 的 `.env` 读取现在也会把文件在 exists/open 之间消失收敛成空值，不再把 Hermes 前置检查拖成异常
 - Hermes preflight 的 `config.yaml` 读取现在也会把文件在 exists/open 之间消失收敛成空配置，不再把 Hermes 前置检查拖成异常；这条也覆盖 PyYAML 和 Ruby fallback 解析路径
 - 配置加载器的 Ruby fallback 现在会把“文件在读取时消失”统一成 `FileNotFoundError`，避免调用方把同一个竞态误报成 YAML 解析失败；判定依据是文件当前是否仍然存在，而不是 Ruby stderr 文本
