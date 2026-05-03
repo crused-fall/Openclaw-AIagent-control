@@ -25,6 +25,19 @@ class MainV2PrintTests(unittest.TestCase):
 
         self.assertEqual(output, "")
 
+    def test_print_preflight_tolerates_non_object_report(self) -> None:
+        with (
+            mock.patch("main_v2.os.path.exists", return_value=True),
+            mock.patch("main_v2.open", mock.mock_open(read_data="[]")),
+            mock.patch("main_v2.json.load", return_value=[]),
+            io.StringIO() as buffer,
+            redirect_stdout(buffer),
+        ):
+            _print_preflight("/tmp/run-1")
+            output = buffer.getvalue()
+
+        self.assertEqual(output, "")
+
     def test_print_result_includes_block_reasons(self) -> None:
         run_result = RunResult(
             run_id="run-1",

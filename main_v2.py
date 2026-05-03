@@ -338,6 +338,8 @@ def _print_preflight(artifacts_dir: str) -> None:
             report = json.load(handle)
     except (FileNotFoundError, OSError, json.JSONDecodeError, UnicodeDecodeError):
         return
+    if not isinstance(report, dict):
+        return
 
     print("\nPreflight:")
     for check in report.get("checks", []):
