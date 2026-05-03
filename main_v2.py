@@ -333,8 +333,11 @@ def _print_preflight(artifacts_dir: str) -> None:
     if not os.path.exists(preflight_path):
         return
 
-    with open(preflight_path, "r", encoding="utf-8") as handle:
-        report = json.load(handle)
+    try:
+        with open(preflight_path, "r", encoding="utf-8") as handle:
+            report = json.load(handle)
+    except (FileNotFoundError, OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return
 
     print("\nPreflight:")
     for check in report.get("checks", []):

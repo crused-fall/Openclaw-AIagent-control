@@ -6,13 +6,25 @@ import unittest
 from contextlib import redirect_stdout
 from unittest import mock
 
-from main_v2 import _print_plan_diagnostics, _print_result, _validate_live_policy, main
+from main_v2 import _print_plan_diagnostics, _print_preflight, _print_result, _validate_live_policy, main
 from openclaw_v2.config import load_app_config
 from openclaw_v2.models import AgentResult, AgentType, ExecutionMode, RunResult, TaskStatus, WorkItem
 from openclaw_v2.orchestrator import HybridOrchestrator
 
 
 class MainV2PrintTests(unittest.TestCase):
+    def test_print_preflight_tolerates_report_disappearing_after_exists(self) -> None:
+        with (
+            mock.patch("main_v2.os.path.exists", return_value=True),
+            mock.patch("main_v2.open", side_effect=FileNotFoundError("preflight disappeared")),
+            io.StringIO() as buffer,
+            redirect_stdout(buffer),
+        ):
+            _print_preflight("/tmp/run-1")
+            output = buffer.getvalue()
+
+        self.assertEqual(output, "")
+
     def test_print_result_includes_block_reasons(self) -> None:
         run_result = RunResult(
             run_id="run-1",

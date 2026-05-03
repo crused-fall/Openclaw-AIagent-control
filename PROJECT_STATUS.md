@@ -21,6 +21,7 @@
 - 支持 `--list-managed-agents`、`--doctor-config`、`--diagnose-plan`
 - `--doctor-config` 已有 CLI 回归测试并合并到 main，锁定配置诊断路径不会误进入交互模式
 - CLI 入口现在会把缺失的 `--config` 转成干净的 `SystemExit`，不再直接抛 traceback
+- CLI 的 `_print_preflight()` 现在会把 `preflight.json` 在 exists/open 之间消失或变成不可读的情况安静降级，不再让 run 结束后的预检摘要打印把进程拖成 traceback
 - 支持 `--web` 本地 Mission Control 控制台
 - live 运行时会输出 step 级 progress
 
