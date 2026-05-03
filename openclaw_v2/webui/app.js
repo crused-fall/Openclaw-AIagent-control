@@ -241,6 +241,32 @@ function currentGitHubWorkflow() {
   return activeRunInsights()?.github?.workflow || null;
 }
 
+function formatReviewWorkflowLine(workflow) {
+  if (!workflow) {
+    return "Latest review workflow: n/a";
+  }
+  const label = String(workflow.url || workflow.id || "n/a").trim() || "n/a";
+  const status = String(workflow.status || "").trim();
+  const conclusion = String(workflow.conclusion || "").trim();
+  const failedJobs = Array.isArray(workflow.failedJobs)
+    ? workflow.failedJobs
+    : typeof workflow.failedJobs === "string"
+      ? workflow.failedJobs.split(",")
+      : [];
+  const parts = [];
+  if (status) {
+    parts.push(status);
+  }
+  if (conclusion) {
+    parts.push(conclusion);
+  }
+  const normalizedFailedJobs = failedJobs.map((item) => String(item || "").trim()).filter(Boolean);
+  if (normalizedFailedJobs.length) {
+    parts.push(`failed jobs: ${normalizedFailedJobs.join(", ")}`);
+  }
+  return `Latest review workflow: ${label}${parts.length ? ` · ${parts.join(" · ")}` : ""}`;
+}
+
 function channelHealthStatus(channels) {
   if (!Array.isArray(channels) || !channels.length) {
     return "warning";
@@ -999,6 +1025,7 @@ function renderGitHubBridge() {
         </div>
         <p>${escapeHtml(runId || "No run loaded")}</p>
         <small>${escapeHtml(branch ? `Branch: ${branch}` : "Branch will surface after publish_branch.")}</small>
+        ${workflow ? `<small>${escapeHtml(formatReviewWorkflowLine(workflow))}</small>` : ""}
         ${
           safeWorkflowUrl
             ? `<a class="bridge-link" href="${escapeHtml(safeWorkflowUrl)}" target="_blank" rel="noreferrer">Open latest review workflow</a>`
@@ -1894,7 +1921,7 @@ function generateRunSummaryText() {
     `Success: ${runResult.success ? "yes" : "no"}`,
     `Artifacts: ${runResult.artifacts_dir || "n/a"}`,
     `GitHub bridge: ${bridgeState.label} (${bridgeState.status})`,
-    `Latest review workflow: ${workflow?.url || "n/a"}`,
+    formatReviewWorkflowLine(workflow),
     `Status counts: ${counts}`,
   ];
   if (actionable.length) {
@@ -1924,7 +1951,7 @@ function generateIssueUpdateText() {
     `- Request: ${runPayload.request || "n/a"}`,
     `- Success: ${runResult.success ? "yes" : "no"}`,
     `- GitHub bridge: ${bridgeState.label} (${bridgeState.status})`,
-    `- Latest review workflow: ${workflow?.url || "n/a"}`,
+    `- ${formatReviewWorkflowLine(workflow)}`,
     `- Status counts: ${formatCounts(statusCounts(results))}`,
   ];
   if (actionable.length) {
@@ -1959,7 +1986,7 @@ function generatePrNoteText() {
     `Branch: ${branch || "n/a"}`,
     `Readiness: ${readiness}`,
     `GitHub bridge: ${bridgeState.label} (${bridgeState.status})`,
-    `Latest review workflow: ${workflow?.url || "n/a"}`,
+    formatReviewWorkflowLine(workflow),
     `Status counts: ${formatCounts(statusCounts(runResult.results || []))}`,
   ];
   return lines.join("\n");

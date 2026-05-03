@@ -1756,3 +1756,42 @@ class WebHermesInsightTests(unittest.TestCase):
         self.assertEqual(roles["triage"], "supervisor")
         self.assertEqual(insights["hermes"]["sessionCount"], 2)
         self.assertTrue(insights["hermes"]["used"])
+
+
+class WebGitHubInsightTests(unittest.TestCase):
+    def test_collect_review_failed_jobs_are_preserved_in_run_insights(self) -> None:
+        summary = {
+            "results": [
+                {
+                    "work_item_id": "collect_review",
+                    "status": "failed",
+                    "artifacts": {
+                        "workflow_run_id": "123456789",
+                        "workflow_run_url": "https://github.com/owner/repo/actions/runs/123456789",
+                        "workflow_status": "completed",
+                        "workflow_conclusion": "failure",
+                        "workflow_failed_job_count": 2,
+                        "workflow_failed_jobs": "lint, tests",
+                    },
+                }
+            ],
+            "plan": [],
+        }
+
+        insights = _summarize_run_insights(
+            summary,
+            {},
+            None,
+            default_github_repo="",
+            github_base_branch="main",
+        )
+
+        workflow = insights["github"]["workflow"]
+        cards = insights["github"]["cards"]
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(workflow["conclusion"], "failure")
+        self.assertEqual(workflow["failedJobCount"], 2)
+        self.assertEqual(workflow["failedJobs"], "lint, tests")
+        self.assertEqual(workflow["id"], "123456789")
+        self.assertEqual(cards[0]["workflowFailedJobs"], "lint, tests")
+        self.assertEqual(cards[0]["workflowFailedJobCount"], 2)

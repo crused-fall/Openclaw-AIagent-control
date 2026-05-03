@@ -540,17 +540,23 @@ def _summarize_run_insights(
                 workflow_id = str(artifacts.get("workflow_run_id", "")).strip()
                 workflow_status = str(artifacts.get("workflow_status", "")).strip()
                 workflow_conclusion = str(artifacts.get("workflow_conclusion", "")).strip()
+                workflow_failed_jobs = str(artifacts.get("workflow_failed_jobs", "")).strip()
+                workflow_failed_job_count = _json_int_value(artifacts.get("workflow_failed_job_count", 0))
                 if workflow_url or workflow_id:
                     card["url"] = workflow_url
                     card["number"] = workflow_id
                     card["workflowStatus"] = workflow_status
                     card["workflowConclusion"] = workflow_conclusion
+                    card["workflowFailedJobs"] = workflow_failed_jobs
+                    card["workflowFailedJobCount"] = workflow_failed_job_count
                     github_cards.append(card)
                     github_workflow = {
                         "url": workflow_url,
                         "id": workflow_id,
                         "status": workflow_status,
                         "conclusion": workflow_conclusion,
+                        "failedJobs": workflow_failed_jobs,
+                        "failedJobCount": workflow_failed_job_count,
                         "stepId": work_item_id,
                     }
 
