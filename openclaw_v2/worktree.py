@@ -143,7 +143,11 @@ class WorktreeManager:
             except RuntimeError as error:
                 if not self._workspace_absent_error(str(error)):
                     raise
-            await self._run(cleanup_commands[1])
+            try:
+                await self._run(cleanup_commands[1])
+            except RuntimeError as error:
+                if not self._branch_absent_error(str(error)):
+                    raise
             work_item.metadata["workspace_cleanup_status"] = "completed"
 
     async def _git_repo_root(self, repo_path: str) -> str:
@@ -220,6 +224,19 @@ class WorktreeManager:
                 "not a working tree",
                 "does not exist",
                 "no such file or directory",
+            )
+        )
+
+    @staticmethod
+    def _branch_absent_error(message: str) -> bool:
+        normalized = message.lower()
+        return any(
+            token in normalized
+            for token in (
+                "not found",
+                "does not exist",
+                "no such ref",
+                "unknown branch",
             )
         )
 

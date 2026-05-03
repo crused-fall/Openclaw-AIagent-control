@@ -123,5 +123,55 @@ class WorktreeManagerReuseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(commands[0][3:5], ["worktree", "remove"])
         self.assertEqual(commands[1][3:5], ["branch", "-D"])
         self.assertEqual(work_item.metadata["workspace_cleanup_status"], "completed")
+
+    async def test_cleanup_continues_when_branch_disappears_after_workspace_cleanup(self) -> None:
+        manager = WorktreeManager()
+        context = ExecutionContext(
+            run_id="run-1",
+            user_request="test",
+            repo_path="/tmp/repo",
+            dry_run=False,
+            artifacts_dir="/tmp/artifacts",
+            worktrees_dir="/tmp/worktrees",
+        )
+        with tempfile.TemporaryDirectory() as workspace_path:
+            work_item = WorkItem(
+                id="implement",
+                title="Implement with OpenClaw",
+                profile="openclaw_local",
+                agent=AgentType.OPENCLAW,
+                mode=ExecutionMode.CLI,
+                prompt_template="",
+                workspace_path=workspace_path,
+                branch_name="openclaw-run-1-implement",
+                metadata={
+                    "workspace_strategy": "git-worktree",
+                    "workspace_repo_root": context.repo_path,
+                },
+            )
+
+            commands: list[list[str]] = []
+
+            async def fake_run(command: list[str]) -> None:
+                commands.append(command)
+                if command[3:5] == ["worktree", "remove"]:
+                    raise RuntimeError("workspace already absent")
+                if command[3:5] == ["branch", "-D"]:
+                    raise RuntimeError("error: branch 'openclaw-run-1-implement' not found.")
+
+            with mock.patch.object(WorktreeManager, "_run", side_effect=fake_run):
+                await manager.cleanup(
+                    [work_item],
+                    context,
+                    cleanup_enabled=True,
+                    retain_failed_worktrees=False,
+                    run_success=True,
+                    run_has_failures=False,
+                )
+
+        self.assertEqual(len(commands), 2)
+        self.assertEqual(commands[0][3:5], ["worktree", "remove"])
+        self.assertEqual(commands[1][3:5], ["branch", "-D"])
+        self.assertEqual(work_item.metadata["workspace_cleanup_status"], "completed")
 if __name__ == "__main__":
     unittest.main()
