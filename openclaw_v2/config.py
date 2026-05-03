@@ -808,6 +808,8 @@ def _load_yaml(path: str) -> dict[str, Any]:
         ) from error
     except subprocess.CalledProcessError as error:
         message = error.stderr.strip() or error.stdout.strip() or "Unknown YAML parsing error."
+        if "No such file or directory" in message or "Errno::ENOENT" in message:
+            raise FileNotFoundError(path) from error
         raise RuntimeError(f"Failed to parse YAML config {path}: {message}") from error
 
     data = json.loads(result.stdout or "{}")
