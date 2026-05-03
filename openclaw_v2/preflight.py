@@ -386,17 +386,22 @@ class PreflightRunner:
                 loaded = _load_yaml(config_path)
                 if isinstance(loaded, dict):
                     config_data = loaded
+            except (FileNotFoundError, OSError):
+                config_data = {}
             except Exception as error:
-                status = CheckStatus.WARNING if self.config.runtime.dry_run else CheckStatus.FAILED
-                checks.append(
-                    PreflightCheck(
-                        name="hermes_config",
-                        status=status,
-                        message=f"Hermes config could not be parsed: {error}",
-                        details={"config_path": config_path},
+                if not os.path.exists(config_path):
+                    config_data = {}
+                else:
+                    status = CheckStatus.WARNING if self.config.runtime.dry_run else CheckStatus.FAILED
+                    checks.append(
+                        PreflightCheck(
+                            name="hermes_config",
+                            status=status,
+                            message=f"Hermes config could not be parsed: {error}",
+                            details={"config_path": config_path},
+                        )
                     )
-                )
-                return checks
+                    return checks
 
         env_values = self._load_env_file_values(env_path)
         model_config = config_data.get("model", {})
@@ -498,13 +503,22 @@ class PreflightRunner:
         probe_file = os.path.join(repo_path, "AGENTS.md")
         if not os.path.exists(probe_file):
             probe_file = os.path.join(repo_path, "config_v2.yaml")
+            if not os.path.exists(probe_file):
+                return [
+                    PreflightCheck(
+                        name="hermes_runtime",
+                        status=CheckStatus.WARNING,
+                        message="Hermes runtime probe skipped because no probe file was found in the repository.",
+                        details={"repo_path": repo_path},
+                    )
+                ]
         if not os.path.exists(probe_file):
             return [
                 PreflightCheck(
                     name="hermes_runtime",
                     status=CheckStatus.WARNING,
-                    message="Hermes runtime probe skipped because no probe file was found in the repository.",
-                    details={"repo_path": repo_path},
+                    message="Hermes runtime probe skipped because the probe file disappeared before the read could start.",
+                    details={"repo_path": repo_path, "probe_file": probe_file},
                 )
             ]
 
@@ -611,16 +625,19 @@ class PreflightRunner:
         if not os.path.exists(path):
             return values
 
-        with open(path, "r", encoding="utf-8") as handle:
-            for raw_line in handle:
-                line = raw_line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                key = key.strip()
-                if not key or key in values:
-                    continue
-                values[key] = value.strip().strip('"').strip("'")
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                for raw_line in handle:
+                    line = raw_line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    if not key or key in values:
+                        continue
+                    values[key] = value.strip().strip('"').strip("'")
+        except (FileNotFoundError, OSError):
+            return values
         return values
 
     @staticmethod

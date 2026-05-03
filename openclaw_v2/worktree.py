@@ -138,8 +138,16 @@ class WorktreeManager:
                 work_item.metadata["workspace_cleanup_status"] = "planned"
                 continue
 
-            for command in cleanup_commands:
-                await self._run(command)
+            try:
+                await self._run(cleanup_commands[0])
+            except RuntimeError as error:
+                if not self._workspace_absent_error(str(error)):
+                    raise
+            try:
+                await self._run(cleanup_commands[1])
+            except RuntimeError as error:
+                if not self._branch_absent_error(str(error)):
+                    raise
             work_item.metadata["workspace_cleanup_status"] = "completed"
 
     async def _git_repo_root(self, repo_path: str) -> str:
@@ -205,6 +213,32 @@ class WorktreeManager:
         # Keep orchestration branches flat to avoid git ref file/dir conflicts.
         raw = f"openclaw-{run_id.lower()}-{work_item_id.lower()}"
         return re.sub(r"[^a-z0-9_-]+", "-", raw).strip("-")
+
+    @staticmethod
+    def _workspace_absent_error(message: str) -> bool:
+        normalized = message.lower()
+        return any(
+            token in normalized
+            for token in (
+                "already absent",
+                "not a working tree",
+                "does not exist",
+                "no such file or directory",
+            )
+        )
+
+    @staticmethod
+    def _branch_absent_error(message: str) -> bool:
+        normalized = message.lower()
+        return any(
+            token in normalized
+            for token in (
+                "not found",
+                "does not exist",
+                "no such ref",
+                "unknown branch",
+            )
+        )
 
     @staticmethod
     def _default_base_ref() -> str:

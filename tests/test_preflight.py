@@ -260,6 +260,127 @@ class PreflightOpenClawTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(checks[0].status, CheckStatus.PASSED)
         self.assertIn("usable inference provider path", checks[0].message)
 
+    def test_hermes_provider_preflight_tolerates_env_disappearing_during_read(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as home_dir:
+            hermes_home = os.path.join(home_dir, ".hermes")
+            os.makedirs(hermes_home, exist_ok=True)
+            with open(os.path.join(hermes_home, "config.yaml"), "w", encoding="utf-8") as handle:
+                handle.write("model:\n  provider: auto\n  base_url: https://openrouter.ai/api/v1\n")
+            env_path = os.path.join(hermes_home, ".env")
+            with open(env_path, "w", encoding="utf-8") as handle:
+                handle.write("OPENROUTER_API_KEY=test-key\n")
+
+            real_open = open
+
+            def flaky_open(file, *args, **kwargs):
+                if os.fspath(file) == env_path:
+                    raise FileNotFoundError("hermes env disappeared during read")
+                return real_open(file, *args, **kwargs)
+
+            with mock.patch.dict("os.environ", {"HOME": home_dir}, clear=True):
+                with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/hermes"):
+                    with mock.patch("builtins.open", side_effect=flaky_open):
+                        checks = runner._check_hermes_profiles(plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.WARNING)
+        self.assertIn("no ready inference provider", checks[0].message)
+
+    def test_hermes_provider_preflight_tolerates_config_disappearing_during_read(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as home_dir:
+            hermes_home = os.path.join(home_dir, ".hermes")
+            os.makedirs(hermes_home, exist_ok=True)
+            config_path = os.path.join(hermes_home, "config.yaml")
+            with open(config_path, "w", encoding="utf-8") as handle:
+                handle.write("model:\n  provider: auto\n  base_url: https://openrouter.ai/api/v1\n")
+            with open(os.path.join(hermes_home, ".env"), "w", encoding="utf-8") as handle:
+                handle.write("OPENROUTER_API_KEY=test-key\n")
+
+            real_open = open
+
+            def flaky_open(file, *args, **kwargs):
+                if os.fspath(file) == config_path:
+                    raise FileNotFoundError("hermes config disappeared during read")
+                return real_open(file, *args, **kwargs)
+
+            with mock.patch.dict("os.environ", {"HOME": home_dir}, clear=True):
+                with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/hermes"):
+                    with mock.patch("builtins.open", side_effect=flaky_open):
+                        checks = runner._check_hermes_profiles(plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.PASSED)
+        self.assertIn("usable inference provider path", checks[0].message)
+
+    def test_hermes_provider_preflight_treats_parse_failures_as_missing_config_when_file_disappears(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as home_dir:
+            hermes_home = os.path.join(home_dir, ".hermes")
+            os.makedirs(hermes_home, exist_ok=True)
+            config_path = os.path.join(hermes_home, "config.yaml")
+            with open(config_path, "w", encoding="utf-8") as handle:
+                handle.write("model:\n  provider: auto\n  base_url: https://openrouter.ai/api/v1\n")
+            with open(os.path.join(hermes_home, ".env"), "w", encoding="utf-8") as handle:
+                handle.write("OPENROUTER_API_KEY=test-key\n")
+
+            real_exists = os.path.exists
+            config_exists_calls = 0
+
+            def flaky_exists(path: str) -> bool:
+                nonlocal config_exists_calls
+                if os.fspath(path) == config_path:
+                    config_exists_calls += 1
+                    return config_exists_calls == 1
+                return real_exists(path)
+
+            with mock.patch.dict("os.environ", {"HOME": home_dir}, clear=True):
+                with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/hermes"):
+                    with mock.patch("openclaw_v2.preflight.os.path.exists", side_effect=flaky_exists):
+                        with mock.patch(
+                            "openclaw_v2.preflight._load_yaml",
+                            side_effect=RuntimeError("Failed to parse YAML config /tmp/.hermes/config.yaml: No such file or directory"),
+                        ):
+                            checks = runner._check_hermes_profiles(plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.PASSED)
+        self.assertIn("usable inference provider path", checks[0].message)
+
     def test_hermes_provider_preflight_checks_tool_call_support_for_custom_endpoint(self) -> None:
         config = load_app_config("config_v2.yaml")
         runner = PreflightRunner(config)
@@ -397,6 +518,47 @@ class PreflightOpenClawTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(checks[0].status, CheckStatus.FAILED)
         self.assertIn("runtime probe failed", checks[0].message)
+
+    async def test_hermes_runtime_probe_treats_missing_probe_file_as_warning(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        config.runtime.dry_run = False
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as repo_path:
+            probe_file = os.path.join(repo_path, "AGENTS.md")
+            with open(probe_file, "w", encoding="utf-8") as handle:
+                handle.write("# test\n")
+
+            real_exists = os.path.exists
+            probe_exists_calls = 0
+
+            def flaky_exists(path: str) -> bool:
+                nonlocal probe_exists_calls
+                if os.fspath(path) == probe_file:
+                    probe_exists_calls += 1
+                    return probe_exists_calls == 1
+                return real_exists(path)
+
+            with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/hermes"):
+                with mock.patch("openclaw_v2.preflight.os.path.exists", side_effect=flaky_exists):
+                    with mock.patch(
+                        "openclaw_v2.preflight.asyncio.create_subprocess_exec",
+                        new=mock.AsyncMock(return_value=_FakeProcess(1, "API call failed after 3 retries: Connection error.\n")),
+                    ):
+                        checks = await runner._check_hermes_runtime(repo_path, plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.WARNING)
+        self.assertIn("probe file disappeared", checks[0].message)
 
     def test_github_workflow_preflight_fails_when_file_is_missing_in_live_mode(self) -> None:
         config = load_app_config("config_v2.yaml")

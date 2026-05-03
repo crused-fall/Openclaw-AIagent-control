@@ -1,6 +1,8 @@
+import os
 import tempfile
 import textwrap
 import unittest
+import subprocess
 from unittest import mock
 from types import SimpleNamespace
 
@@ -43,6 +45,24 @@ class ConfigLoaderTests(unittest.TestCase):
 
         self.assertEqual(data["runtime"]["pipeline"], "hybrid_default")
         self.assertEqual(data["github"]["repo"], "owner/repo")
+
+    def test_load_yaml_ruby_fallback_raises_filenotfounderror_when_config_disappears(self) -> None:
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write("runtime:\n  pipeline: demo\n")
+            handle.flush()
+            real_exists = os.path.exists
+
+            def flaky_exists(path: str) -> bool:
+                return False if os.fspath(path) == handle.name else real_exists(path)
+
+            with mock.patch("openclaw_v2.config.yaml", None):
+                with mock.patch(
+                    "openclaw_v2.config.subprocess.run",
+                    side_effect=subprocess.CalledProcessError(returncode=1, cmd=["ruby"], output="", stderr=""),
+                ):
+                    with mock.patch("openclaw_v2.config.os.path.exists", side_effect=flaky_exists):
+                        with self.assertRaises(FileNotFoundError):
+                            _load_yaml(handle.name)
 
     def test_load_app_config_reads_openclaw_profile_fields(self) -> None:
         content = textwrap.dedent(

@@ -333,8 +333,13 @@ def _print_preflight(artifacts_dir: str) -> None:
     if not os.path.exists(preflight_path):
         return
 
-    with open(preflight_path, "r", encoding="utf-8") as handle:
-        report = json.load(handle)
+    try:
+        with open(preflight_path, "r", encoding="utf-8") as handle:
+            report = json.load(handle)
+    except (FileNotFoundError, OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return
+    if not isinstance(report, dict):
+        return
 
     print("\nPreflight:")
     for check in report.get("checks", []):
@@ -403,7 +408,10 @@ async def _run_once(
 
 async def main() -> None:
     args = _parse_args()
-    config = load_app_config(args.config)
+    try:
+        config = load_app_config(args.config)
+    except FileNotFoundError as error:
+        raise SystemExit(f"Config file not found: {args.config}") from error
     if args.pipeline:
         config.runtime.pipeline = args.pipeline
     if args.live:

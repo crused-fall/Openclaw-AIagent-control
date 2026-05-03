@@ -20,6 +20,8 @@
 - 支持 `--steps`、`--request`、`--live`、`--preflight-only`
 - 支持 `--list-managed-agents`、`--doctor-config`、`--diagnose-plan`
 - `--doctor-config` 已有 CLI 回归测试并合并到 main，锁定配置诊断路径不会误进入交互模式
+- CLI 入口现在会把缺失的 `--config` 转成干净的 `SystemExit`，不再直接抛 traceback
+- CLI 的 `_print_preflight()` 现在会把 `preflight.json` 在 exists/open 之间消失、变成不可读、或变成非对象 JSON 的情况安静降级，不再让 run 结束后的预检摘要打印把进程拖成 traceback
 - 支持 `--web` 本地 Mission Control 控制台
 - live 运行时会输出 step 级 progress
 
@@ -83,9 +85,26 @@
 - Web UI 的 health snapshot 现在会对 `openclaw health --json` 的 `channelOrder` / `channels` / `agents` / `defaultAgentId` 做保守解析，避免健康页被坏 payload 拖成 `500`
 - Web UI 的 recent runs / cleanup manifest 读取现在也会跳过坏字节输入，避免 `summary.json` / workspace manifest 的编码错误拖垮页面
 - Web UI 的 recent runs / history 读取现在能容忍 `summary.json` 在扫描或读取间消失，避免竞争条件把页面拖成 `500`
+- Web UI 的 history / cleanup / prune 现在会复用请求内已解析的 config，不再在后台线程里二次打开配置文件；这样 config 在请求中途消失时，不会把已经开始的历史读取或清理拖成 `500`
+- Web UI 的 history 文件列表和单文件读取现在也会容忍文件在 size/stat 阶段消失，避免 artifact browser 的竞态把页面拖成 `500`
+- Web UI 的 recent runs / housekeeping prune 现在也会跳过在排序阶段消失的 run 目录，避免目录级竞态把页面拖成 `500`
+- Web UI 的 history 详情页现在也会把 run 目录在更新时间戳阶段消失收敛成 404，避免目录级竞态冒成 `500`
+- Web UI 的 recent runs 现在也会把 `preflight.json` 在读取时消失收敛成缺失预检，避免首页因为预检竞态冒成 `500`
+- Web UI 的 cleanup manifest 读取现在也会跳过在读取时消失的 workspace manifest，避免 housekeeping 因竞态冒成 `500`
+- Web UI 的 cleanup artifact 删除现在也会把 run 目录在删除时消失收敛成已缺失，不再把 housekeeping 因竞态拖成 `500`
+- Web UI 的 artifact file 预览在 stat 消失时会保留原始大小，不再把截断文件误报成 limit 大小
+- Web UI 的 cleanup artifact 删除在真实 OSError 下会返回 failure 记录，不再伪装成 skipped
+- Web UI 的 history 文件枚举现在会把 artifact tree glob 失败收敛成空列表，不再把目录级竞态顶成 `404`
+- Web UI 的 cleanup manifest 枚举现在会把 workspace glob 失败收敛成空列表，不再把 manifest 竞态顶成 `404`
+- Worktree cleanup 现在会把 `git worktree remove` 在 workspace 已经消失时的错误当成可恢复竞态，并把后续 `git branch -D` 在分支已不存在时的错误也视作可恢复，不再因为 cleanup 对象被别的流程先清掉就中断整段 cleanup
+- Hermes preflight 的 `.env` 读取现在也会把文件在 exists/open 之间消失收敛成空值，不再把 Hermes 前置检查拖成异常
+- Hermes preflight 的 `config.yaml` 读取现在也会把文件在 exists/open 之间消失收敛成空配置，不再把 Hermes 前置检查拖成异常；这条也覆盖 PyYAML 和 Ruby fallback 解析路径
+- Hermes runtime probe 现在也会把 probe 文件在选中后、读出前消失收敛成 warning，不再把 Hermes 前置检查拖成异常
+- 配置加载器的 Ruby fallback 现在会把“文件在读取时消失”统一成 `FileNotFoundError`，避免调用方把同一个竞态误报成 YAML 解析失败；判定依据是文件当前是否仍然存在，而不是 Ruby stderr 文本
 - Web UI 的历史与概览里，`success` / `dry_run` 这类状态位现在只认真正的 JSON 布尔值，字符串值不再被误报为 `true`
 - Web UI 的 history compare 现在会对 malformed `statusCounts` / `workflow` / `sessionCount` 做保守降级，避免比较摘要被坏字段拖垮
 - Web UI 的 history compare 现在也会保守忽略非列表的 `plan/results`，避免摘要里的结构异常拖出 `500`
+- Web UI 的 runtime snapshot / Hermes overview / GitHub overview 现在会把字符串型布尔和坏列表保守降级，避免配置快照误报
 - Web API 的任务创建现在会拒绝非布尔的 `live`，避免字符串值误入 live 模式
 - Web API 的任务创建现在会严格校验 `steps` 形状，避免非字符串列表项进入后台执行
 - Web API 的任务创建现在会在入队前拒绝空请求文本和未知 step id，避免先返回 `202` 再异步失败
