@@ -503,13 +503,22 @@ class PreflightRunner:
         probe_file = os.path.join(repo_path, "AGENTS.md")
         if not os.path.exists(probe_file):
             probe_file = os.path.join(repo_path, "config_v2.yaml")
+            if not os.path.exists(probe_file):
+                return [
+                    PreflightCheck(
+                        name="hermes_runtime",
+                        status=CheckStatus.WARNING,
+                        message="Hermes runtime probe skipped because no probe file was found in the repository.",
+                        details={"repo_path": repo_path},
+                    )
+                ]
         if not os.path.exists(probe_file):
             return [
                 PreflightCheck(
                     name="hermes_runtime",
                     status=CheckStatus.WARNING,
-                    message="Hermes runtime probe skipped because no probe file was found in the repository.",
-                    details={"repo_path": repo_path},
+                    message="Hermes runtime probe skipped because the probe file disappeared before the read could start.",
+                    details={"repo_path": repo_path, "probe_file": probe_file},
                 )
             ]
 

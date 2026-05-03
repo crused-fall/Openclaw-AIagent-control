@@ -519,6 +519,47 @@ class PreflightOpenClawTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(checks[0].status, CheckStatus.FAILED)
         self.assertIn("runtime probe failed", checks[0].message)
 
+    async def test_hermes_runtime_probe_treats_missing_probe_file_as_warning(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        config.runtime.dry_run = False
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request with local Hermes",
+                profile="hermes_local",
+                agent=AgentType.HERMES,
+                mode=ExecutionMode.HERMES,
+                prompt_template="",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as repo_path:
+            probe_file = os.path.join(repo_path, "AGENTS.md")
+            with open(probe_file, "w", encoding="utf-8") as handle:
+                handle.write("# test\n")
+
+            real_exists = os.path.exists
+            probe_exists_calls = 0
+
+            def flaky_exists(path: str) -> bool:
+                nonlocal probe_exists_calls
+                if os.fspath(path) == probe_file:
+                    probe_exists_calls += 1
+                    return probe_exists_calls == 1
+                return real_exists(path)
+
+            with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/hermes"):
+                with mock.patch("openclaw_v2.preflight.os.path.exists", side_effect=flaky_exists):
+                    with mock.patch(
+                        "openclaw_v2.preflight.asyncio.create_subprocess_exec",
+                        new=mock.AsyncMock(return_value=_FakeProcess(1, "API call failed after 3 retries: Connection error.\n")),
+                    ):
+                        checks = await runner._check_hermes_runtime(repo_path, plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.WARNING)
+        self.assertIn("probe file disappeared", checks[0].message)
+
     def test_github_workflow_preflight_fails_when_file_is_missing_in_live_mode(self) -> None:
         config = load_app_config("config_v2.yaml")
         config.runtime.dry_run = False

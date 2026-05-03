@@ -99,6 +99,7 @@
 - Worktree cleanup 现在会把 `git worktree remove` 在 workspace 已经消失时的错误当成可恢复竞态，并把后续 `git branch -D` 在分支已不存在时的错误也视作可恢复，不再因为 cleanup 对象被别的流程先清掉就中断整段 cleanup
 - Hermes preflight 的 `.env` 读取现在也会把文件在 exists/open 之间消失收敛成空值，不再把 Hermes 前置检查拖成异常
 - Hermes preflight 的 `config.yaml` 读取现在也会把文件在 exists/open 之间消失收敛成空配置，不再把 Hermes 前置检查拖成异常；这条也覆盖 PyYAML 和 Ruby fallback 解析路径
+- Hermes runtime probe 现在也会把 probe 文件在选中后、读出前消失收敛成 warning，不再把 Hermes 前置检查拖成异常
 - 配置加载器的 Ruby fallback 现在会把“文件在读取时消失”统一成 `FileNotFoundError`，避免调用方把同一个竞态误报成 YAML 解析失败；判定依据是文件当前是否仍然存在，而不是 Ruby stderr 文本
 - Web UI 的历史与概览里，`success` / `dry_run` 这类状态位现在只认真正的 JSON 布尔值，字符串值不再被误报为 `true`
 - Web UI 的 history compare 现在会对 malformed `statusCounts` / `workflow` / `sessionCount` 做保守降级，避免比较摘要被坏字段拖垮
