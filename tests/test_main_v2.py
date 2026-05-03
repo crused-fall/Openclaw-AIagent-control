@@ -1,6 +1,7 @@
 import io
 import os
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from unittest import mock
@@ -369,6 +370,28 @@ class MainV2PolicyTests(unittest.TestCase):
 
 
 class MainV2WebModeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_main_reports_missing_config_as_systemexit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_config = os.path.join(temp_dir, "missing-config.yaml")
+            with (
+                mock.patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "main_v2.py",
+                        "--config",
+                        missing_config,
+                        "--doctor-config",
+                    ],
+                ),
+                mock.patch("builtins.input", side_effect=AssertionError("should not prompt when config is missing")),
+            ):
+                with self.assertRaises(SystemExit) as error:
+                    await main()
+
+        self.assertIn("Config file not found", str(error.exception))
+        self.assertIn(missing_config, str(error.exception))
+
     async def test_main_runs_doctor_config_and_exits_without_prompting(self) -> None:
         with (
             mock.patch.object(sys, "argv", ["main_v2.py", "--doctor-config"]),

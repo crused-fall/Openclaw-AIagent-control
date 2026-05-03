@@ -403,7 +403,10 @@ async def _run_once(
 
 async def main() -> None:
     args = _parse_args()
-    config = load_app_config(args.config)
+    try:
+        config = load_app_config(args.config)
+    except FileNotFoundError as error:
+        raise SystemExit(f"Config file not found: {args.config}") from error
     if args.pipeline:
         config.runtime.pipeline = args.pipeline
     if args.live:
