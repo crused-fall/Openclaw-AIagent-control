@@ -78,3 +78,5 @@ python3 test_setup.py
 - Prefer diagnosing `assignment -> managed_agent -> profile` resolution before changing pipeline structure.
 - Live mode should not silently rely on fallback managed agents unless config explicitly opts in.
 - Keep the main architecture centered on local CLI execution plus GitHub workflow collaboration.
+- Record major stage progress in `PROJECT_STATUS.md`.
+- Maintain current goals, active target files, and next-step working memory in `PROJECT_MEMORY.md`.

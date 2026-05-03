@@ -1,6 +1,18 @@
 # OpenClaw Project Status
 
-更新时间：2026-05-01
+更新时间：2026-05-03
+
+## 当前记录入口
+
+- 阶段性状态与已完成能力：`PROJECT_STATUS.md`
+- 当前目标、目标文件与下一步工作记忆：`PROJECT_MEMORY.md`
+
+## 当前主线目标
+
+- 稳定默认 `mission_control_default` pipeline
+- 继续补 GitHub bridge 的结果诊断、review 透传和失败恢复
+- 继续收敛本地 Web UI control room 的安全边界与协作可读性
+- 保持 Hermes 只做 `supervisor + recorder`，不接 `implement`
 
 ## 当前阶段
 
