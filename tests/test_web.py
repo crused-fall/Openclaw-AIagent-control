@@ -10,6 +10,7 @@ from unittest import mock
 from aiohttp.test_utils import TestClient, TestServer
 
 from openclaw_v2.models import AgentResult, AgentType, ExecutionMode, RunResult, TaskStatus, WorkItem
+from openclaw_v2.config import load_app_config
 from openclaw_v2.web import APP_HOUSEKEEPING_TOKEN, APP_TASK_MANAGER, create_web_app
 
 
@@ -476,6 +477,25 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         file_payload = await file_response.json()
         self.assertIn("hello prompt", file_payload["content"])
 
+    async def test_history_endpoint_tolerates_config_disappearing_after_initial_load(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-1")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-1", "plan": [], "results": [], "success": True}, handle)
+        with open(os.path.join(run_dir, "context.json"), "w", encoding="utf-8") as handle:
+            json.dump({"repo_path": self.repo_path, "user_request": "demo"}, handle)
+
+        loaded = load_app_config(self.config_path)
+        with mock.patch(
+            "openclaw_v2.web.load_app_config",
+            side_effect=[loaded, FileNotFoundError("config vanished after first load")],
+        ):
+            response = await self.client.get("/api/history/run-1")
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["runId"], "run-1")
+
     async def test_history_endpoint_skips_files_that_disappear_during_listing(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-list-race")
         prompt_path = Path(run_dir) / "prompts" / "implement.txt"
@@ -919,6 +939,28 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["runId"], "run-cleanup")
         self.assertFalse(os.path.exists(run_dir))
 
+    async def test_cleanup_endpoint_tolerates_config_disappearing_after_initial_load(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-cleanup")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump({"run_id": "run-cleanup", "plan": [], "results": [], "success": True}, handle)
+
+        loaded = load_app_config(self.config_path)
+        with mock.patch(
+            "openclaw_v2.web.load_app_config",
+            side_effect=[loaded, FileNotFoundError("config vanished after first load")],
+        ):
+            response = await self.client.post(
+                "/api/history/run-cleanup/cleanup",
+                json={},
+                headers=self.housekeeping_headers,
+            )
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(payload["runId"], "run-cleanup")
+        self.assertFalse(os.path.exists(run_dir))
+
     async def test_cleanup_endpoint_tolerates_run_directory_disappearing_before_artifact_delete(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-cleanup-race")
         os.makedirs(run_dir, exist_ok=True)
@@ -1169,6 +1211,31 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(os.path.exists(os.path.join(runs_root, "run-c")))
         self.assertFalse(os.path.exists(os.path.join(runs_root, "run-a")))
         self.assertFalse(os.path.exists(os.path.join(runs_root, "run-b")))
+
+    async def test_prune_endpoint_tolerates_config_disappearing_after_initial_load(self) -> None:
+        runs_root = os.path.join(self.repo_path, ".openclaw", "runs")
+        os.makedirs(runs_root, exist_ok=True)
+        for index, run_id in enumerate(["run-a", "run-b", "run-c"], start=1):
+            run_dir = os.path.join(runs_root, run_id)
+            os.makedirs(run_dir, exist_ok=True)
+            with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+                json.dump({"run_id": run_id, "plan": [], "results": [], "success": True}, handle)
+            os.utime(run_dir, (index, index))
+
+        loaded = load_app_config(self.config_path)
+        with mock.patch(
+            "openclaw_v2.web.load_app_config",
+            side_effect=[loaded, FileNotFoundError("config vanished after first load")],
+        ):
+            response = await self.client.post(
+                "/api/history/prune",
+                json={"keepLatest": 1, "removeWorktrees": False, "removeArtifacts": True},
+                headers=self.housekeeping_headers,
+            )
+
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        self.assertEqual(len(payload["removed"]), 2)
 
     async def test_prune_endpoint_skips_runs_if_run_directory_stat_disappears_during_sort(self) -> None:
         runs_root = os.path.join(self.repo_path, ".openclaw", "runs")

@@ -84,6 +84,7 @@
 - Web UI 的 health snapshot 现在会对 `openclaw health --json` 的 `channelOrder` / `channels` / `agents` / `defaultAgentId` 做保守解析，避免健康页被坏 payload 拖成 `500`
 - Web UI 的 recent runs / cleanup manifest 读取现在也会跳过坏字节输入，避免 `summary.json` / workspace manifest 的编码错误拖垮页面
 - Web UI 的 recent runs / history 读取现在能容忍 `summary.json` 在扫描或读取间消失，避免竞争条件把页面拖成 `500`
+- Web UI 的 history / cleanup / prune 现在会复用请求内已解析的 config，不再在后台线程里二次打开配置文件；这样 config 在请求中途消失时，不会把已经开始的历史读取或清理拖成 `500`
 - Web UI 的 history 文件列表和单文件读取现在也会容忍文件在 size/stat 阶段消失，避免 artifact browser 的竞态把页面拖成 `500`
 - Web UI 的 recent runs / housekeeping prune 现在也会跳过在排序阶段消失的 run 目录，避免目录级竞态把页面拖成 `500`
 - Web UI 的 history 详情页现在也会把 run 目录在更新时间戳阶段消失收敛成 404，避免目录级竞态冒成 `500`

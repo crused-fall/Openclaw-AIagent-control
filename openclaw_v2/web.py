@@ -16,7 +16,7 @@ from typing import Any
 
 from aiohttp import web
 
-from .config import diagnose_app_config, load_app_config, resolve_runtime_path
+from .config import AppConfig, diagnose_app_config, load_app_config, resolve_runtime_path
 from .github_support import normalize_github_repo, resolve_github_repo_from_origin
 from .models import TaskStatus
 from .orchestrator import HybridOrchestrator
@@ -1506,7 +1506,7 @@ async def _execute_dashboard_action(
         selected_steps=selected_steps,
         progress_callback=task.add_progress,
     )
-    history = _read_run_history(repo_path, config_path, result.run_id)
+    history = _read_run_history(repo_path, config, result.run_id)
     return {
         "mode": "run",
         "repoPath": repo_path,
@@ -1522,13 +1522,12 @@ async def _execute_dashboard_action(
 
 def _read_run_history(
     repo_path: str,
-    config_path: str,
+    config: AppConfig,
     run_id: str,
 ) -> dict[str, Any]:
     if not re.fullmatch(r"[A-Za-z0-9._-]+", run_id):
         raise ValueError("Invalid run id.")
 
-    config = load_app_config(config_path)
     artifacts_root = resolve_runtime_path(repo_path, config.runtime.artifacts_dir)
     run_dir = Path(artifacts_root) / run_id
     summary_path = run_dir / "summary.json"
@@ -1581,7 +1580,7 @@ def _read_run_history(
 
 def _cleanup_run_history(
     repo_path: str,
-    config_path: str,
+    config: AppConfig,
     run_id: str,
     *,
     remove_worktrees: bool,
@@ -1589,7 +1588,6 @@ def _cleanup_run_history(
 ) -> dict[str, Any]:
     if not re.fullmatch(r"[A-Za-z0-9._-]+", run_id):
         raise ValueError("Invalid run id.")
-    config = load_app_config(config_path)
     artifacts_root = resolve_runtime_path(repo_path, config.runtime.artifacts_dir)
     worktrees_root = resolve_runtime_path(repo_path, config.runtime.worktrees_dir)
     run_dir = Path(artifacts_root) / run_id
@@ -1606,13 +1604,12 @@ def _cleanup_run_history(
 
 def _prune_run_history(
     repo_path: str,
-    config_path: str,
+    config: AppConfig,
     *,
     keep_latest: int,
     remove_worktrees: bool,
     remove_artifacts: bool,
 ) -> dict[str, Any]:
-    config = load_app_config(config_path)
     artifacts_root = resolve_runtime_path(repo_path, config.runtime.artifacts_dir)
     worktrees_root = resolve_runtime_path(repo_path, config.runtime.worktrees_dir)
     root = Path(artifacts_root)
@@ -1771,7 +1768,7 @@ async def _history_handler(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(text=str(error)) from error
     run_id = request.match_info["run_id"]
     try:
-        payload = _read_run_history(repo_path, config_path, run_id)
+        payload = _read_run_history(repo_path, config, run_id)
     except FileNotFoundError as error:
         raise web.HTTPNotFound(text=str(error)) from error
     except ValueError as error:
@@ -1825,7 +1822,7 @@ async def _history_cleanup_handler(request: web.Request) -> web.Response:
         payload = await asyncio.to_thread(
             _cleanup_run_history,
             repo_path,
-            config_path,
+            config,
             run_id,
             remove_worktrees=remove_worktrees,
             remove_artifacts=remove_artifacts,
@@ -1858,7 +1855,7 @@ async def _history_prune_handler(request: web.Request) -> web.Response:
     payload = await asyncio.to_thread(
         _prune_run_history,
         repo_path,
-        config_path,
+        config,
         keep_latest=keep_latest,
         remove_worktrees=remove_worktrees,
         remove_artifacts=remove_artifacts,
@@ -1892,8 +1889,8 @@ async def _history_compare_handler(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(text="runIds must reference two different runs.")
 
     try:
-        left = _read_run_history(repo_path, config_path, normalized_ids[0])
-        right = _read_run_history(repo_path, config_path, normalized_ids[1])
+        left = _read_run_history(repo_path, config, normalized_ids[0])
+        right = _read_run_history(repo_path, config, normalized_ids[1])
     except FileNotFoundError as error:
         raise web.HTTPNotFound(text=str(error)) from error
     except ValueError as error:
