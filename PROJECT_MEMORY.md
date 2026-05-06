@@ -1,6 +1,6 @@
 # OpenClaw Working Memory
 
-更新时间：2026-05-03
+更新时间：2026-05-06
 
 ## 主目标
 
@@ -27,9 +27,14 @@
 - `openclaw_v2/executors/openclaw.py`
 - `openclaw_v2/preflight.py`
 - `openclaw_v2/orchestrator.py`
+- `tests/test_github_executor.py`
+- `tests/test_web.py`
+- `tests/test_webui_static.py`
 
 ## 最近进展
 
+- 2026-05-06：`collect_review` 的 workflow 失败 / action_required / in-progress 状态现在会带出统一的 `github_failure_kind`、`github_retryable` 和 `github_recovery_hint`。
+- 2026-05-06：GitHub review workflow 的恢复提示现在会回流到 run insights，并显示在 Web UI 的 bridge 文案、run summary、issue update 和 PR note 里。
 - 2026-05-03：GitHub review workflow 的 conclusion 和 failed jobs 已回流到 Web UI 的 run summary、issue update 和 PR note 文案。
 - 2026-05-03：GitHub review workflow failed jobs 的 run insights / UI helper / 回归测试已补齐，字符串形态的 failed jobs 也能正确显示。
 - 2026-05-03：Web UI 健康面板在 channels 为空时保持 `warning`，不再误报 `passed`。
@@ -37,7 +42,7 @@
 
 ## 下一步候选
 
-1. 继续收 GitHub bridge 的 review 结果诊断和失败恢复。
+1. 继续收 GitHub bridge 的 review 结果诊断和失败恢复，尤其是把 workflow failure 与 CLI-level GitHub failure 的恢复路径继续统一。
 2. 继续稳定 `mission_control_default` 主链，减少“本地成功但协作链路不可读”的情况。
 3. 继续把 Web UI 作为本地主控台打磨，但避免把它做成独立产品面，而是服务 Mission Control 主线。
 4. 在默认 pipeline 稳定前，不把 Hermes 扩到 `implement`，也不急着把 OpenClaw 提升为默认控制入口。

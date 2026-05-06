@@ -245,6 +245,15 @@ class GitHubWorkflowExecutor(Executor):
             ),
             "repository_unavailable": "Confirm `github.repo` and the repository remote, then retry the GitHub step.",
             "workflow_missing": "Add the workflow file under `.github/workflows/` or update `workflow_name`, then retry.",
+            "workflow_in_progress": (
+                "Wait for the GitHub Actions workflow to finish, then rerun `collect_review` or refresh the dashboard."
+            ),
+            "workflow_action_required": (
+                "Open the GitHub Actions run, complete the required manual step, then rerun `collect_review`."
+            ),
+            "workflow_failed": (
+                "Inspect the failed jobs in GitHub Actions and rerun the workflow after fixing the underlying branch issues."
+            ),
             "reference_missing": "Ensure upstream steps produced the required issue, PR, or branch reference before retrying.",
             "network_or_transport": "Retry after GitHub or network connectivity recovers. Inspect `github_error` for the original CLI failure.",
             "configuration_missing_repo": "Set `github.repo` in config before enabling live GitHub execution.",
@@ -750,6 +759,19 @@ class GitHubWorkflowExecutor(Executor):
                     if pending_workflow and attempt < max_attempts:
                         await asyncio.sleep(retry_backoff_seconds)
                         continue
+                    workflow_conclusion = str(workflow_artifacts.get("workflow_conclusion", "")).strip()
+                    if pending_workflow:
+                        artifacts["github_failure_kind"] = "workflow_in_progress"
+                        artifacts["github_retryable"] = True
+                        artifacts["github_recovery_hint"] = self._recovery_hint("workflow_in_progress")
+                    elif view_status == TaskStatus.BLOCKED and workflow_conclusion == "action_required":
+                        artifacts["github_failure_kind"] = "workflow_action_required"
+                        artifacts["github_retryable"] = False
+                        artifacts["github_recovery_hint"] = self._recovery_hint("workflow_action_required")
+                    elif view_status == TaskStatus.FAILED:
+                        artifacts["github_failure_kind"] = "workflow_failed"
+                        artifacts["github_retryable"] = False
+                        artifacts["github_recovery_hint"] = self._recovery_hint("workflow_failed")
                     artifacts["github_attempt_count"] = attempt
                     artifacts["workflow_poll_attempt_count"] = attempt
                     if attempt > 1:

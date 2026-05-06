@@ -542,6 +542,10 @@ def _summarize_run_insights(
                 workflow_conclusion = str(artifacts.get("workflow_conclusion", "")).strip()
                 workflow_failed_jobs = str(artifacts.get("workflow_failed_jobs", "")).strip()
                 workflow_failed_job_count = _json_int_value(artifacts.get("workflow_failed_job_count", 0))
+                workflow_failure_kind = str(artifacts.get("github_failure_kind", "")).strip()
+                workflow_retryable_present = "github_retryable" in artifacts
+                workflow_retryable = _json_bool_value(artifacts.get("github_retryable", False))
+                workflow_recovery_hint = str(artifacts.get("github_recovery_hint", "")).strip()
                 if workflow_url or workflow_id:
                     card["url"] = workflow_url
                     card["number"] = workflow_id
@@ -549,6 +553,12 @@ def _summarize_run_insights(
                     card["workflowConclusion"] = workflow_conclusion
                     card["workflowFailedJobs"] = workflow_failed_jobs
                     card["workflowFailedJobCount"] = workflow_failed_job_count
+                    if workflow_failure_kind:
+                        card["githubFailureKind"] = workflow_failure_kind
+                    if workflow_retryable_present:
+                        card["githubRetryable"] = workflow_retryable
+                    if workflow_recovery_hint:
+                        card["githubRecoveryHint"] = workflow_recovery_hint
                     github_cards.append(card)
                     github_workflow = {
                         "url": workflow_url,
@@ -559,6 +569,12 @@ def _summarize_run_insights(
                         "failedJobCount": workflow_failed_job_count,
                         "stepId": work_item_id,
                     }
+                    if workflow_failure_kind:
+                        github_workflow["failureKind"] = workflow_failure_kind
+                    if workflow_retryable_present:
+                        github_workflow["retryable"] = workflow_retryable
+                    if workflow_recovery_hint:
+                        github_workflow["recoveryHint"] = workflow_recovery_hint
 
         if mode == "hermes" or any(str(key).startswith("hermes_") for key in artifacts):
             hermes_roles.append(

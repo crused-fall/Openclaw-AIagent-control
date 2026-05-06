@@ -535,6 +535,9 @@ class GitHubExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, TaskStatus.FAILED)
         self.assertEqual(result.artifacts["workflow_failed_job_count"], 1)
         self.assertEqual(result.artifacts["workflow_failed_jobs"], "lint")
+        self.assertEqual(result.artifacts["github_failure_kind"], "workflow_failed")
+        self.assertFalse(result.artifacts["github_retryable"])
+        self.assertIn("Inspect the failed jobs", result.artifacts["github_recovery_hint"])
         self.assertIn("Failed jobs: lint.", result.summary)
 
     async def test_live_retryable_network_failure_retries_and_then_succeeds(self) -> None:

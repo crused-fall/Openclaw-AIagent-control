@@ -1772,6 +1772,9 @@ class WebGitHubInsightTests(unittest.TestCase):
                         "workflow_conclusion": "failure",
                         "workflow_failed_job_count": 2,
                         "workflow_failed_jobs": "lint, tests",
+                        "github_failure_kind": "workflow_failed",
+                        "github_retryable": False,
+                        "github_recovery_hint": "Inspect the failed jobs in GitHub Actions and rerun the workflow after fixing the underlying branch issues.",
                     },
                 }
             ],
@@ -1792,6 +1795,12 @@ class WebGitHubInsightTests(unittest.TestCase):
         self.assertEqual(workflow["conclusion"], "failure")
         self.assertEqual(workflow["failedJobCount"], 2)
         self.assertEqual(workflow["failedJobs"], "lint, tests")
+        self.assertEqual(workflow["failureKind"], "workflow_failed")
+        self.assertFalse(workflow["retryable"])
+        self.assertIn("Inspect the failed jobs", workflow["recoveryHint"])
         self.assertEqual(workflow["id"], "123456789")
         self.assertEqual(cards[0]["workflowFailedJobs"], "lint, tests")
         self.assertEqual(cards[0]["workflowFailedJobCount"], 2)
+        self.assertEqual(cards[0]["githubFailureKind"], "workflow_failed")
+        self.assertFalse(cards[0]["githubRetryable"])
+        self.assertIn("Inspect the failed jobs", cards[0]["githubRecoveryHint"])

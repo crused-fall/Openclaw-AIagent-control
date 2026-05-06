@@ -216,10 +216,13 @@ function githubBridgeStatus(github, overview, runId) {
     };
   }
   if (["failure", "cancelled", "timed_out"].includes(workflowConclusion)) {
+    const failedJobs = String(workflow?.failedJobs || "").trim();
     return {
       status: "blocked",
       label: "Review failed",
-      detail: `Workflow ${workflowId || "n/a"} ended ${workflowConclusion || workflowStatus || "unknown"}.`,
+      detail: failedJobs
+        ? `Workflow ${workflowId || "n/a"} ended ${workflowConclusion || workflowStatus || "unknown"} with failed jobs: ${failedJobs}.`
+        : `Workflow ${workflowId || "n/a"} ended ${workflowConclusion || workflowStatus || "unknown"}.`,
     };
   }
   return {
@@ -265,6 +268,11 @@ function formatReviewWorkflowLine(workflow) {
     parts.push(`failed jobs: ${normalizedFailedJobs.join(", ")}`);
   }
   return `Latest review workflow: ${label}${parts.length ? ` · ${parts.join(" · ")}` : ""}`;
+}
+
+function formatReviewRecoveryHint(workflow) {
+  const hint = String(workflow?.recoveryHint || "").trim();
+  return hint ? `Review recovery: ${hint}` : "";
 }
 
 function channelHealthStatus(channels) {
@@ -1026,6 +1034,7 @@ function renderGitHubBridge() {
         <p>${escapeHtml(runId || "No run loaded")}</p>
         <small>${escapeHtml(branch ? `Branch: ${branch}` : "Branch will surface after publish_branch.")}</small>
         ${workflow ? `<small>${escapeHtml(formatReviewWorkflowLine(workflow))}</small>` : ""}
+        ${workflow && formatReviewRecoveryHint(workflow) ? `<small>${escapeHtml(formatReviewRecoveryHint(workflow))}</small>` : ""}
         ${
           safeWorkflowUrl
             ? `<a class="bridge-link" href="${escapeHtml(safeWorkflowUrl)}" target="_blank" rel="noreferrer">Open latest review workflow</a>`
@@ -1924,6 +1933,9 @@ function generateRunSummaryText() {
     formatReviewWorkflowLine(workflow),
     `Status counts: ${counts}`,
   ];
+  if (formatReviewRecoveryHint(workflow)) {
+    lines.push(formatReviewRecoveryHint(workflow));
+  }
   if (actionable.length) {
     lines.push("", "Actionable results:");
     for (const item of actionable) {
@@ -1954,6 +1966,9 @@ function generateIssueUpdateText() {
     `- ${formatReviewWorkflowLine(workflow)}`,
     `- Status counts: ${formatCounts(statusCounts(results))}`,
   ];
+  if (formatReviewRecoveryHint(workflow)) {
+    lines.push(`- ${formatReviewRecoveryHint(workflow)}`);
+  }
   if (actionable.length) {
     lines.push("- Actionable items:");
     for (const item of actionable) {
@@ -1989,6 +2004,9 @@ function generatePrNoteText() {
     formatReviewWorkflowLine(workflow),
     `Status counts: ${formatCounts(statusCounts(runResult.results || []))}`,
   ];
+  if (formatReviewRecoveryHint(workflow)) {
+    lines.push(formatReviewRecoveryHint(workflow));
+  }
   return lines.join("\n");
 }
 

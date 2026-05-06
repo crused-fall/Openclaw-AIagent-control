@@ -1,6 +1,6 @@
 # OpenClaw Project Status
 
-更新时间：2026-05-03
+更新时间：2026-05-06
 
 ## 当前记录入口
 
@@ -59,6 +59,8 @@
 - `dispatch_review -> collect_review` workflow 状态回流已落地
 - `collect_review` 已支持 failed jobs 摘要回流
 - Web UI 的 run summary / issue update / PR note 现在也会回流 review workflow 的 conclusion 和 failed jobs，方便直接把异步检查结果转成可读结论
+- `collect_review` 在 workflow failed / action_required / in_progress 等状态下，现在也会统一带出 `github_failure_kind`、`github_retryable` 和 `github_recovery_hint`
+- Web UI 的 GitHub bridge、run summary、issue update 和 PR note 现在也会显示 review recovery 提示，便于协作方直接采取下一步动作
 - 新增 `github_bridge_smoke` pipeline，可绕过本地 `triage/implement/review` 单独验证 GitHub review workflow
 - `collect_review` 已支持短轮询等待，减少 workflow 刚触发时立即返回 `queued` 的手工重跑
 - 本地 CLI executor 已有超时护栏，`claude/codex` 长时间无响应时不会再无限挂住 run
