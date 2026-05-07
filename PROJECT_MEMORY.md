@@ -53,6 +53,7 @@
 - 2026-05-07：真实 `github_bridge_smoke` live run 证明原来的 `collect_review` 轮询窗口太短；默认 polling 已从 12 秒提高到约 30 秒，并用真实 run `run-20260507T151929Z-5962a5` / workflow `25504962543` 验证同次 live run 可直接收敛为 success。
 - 2026-05-07：默认 `mission_control_default` 已通过完整 live smoke 验证，当前主线可以继续推进到收口阶段。
 - 2026-05-07：默认 `mission_control_default` 现在把 triage / implement / review 都路由到本机 OpenClaw；Codex 仅保留为显式比较路径。
+- 2026-05-07：在 `codex/default-pipeline-stability` worktree 上复核默认主链 smoke（run `run-20260507T222023Z-e2e7a2`），`review / sync_issue / update_issue` 会先回写；如果请求本身没有文件改动，`commit_changes` 与后续 GitHub 尾链会自然跳过。
 - 2026-05-03：GitHub review workflow 的 conclusion 和 failed jobs 已回流到 Web UI 的 run summary、issue update 和 PR note 文案。
 - 2026-05-03：GitHub review workflow failed jobs 的 run insights / UI helper / 回归测试已补齐，字符串形态的 failed jobs 也能正确显示。
 - 2026-05-03：Web UI 健康面板在 channels 为空时保持 `warning`，不再误报 `passed`。

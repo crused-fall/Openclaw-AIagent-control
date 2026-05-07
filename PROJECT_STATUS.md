@@ -88,6 +88,7 @@
 - 只有当改动被提交为干净 commit 后，`publish_branch` 才会继续；否则继续明确 `blocked`
 - 2026-05-07：默认 `mission_control_default` 已通过完整 live smoke 验证，当前主线可以继续推进到收口阶段。
 - 默认 `mission_control_default` 现在把 triage / implement / review 路由到本机 OpenClaw，Codex 仅保留为显式比较路径。
+- 2026-05-07：在 `codex/default-pipeline-stability` worktree 上复核默认主链 smoke（run `run-20260507T222023Z-e2e7a2`）：`review / sync_issue / update_issue` 已先完成；当请求本身没有文件改动时，`commit_changes` 及后续 GitHub 尾链会自然跳过。
 
 ### Supervision Layer
 

@@ -250,6 +250,7 @@ CLI 失败结果现在也会带 `cli_failure_kind` 和 `cli_recovery_hint`。当
 如果 live 计划里包含隔离 CLI worktree，而仓库还有未提交改动，preflight 现在会直接拦下；这些 worktree 只基于已提交 `HEAD`，不会自动带上本地脏改动。
 如果当前本地基线分支已经领先上游（例如 `main` ahead of `origin/main`），而计划又要继续 `publish_branch` 或 GitHub 尾链，preflight 现在会在 live 前直接拦下；否则新建的实现分支会把这些未发布的本地提交一起带进 PR。
 如果 `implement` 判断“请求已满足、无需改动”，结果会显式标成 no-op；后续 `publish_branch` 会因为没有可发布文件变化而跳过。
+如果是默认主链 smoke，`implement` 仍可能先判成 no-op，但 `review / sync_issue / update_issue` 的阶段回写会先完成；只有到 `commit_changes` 之后，`publish_branch / draft_pr / dispatch_review / collect_review` 才会自然跳过。
 
 如果要直接做 GitHub bridge live 验证：
 
