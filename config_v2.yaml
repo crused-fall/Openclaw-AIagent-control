@@ -321,6 +321,14 @@ assignments:
     fallback:
       - cursor_editor
 
+  implement_openclaw:
+    agent: openclaw_builder
+    manager: openclaw
+    required_capabilities:
+      - implement
+    fallback:
+      - cursor_editor
+
   review_local:
     agent: claude_router
     manager: openclaw
@@ -429,7 +437,7 @@ pipelines:
 
     - id: implement
       title: Implement main changes locally
-      assignment: implement_local
+      assignment: implement_openclaw
       depends_on:
         - triage
       metadata:
@@ -631,6 +639,8 @@ pipelines:
     remove_steps:
       - review
     steps:
+      - id: implement
+        assignment: implement_local
       - id: publish_branch
         depends_on:
           - commit_changes
@@ -676,6 +686,8 @@ pipelines:
           1. 任务拆分
           2. 风险点
           3. 实施顺序
+      - id: implement
+        assignment: implement_local
       - id: review
         assignment: review_local
 

@@ -379,7 +379,7 @@ class MainV2PolicyTests(unittest.TestCase):
         config = load_app_config("config_v2.yaml")
         orchestrator = HybridOrchestrator(config)
         config.runtime.allow_fallback_in_live = False
-        config.managed_agents["codex_builder"].enabled = False
+        config.managed_agents["openclaw_builder"].enabled = False
 
         with self.assertRaises(SystemExit) as error:
             _validate_live_policy(

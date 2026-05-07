@@ -32,8 +32,8 @@ class PipelineConfigTests(unittest.TestCase):
         self.assertEqual(work_items["triage"].assignment, "triage_local")
         self.assertEqual(work_items["triage"].managed_agent, "openclaw_router")
         self.assertFalse(work_items["triage"].fallback_used)
-        self.assertEqual(work_items["implement"].assignment, "implement_local")
-        self.assertEqual(work_items["implement"].managed_agent, "codex_builder")
+        self.assertEqual(work_items["implement"].assignment, "implement_openclaw")
+        self.assertEqual(work_items["implement"].managed_agent, "openclaw_builder")
         self.assertEqual(work_items["implement"].fallback_chain, ["cursor_editor"])
         self.assertEqual(work_items["review"].assignment, "review_openclaw")
         self.assertEqual(work_items["review"].managed_agent, "openclaw_router")
@@ -86,25 +86,25 @@ class PipelineConfigTests(unittest.TestCase):
         self.assertEqual(work_items["review"].managed_agent, "openclaw_router")
         self.assertEqual(work_items["review"].mode, ExecutionMode.OPENCLAW)
 
-    def test_openclaw_default_pipeline_can_override_implement_to_openclaw_builder(self) -> None:
-        previous = os.environ.get("OPENCLAW_ASSIGN_IMPLEMENT_LOCAL")
-        os.environ["OPENCLAW_ASSIGN_IMPLEMENT_LOCAL"] = "openclaw_builder"
+    def test_openclaw_default_pipeline_can_override_openclaw_implement_to_codex_builder(self) -> None:
+        previous = os.environ.get("OPENCLAW_ASSIGN_IMPLEMENT_OPENCLAW")
+        os.environ["OPENCLAW_ASSIGN_IMPLEMENT_OPENCLAW"] = "codex_builder"
         try:
             config = load_app_config("config_v2.yaml")
         finally:
             if previous is None:
-                os.environ.pop("OPENCLAW_ASSIGN_IMPLEMENT_LOCAL", None)
+                os.environ.pop("OPENCLAW_ASSIGN_IMPLEMENT_OPENCLAW", None)
             else:
-                os.environ["OPENCLAW_ASSIGN_IMPLEMENT_LOCAL"] = previous
+                os.environ["OPENCLAW_ASSIGN_IMPLEMENT_OPENCLAW"] = previous
         config.runtime.pipeline = "mission_control_openclaw_default"
         planner = PipelinePlanner(config)
 
         plan = planner.build_plan()
         work_items = {item.id: item for item in plan}
 
-        self.assertEqual(work_items["implement"].managed_agent, "openclaw_builder")
-        self.assertEqual(work_items["implement"].profile, "openclaw_local")
-        self.assertEqual(work_items["implement"].mode, ExecutionMode.OPENCLAW)
+        self.assertEqual(work_items["implement"].managed_agent, "codex_builder")
+        self.assertEqual(work_items["implement"].profile, "codex_local")
+        self.assertEqual(work_items["implement"].mode, ExecutionMode.CLI)
 
     def test_hybrid_default_pipeline_omits_review_and_rethreads_follow_up_steps(self) -> None:
         config = load_app_config("config_v2.yaml")

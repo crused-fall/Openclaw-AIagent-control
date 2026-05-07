@@ -51,6 +51,7 @@
 - 2026-05-07：Web UI 的 recent runs 列表现在也会显示每次 run 的最新 GitHub failure、失败摘要和 recovery 提示，不用先点进 run detail 或 compare 才能看出最近几次协作失败发生在哪里。
 - 2026-05-07：Web UI 的 loaded run detail 和 artifact context 现在也会显示最新 GitHub failure 与 recovery，点开单次 run 后不再需要再切去 bridge 卡或复制文案才能看出当前协作阻塞点。
 - 2026-05-07：真实 `github_bridge_smoke` live run 证明原来的 `collect_review` 轮询窗口太短；默认 polling 已从 12 秒提高到约 30 秒，并用真实 run `run-20260507T151929Z-5962a5` / workflow `25504962543` 验证同次 live run 可直接收敛为 success。
+- 2026-05-07：默认 `mission_control_default` 已通过完整 live smoke 验证，当前主线可以继续推进到收口阶段。
 - 2026-05-03：GitHub review workflow 的 conclusion 和 failed jobs 已回流到 Web UI 的 run summary、issue update 和 PR note 文案。
 - 2026-05-03：GitHub review workflow failed jobs 的 run insights / UI helper / 回归测试已补齐，字符串形态的 failed jobs 也能正确显示。
 - 2026-05-03：Web UI 健康面板在 channels 为空时保持 `warning`，不再误报 `passed`。

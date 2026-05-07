@@ -244,7 +244,7 @@ python3 main_v2.py --live --request "修复登录页报错" --steps triage,imple
 当前还启用了 `runtime.cli_command_timeout_seconds=180.0`，本地 `claude/codex` 长时间无响应时会明确超时失败，而不是无限挂住。
 CLI 失败结果现在也会带 `cli_failure_kind` 和 `cli_recovery_hint`。当前默认 `triage` / `review` 已经切到本地 OpenClaw；如果你要对比 Claude 路径，可以直接用 `mission_control_openclaw_triage`。
 `codex_local` 现在默认用 `codex exec --ephemeral`，尽量避开本机 `~/.codex/state_*.sqlite` 迁移冲突；如果仍然返回 `cli_failure_kind=usage_limit`，说明是 Codex 账号配额问题，不是项目编排问题。
-如果 Codex 当前不可用，但你本机 OpenClaw agent 可写仓库，可以显式覆盖实现层：`OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`。这样 `mission_control_openclaw_default` 会让 OpenClaw 承担 `implement`，而不是继续卡在 Codex。
+当前默认 `implement` 已经切到本地 OpenClaw；如果你要对比 Codex 路径，可以显式把 `OPENCLAW_ASSIGN_IMPLEMENT_OPENCLAW=codex_builder`。这样 `mission_control_default` / `mission_control_openclaw_default` 都能继续做 Codex/OpenClaw 对照。
 这条 `openclaw_builder` 路径目前主要用于本地 `triage/implement/review`；如果实现结果没有导出可推送分支，`publish_branch` 现在会直接 `blocked`，而不是假装还能继续 GitHub 尾链。
 当前主线已经补了显式的 `commit_changes` 步骤：只有实现工作区中的改动被提交为干净 commit 后，`publish_branch` 才会继续；如果提交后工作区仍不干净，链路会继续明确 `blocked`。
 如果 live 计划里包含隔离 CLI worktree，而仓库还有未提交改动，preflight 现在会直接拦下；这些 worktree 只基于已提交 `HEAD`，不会自动带上本地脏改动。

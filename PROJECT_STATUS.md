@@ -86,6 +86,7 @@
 - `commit_changes` 会复用实现步骤的 workspace 和分支，而不是回落到仓库根目录
 - `commit_changes` 现在会保留提交前的变更文件列表，并明确记录 `changes_committed` / `head_commit`
 - 只有当改动被提交为干净 commit 后，`publish_branch` 才会继续；否则继续明确 `blocked`
+- 2026-05-07：默认 `mission_control_default` 已通过完整 live smoke 验证，当前主线可以继续推进到收口阶段。
 
 ### Supervision Layer
 
