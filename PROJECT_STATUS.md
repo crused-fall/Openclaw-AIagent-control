@@ -16,13 +16,13 @@
 
 ## 当前阶段
 
-项目已经从“多模型 API 路由原型”进入“修改版方案四 Mission Control 骨架”阶段。
+项目已经从“多模型 API 路由原型”进入“修改版方案四 Mission Control 骨架”阶段，默认 `mission_control_default` 已通过完整 live smoke 验证。
 
 这意味着：
 
 - `openclaw.py` 仍可运行，但只代表 v1 legacy
 - 核心演进方向已经转向 `main_v2.py` + `openclaw_v2/`
-- OpenClaw 已进入执行层与受控 agent 体系，但还没有成为默认统一总控入口
+- OpenClaw 已进入默认主链的 triage / implement / review 入口，`mission_control_openclaw_triage` / `mission_control_openclaw_default` 仍保留为比较与验证变体
 
 ## 已完成
 
@@ -87,6 +87,7 @@
 - `commit_changes` 现在会保留提交前的变更文件列表，并明确记录 `changes_committed` / `head_commit`
 - 只有当改动被提交为干净 commit 后，`publish_branch` 才会继续；否则继续明确 `blocked`
 - 2026-05-07：默认 `mission_control_default` 已通过完整 live smoke 验证，当前主线可以继续推进到收口阶段。
+- 默认 `mission_control_default` 现在把 triage / implement / review 路由到本机 OpenClaw，Codex 仅保留为显式比较路径。
 
 ### Supervision Layer
 
@@ -145,8 +146,8 @@
 ## 部分完成
 
 - 任务拆分仍然以配置驱动 pipeline 为主，已经支持 pipeline 继承 / 覆盖 / remove_steps 组合，planner 也已开始按依赖关系排序，但还不是智能动态 planner
-- OpenClaw 接入骨架已落地，但目前只安全接到 `triage` 变体 pipeline
-- OpenClaw 已验证“仓库外 workspace + repo 绝对路径 handoff”可运行，当前已有 `mission_control_openclaw_triage` 和 `mission_control_openclaw_default` 两条变体 pipeline
+- OpenClaw 接入骨架已落地，默认 `mission_control_default` 已经把 triage / implement / review 接到本机 OpenClaw
+- OpenClaw 已验证“仓库外 workspace + repo 绝对路径 handoff”可运行，当前仍保留 `mission_control_openclaw_triage` 和 `mission_control_openclaw_default` 两条比较 pipeline
 - Hermes 已作为本机 `supervisor + recorder` 接入，新增 `mission_control_hermes_supervised` 变体 pipeline，但不承担 `implement`
 - 当前分支上的 Web UI control room 已把 CLI / GitHub / Hermes / OpenClaw 的运行态集中到一个本地面板里
 - `Gemini` 和 `Cursor` 已进入受控 agent 注册表，但还没进入默认 assignment
@@ -162,15 +163,14 @@
 
 ## 未完成
 
-- OpenClaw 成为默认统一总控入口
 - 成本统计
 - 跨层自动 fallback
 - 更细的 review / merge 审核阶段
+- 决定 Claude / Codex / OpenClaw 比较路径保留到什么程度，以及是否继续把 OpenClaw 推向更多比较 pipeline
 
 ## 建议优先级
 
-1. 继续稳定默认 `mission_control_default` pipeline
-2. 决定 OpenClaw 什么时候从变体执行器升级成默认控制入口
-3. 决定哪些 step 默认由 Claude / Codex 继续承担，哪些开始尝试切到 Gemini / Cursor / OpenClaw
-4. 继续补 GitHub bridge 的结果诊断、review 透传和失败恢复
-5. 再考虑真正的动态 planner、fallback 和成本控制
+1. 继续补 GitHub bridge 的结果诊断、review 透传和失败恢复，优先把默认主链的 `publish_branch -> draft_pr -> dispatch_review -> collect_review` 跑成真实端到端验证
+2. 继续把 Web UI 作为本地主控台打磨，但避免把它做成独立产品面，而是服务 Mission Control 主线
+3. 收口 Claude / Codex / OpenClaw 的比较路径，决定哪些还保留为对照，哪些只作为兜底路径
+4. 再考虑真正的动态 planner、fallback 和成本控制

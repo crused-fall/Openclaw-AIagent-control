@@ -5,9 +5,9 @@
 ## 主目标
 
 - 把项目稳定为以 `main_v2.py` + `openclaw_v2/` 为主线的 modified scheme-four Mission Control。
-- 持续稳定默认 `mission_control_default` pipeline，而不是只维护演示型变体路径。
+- 默认 `mission_control_default` 已经稳定落在本机 OpenClaw 的 triage / implement / review 入口上，而不是只维护演示型变体路径。
 - 保持 Hermes 只承担 `supervisor + recorder`，不接 `implement`。
-- 逐步把 OpenClaw 从变体执行器推进到更接近默认控制入口的位置，但前提是默认 pipeline 足够稳定。
+- 现在重点不是再证明 OpenClaw 能不能进主链，而是把 GitHub 尾链和 Web UI 收口成可交付状态，同时保留 Claude / Codex 比较路径。
 
 ## 当前主线
 
@@ -52,6 +52,7 @@
 - 2026-05-07：Web UI 的 loaded run detail 和 artifact context 现在也会显示最新 GitHub failure 与 recovery，点开单次 run 后不再需要再切去 bridge 卡或复制文案才能看出当前协作阻塞点。
 - 2026-05-07：真实 `github_bridge_smoke` live run 证明原来的 `collect_review` 轮询窗口太短；默认 polling 已从 12 秒提高到约 30 秒，并用真实 run `run-20260507T151929Z-5962a5` / workflow `25504962543` 验证同次 live run 可直接收敛为 success。
 - 2026-05-07：默认 `mission_control_default` 已通过完整 live smoke 验证，当前主线可以继续推进到收口阶段。
+- 2026-05-07：默认 `mission_control_default` 现在把 triage / implement / review 都路由到本机 OpenClaw；Codex 仅保留为显式比较路径。
 - 2026-05-03：GitHub review workflow 的 conclusion 和 failed jobs 已回流到 Web UI 的 run summary、issue update 和 PR note 文案。
 - 2026-05-03：GitHub review workflow failed jobs 的 run insights / UI helper / 回归测试已补齐，字符串形态的 failed jobs 也能正确显示。
 - 2026-05-03：Web UI 健康面板在 channels 为空时保持 `warning`，不再误报 `passed`。
@@ -59,10 +60,10 @@
 
 ## 下一步候选
 
-1. 继续稳定 `mission_control_default` 主链，优先做更多真实 GitHub run 验证，减少“本地成功但协作链路不可读”的情况。
-2. 继续收 GitHub bridge 的结果诊断和失败恢复，下一步优先考虑把默认主链的 `publish_branch -> draft_pr -> dispatch_review -> collect_review` 也做一次真实端到端验证，而不是只停留在 smoke pipeline。
-3. 继续把 Web UI 作为本地主控台打磨，但避免把它做成独立产品面，而是服务 Mission Control 主线。
-4. 在默认 pipeline 稳定前，不把 Hermes 扩到 `implement`，也不急着把 OpenClaw 提升为默认控制入口。
+1. 继续收 GitHub bridge 的结果诊断和失败恢复，优先把默认主链的 `publish_branch -> draft_pr -> dispatch_review -> collect_review` 跑成真实端到端验证。
+2. 继续把 Web UI 作为本地主控台打磨，但避免把它做成独立产品面，而是服务 Mission Control 主线。
+3. 收口 Claude / Codex / OpenClaw 的比较路径，决定哪些还保留为对照，哪些只作为兜底路径。
+4. 如果后续还要降运维成本，再考虑动态 planner、fallback 和成本统计。
 
 ## 记录规则
 
