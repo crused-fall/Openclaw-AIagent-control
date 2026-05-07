@@ -60,6 +60,8 @@
 - 新增 `github_collect_review_resume` pipeline 和 `--workflow-run-ref`，可直接回流已有 workflow run 而不重新触发 `dispatch_review`
 - `collect_review` resume 现在会保留外部注入的 workflow run ref，并在 prompt / GitHub workflow_view 命令里一致使用
 - 已用真实 live run `25504962543` 验证 `github_collect_review_resume` 可以直接收敛为 success
+- 2026-05-07：重新跑通 `github_collect_review_resume` live smoke，workflow run `25504962543` 仍能直接收敛为 success
+- 2026-05-07：全量 Python 单测 221 项通过，`node --check openclaw_v2/webui/app.js` 通过，当前基线可继续作为收口底座
 - `collect_review` 已支持 failed jobs 摘要回流
 - Web UI 的 run summary / issue update / PR note 现在也会回流 review workflow 的 conclusion 和 failed jobs，方便直接把异步检查结果转成可读结论
 - `collect_review` 在 workflow failed / action_required / in_progress 等状态下，现在也会统一带出 `github_failure_kind`、`github_retryable` 和 `github_recovery_hint`
