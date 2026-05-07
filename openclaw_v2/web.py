@@ -460,6 +460,7 @@ def _summarize_run_insights(
     github_issue: dict[str, Any] | None = None
     github_pr: dict[str, Any] | None = None
     github_workflow: dict[str, Any] | None = None
+    github_latest_failure: dict[str, Any] | None = None
     github_cards: list[dict[str, Any]] = []
     hermes_roles: list[dict[str, Any]] = []
     step_ids: list[str] = []
@@ -489,6 +490,22 @@ def _summarize_run_insights(
         github_branch = github_branch or str(
             artifacts.get("source_branch") or artifacts.get("branch_name") or ""
         ).strip()
+
+        failure_kind = str(artifacts.get("github_failure_kind", "")).strip()
+        recovery_hint = str(artifacts.get("github_recovery_hint", "")).strip()
+        retryable_present = "github_retryable" in artifacts
+        retryable_value = _json_bool_value(artifacts.get("github_retryable", False))
+        if (failure_kind or recovery_hint) and work_item_id in github_step_map:
+            github_latest_failure = {
+                "stepId": work_item_id,
+                "title": plan_titles.get(work_item_id, github_step_map[work_item_id][1]),
+                "status": status,
+                "failureKind": failure_kind,
+                "summary": str(item.get("summary", "")).strip(),
+                "recoveryHint": recovery_hint,
+            }
+            if retryable_present:
+                github_latest_failure["retryable"] = retryable_value
 
         for key in ("issue_url", "pr_url", "workflow_run_url"):
             repo_candidate = _extract_github_repo_from_url(str(artifacts.get(key, "")).strip())
@@ -621,6 +638,7 @@ def _summarize_run_insights(
             "issue": github_issue,
             "pr": github_pr,
             "workflow": github_workflow,
+            "latestFailure": github_latest_failure,
             "cards": github_cards,
             "checks": github_checks,
         },

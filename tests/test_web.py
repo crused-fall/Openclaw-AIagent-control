@@ -1804,3 +1804,49 @@ class WebGitHubInsightTests(unittest.TestCase):
         self.assertEqual(cards[0]["githubFailureKind"], "workflow_failed")
         self.assertFalse(cards[0]["githubRetryable"])
         self.assertIn("Inspect the failed jobs", cards[0]["githubRecoveryHint"])
+
+    def test_latest_non_workflow_github_failure_is_preserved_in_run_insights(self) -> None:
+        summary = {
+            "results": [
+                {
+                    "work_item_id": "sync_issue",
+                    "status": "succeeded",
+                    "artifacts": {
+                        "issue_number": "77",
+                        "issue_url": "https://github.com/owner/repo/issues/77",
+                    },
+                },
+                {
+                    "work_item_id": "draft_pr",
+                    "status": "blocked",
+                    "summary": "GitHub token does not have enough permission to trigger this workflow.",
+                    "artifacts": {
+                        "source_branch": "feature/test",
+                        "github_failure_kind": "insufficient_token_permissions",
+                        "github_retryable": False,
+                        "github_recovery_hint": "Refresh GitHub CLI auth with workflow-capable permissions.",
+                    },
+                },
+            ],
+            "plan": [
+                {"id": "sync_issue", "title": "Planning issue"},
+                {"id": "draft_pr", "title": "Draft PR"},
+            ],
+        }
+
+        insights = _summarize_run_insights(
+            summary,
+            {},
+            None,
+            default_github_repo="owner/repo",
+            github_base_branch="main",
+        )
+
+        failure = insights["github"]["latestFailure"]
+        self.assertEqual(failure["stepId"], "draft_pr")
+        self.assertEqual(failure["title"], "Draft PR")
+        self.assertEqual(failure["status"], "blocked")
+        self.assertEqual(failure["failureKind"], "insufficient_token_permissions")
+        self.assertFalse(failure["retryable"])
+        self.assertIn("workflow-capable permissions", failure["recoveryHint"])
+        self.assertIn("permission", failure["summary"])

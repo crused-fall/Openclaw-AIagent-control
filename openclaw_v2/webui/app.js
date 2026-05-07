@@ -169,9 +169,21 @@ function githubBridgeStatus(github, overview, runId) {
   const issue = github?.issue || null;
   const pr = github?.pr || null;
   const workflow = github?.workflow || null;
+  const failure = github?.latestFailure || null;
   const workflowId = String(workflow?.id || workflow?.stepId || runId || "").trim();
   const workflowStatus = String(workflow?.status || "").trim().toLowerCase();
   const workflowConclusion = String(workflow?.conclusion || "").trim().toLowerCase();
+
+  if (failure && ["blocked", "failed"].includes(String(failure.status || "").trim().toLowerCase())) {
+    return {
+      status: String(failure.status || "").trim().toLowerCase() || "blocked",
+      label: `${String(failure.title || failure.stepId || "GitHub step").trim() || "GitHub step"} needs attention`,
+      detail:
+        String(failure.summary || "").trim() ||
+        String(failure.recoveryHint || "").trim() ||
+        "A GitHub workflow step reported a failure.",
+    };
+  }
 
   if (!repo) {
     return {
@@ -244,6 +256,10 @@ function currentGitHubWorkflow() {
   return activeRunInsights()?.github?.workflow || null;
 }
 
+function currentGitHubFailure() {
+  return activeRunInsights()?.github?.latestFailure || null;
+}
+
 function formatReviewWorkflowLine(workflow) {
   if (!workflow) {
     return "Latest review workflow: n/a";
@@ -273,6 +289,19 @@ function formatReviewWorkflowLine(workflow) {
 function formatReviewRecoveryHint(workflow) {
   const hint = String(workflow?.recoveryHint || "").trim();
   return hint ? `Review recovery: ${hint}` : "";
+}
+
+function formatGitHubRecoveryLine(workflow, failure) {
+  const workflowHint = formatReviewRecoveryHint(workflow);
+  if (workflowHint) {
+    return workflowHint;
+  }
+  const hint = String(failure?.recoveryHint || "").trim();
+  if (!hint) {
+    return "";
+  }
+  const step = String(failure?.title || failure?.stepId || "GitHub step").trim() || "GitHub step";
+  return `GitHub recovery: ${step}: ${hint}`;
 }
 
 function channelHealthStatus(channels) {
@@ -998,9 +1027,11 @@ function renderGitHubBridge() {
   const repoUrl = repo ? `https://github.com/${repo}` : "";
   const safeRepoUrl = safeExternalUrl(repoUrl);
   const safeWorkflowUrl = safeExternalUrl(workflow?.url);
+  const failure = currentGitHubFailure();
   const runId = activeRunId();
   const checks = github.checks || [];
   const bridgeState = currentGitHubBridgeState();
+  const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
 
   if (!repo && !cards.length && !checks.length) {
     elements.githubBridge.innerHTML = `<div class="empty-state">Run a GitHub-enabled pipeline or load a run with branch / issue / PR artifacts.</div>`;
@@ -1034,7 +1065,7 @@ function renderGitHubBridge() {
         <p>${escapeHtml(runId || "No run loaded")}</p>
         <small>${escapeHtml(branch ? `Branch: ${branch}` : "Branch will surface after publish_branch.")}</small>
         ${workflow ? `<small>${escapeHtml(formatReviewWorkflowLine(workflow))}</small>` : ""}
-        ${workflow && formatReviewRecoveryHint(workflow) ? `<small>${escapeHtml(formatReviewRecoveryHint(workflow))}</small>` : ""}
+        ${recoveryLine ? `<small>${escapeHtml(recoveryLine)}</small>` : ""}
         ${
           safeWorkflowUrl
             ? `<a class="bridge-link" href="${escapeHtml(safeWorkflowUrl)}" target="_blank" rel="noreferrer">Open latest review workflow</a>`
@@ -1920,9 +1951,11 @@ function generateRunSummaryText() {
   const runResult = runPayload.runResult;
   const bridgeState = currentGitHubBridgeState();
   const workflow = currentGitHubWorkflow();
+  const failure = currentGitHubFailure();
   const results = runResult.results || [];
   const counts = formatCounts(statusCounts(results));
   const actionable = actionableResults(results);
+  const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
   const lines = [
     `Run ID: ${runResult.run_id || "n/a"}`,
     `Pipeline: ${runPayload.pipeline || "n/a"}`,
@@ -1933,8 +1966,8 @@ function generateRunSummaryText() {
     formatReviewWorkflowLine(workflow),
     `Status counts: ${counts}`,
   ];
-  if (formatReviewRecoveryHint(workflow)) {
-    lines.push(formatReviewRecoveryHint(workflow));
+  if (recoveryLine) {
+    lines.push(recoveryLine);
   }
   if (actionable.length) {
     lines.push("", "Actionable results:");
@@ -1953,8 +1986,10 @@ function generateIssueUpdateText() {
   const runResult = runPayload.runResult;
   const bridgeState = currentGitHubBridgeState();
   const workflow = currentGitHubWorkflow();
+  const failure = currentGitHubFailure();
   const results = runResult.results || [];
   const actionable = actionableResults(results);
+  const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
   const lines = [
     "OpenClaw progress update",
     "",
@@ -1966,8 +2001,8 @@ function generateIssueUpdateText() {
     `- ${formatReviewWorkflowLine(workflow)}`,
     `- Status counts: ${formatCounts(statusCounts(results))}`,
   ];
-  if (formatReviewRecoveryHint(workflow)) {
-    lines.push(`- ${formatReviewRecoveryHint(workflow)}`);
+  if (recoveryLine) {
+    lines.push(`- ${recoveryLine}`);
   }
   if (actionable.length) {
     lines.push("- Actionable items:");
@@ -1988,10 +2023,12 @@ function generatePrNoteText() {
   const runResult = runPayload.runResult;
   const bridgeState = currentGitHubBridgeState();
   const workflow = currentGitHubWorkflow();
+  const failure = currentGitHubFailure();
   const branch = primaryBranch(runResult);
   const readiness = readinessFacts()
     .map((fact) => `${fact.label}:${fact.value}`)
     .join(" · ");
+  const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
   const lines = [
     "PR-ready note",
     "",
@@ -2004,8 +2041,8 @@ function generatePrNoteText() {
     formatReviewWorkflowLine(workflow),
     `Status counts: ${formatCounts(statusCounts(runResult.results || []))}`,
   ];
-  if (formatReviewRecoveryHint(workflow)) {
-    lines.push(formatReviewRecoveryHint(workflow));
+  if (recoveryLine) {
+    lines.push(recoveryLine);
   }
   return lines.join("\n");
 }
