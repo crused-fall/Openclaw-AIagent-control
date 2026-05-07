@@ -762,11 +762,14 @@ def _coerce_pipeline_step_config(raw_step: dict[str, Any]) -> PipelineStepConfig
 
 def _expand_env(value: Any) -> Any:
     if isinstance(value, str):
-        pattern = re.compile(r"\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+        pattern = re.compile(
+            r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}|\$([A-Za-z_][A-Za-z0-9_]*)"
+        )
 
         def replace(match: re.Match[str]) -> str:
-            env_name = match.group(1) or match.group(2)
-            return os.getenv(env_name, "")
+            env_name = match.group(1) or match.group(3)
+            default_value = match.group(2) or ""
+            return os.getenv(env_name, default_value)
 
         return pattern.sub(replace, value)
     if isinstance(value, list):

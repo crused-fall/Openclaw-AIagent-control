@@ -333,6 +333,38 @@ class ConfigLoaderTests(unittest.TestCase):
 
         self.assertEqual(config.assignments["triage_local"].agent, "gemini_researcher")
 
+    def test_load_app_config_supports_environment_defaults(self) -> None:
+        content = textwrap.dedent(
+            """
+            profiles:
+              openclaw_local:
+                agent: openclaw
+                mode: openclaw
+                openclaw_agent_id: ${OPENCLAW_AGENT_ID:-openclaw-control-ext}
+            managed_agents:
+              openclaw_router:
+                kind: openclaw
+                profile: openclaw_local
+            assignments:
+              triage_local:
+                agent: openclaw_router
+            pipelines:
+              demo:
+                - id: triage
+                  title: Triage
+                  assignment: triage_local
+                  prompt_template: test
+            """
+        ).strip()
+
+        with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            with mock.patch.dict("os.environ", {}, clear=False):
+                config = load_app_config(handle.name)
+
+        self.assertEqual(config.profiles["openclaw_local"].openclaw_agent_id, "openclaw-control-ext")
+
 
 if __name__ == "__main__":
     unittest.main()

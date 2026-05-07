@@ -64,7 +64,7 @@ profiles:
   openclaw_local:
     agent: openclaw
     mode: openclaw
-    openclaw_agent_id: ${OPENCLAW_AGENT_ID}
+    openclaw_agent_id: ${OPENCLAW_AGENT_ID:-openclaw-control-ext}
     openclaw_profile: ${OPENCLAW_PROFILE}
     openclaw_local: true
 
@@ -296,7 +296,7 @@ managed_agents:
 
 assignments:
   triage_local:
-    agent: claude_router_isolated
+    agent: openclaw_router
     manager: openclaw
     required_capabilities:
       - triage
@@ -322,7 +322,7 @@ assignments:
       - cursor_editor
 
   review_local:
-    agent: claude_router_isolated
+    agent: claude_router
     manager: openclaw
     required_capabilities:
       - review
@@ -461,7 +461,7 @@ pipelines:
 
     - id: review
       title: Review implementation before publish
-      assignment: review_local
+      assignment: review_openclaw
       depends_on:
         - implement
       prompt_template: |
@@ -676,6 +676,8 @@ pipelines:
           1. 任务拆分
           2. 风险点
           3. 实施顺序
+      - id: review
+        assignment: review_local
 
   mission_control_openclaw_default:
     extends: mission_control_openclaw_triage
