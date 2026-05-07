@@ -34,6 +34,7 @@ const elements = {
   healthAgentId: document.getElementById("health-agent-id"),
   checkHealth: document.getElementById("check-health"),
   healthPanel: document.getElementById("health-panel"),
+  workflowRunRef: document.getElementById("workflow-run-ref"),
   taskState: document.getElementById("task-state"),
   cancelTask: document.getElementById("cancel-task"),
   taskMeta: document.getElementById("task-meta"),
@@ -400,6 +401,7 @@ function setCopyFeedback(message) {
 
 function updateActionButtons() {
   const requestReady = Boolean((elements.request.value || "").trim());
+  const workflowRunRefIsReady = workflowRunRefReady();
   const taskActive = ["queued", "running"].includes(state.currentTaskStatus);
   elements.buttons.forEach((button) => {
     if (taskActive) {
@@ -407,7 +409,7 @@ function updateActionButtons() {
       return;
     }
     if (button.dataset.action === "run") {
-      button.disabled = !requestReady;
+      button.disabled = !requestReady || !workflowRunRefIsReady;
       return;
     }
     button.disabled = false;
@@ -644,6 +646,9 @@ function renderReadinessGate() {
   const health = state.healthSnapshot;
   const healthCurrent = healthSnapshotIsCurrent();
   const requestText = (elements.request.value || "").trim();
+  const workflowRunRefValue = currentWorkflowRunRef();
+  const workflowRunRefRequired = pipelineRequiresWorkflowRunRef();
+  const workflowRunRefIsReady = workflowRunRefReady();
   const pipelineSteps = currentPipelineSteps();
   const explicitSelection = selectedSteps();
   const effectiveIds = effectiveStepIds();
@@ -685,6 +690,22 @@ function renderReadinessGate() {
           ? "Live mode requires an explicit subset."
           : `Pipeline: ${elements.pipeline.value || bootstrap.snapshot?.defaultPipeline || "n/a"}`
         : "Refresh bootstrap or check config_v2.yaml.",
+    },
+    {
+      name: "Workflow run ref",
+      status: !workflowRunRefRequired
+        ? "neutral"
+        : workflowRunRefIsReady
+          ? "passed"
+          : "blocked",
+      summary: !workflowRunRefRequired
+        ? "Selected route does not require an existing workflow run reference."
+        : workflowRunRefIsReady
+          ? "Resume workflow reference is ready."
+          : "Provide a GitHub workflow run reference before launching this pipeline.",
+      detail: !workflowRunRefRequired
+        ? "No resume-only step is in the active route."
+        : workflowRunRefValue || "workflowRunRef is missing.",
     },
     {
       name: "Live policy",
@@ -1437,6 +1458,26 @@ function selectedSteps() {
   );
 }
 
+function currentWorkflowRunRef() {
+  return String(elements.workflowRunRef.value || "").trim();
+}
+
+function pipelineRequiresWorkflowRunRef() {
+  const pipelineSteps = currentPipelineSteps();
+  if (!pipelineSteps.length) {
+    return false;
+  }
+  const effectiveIds = new Set(effectiveStepIds());
+  return pipelineSteps.some(
+    (step) =>
+      Boolean(step?.metadata?.requires_external_workflow_run_ref) && effectiveIds.has(step.id),
+  );
+}
+
+function workflowRunRefReady() {
+  return !pipelineRequiresWorkflowRunRef() || Boolean(currentWorkflowRunRef());
+}
+
 function renderWorkspaceMetrics(bootstrap) {
   const git = bootstrap.git || {};
   const snapshot = bootstrap.snapshot || {};
@@ -1560,6 +1601,7 @@ function renderStepGrid() {
       renderPipelineDag();
       renderHeroStatus();
       renderReadinessGate();
+      updateActionButtons();
     });
   });
 }
@@ -2329,6 +2371,7 @@ function taskPayload(action) {
     repoPath: elements.repoPath.value,
     configPath: elements.configPath.value,
     pipeline: elements.pipeline.value,
+    workflowRunRef: currentWorkflowRunRef(),
     request: elements.request.value,
     steps: selectedSteps(),
     live: state.live,
@@ -2431,6 +2474,12 @@ function bindEvents() {
     renderReadinessGate();
   });
 
+  elements.workflowRunRef.addEventListener("input", () => {
+    renderLaunchBrief();
+    renderReadinessGate();
+    updateActionButtons();
+  });
+
   elements.compareLeftRun.addEventListener("change", () => {
     loadRunCompare().catch((error) => {
       elements.runCompare.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
@@ -2501,6 +2550,7 @@ function bindEvents() {
     renderPipelineDag();
     renderHeroStatus();
     renderReadinessGate();
+    updateActionButtons();
   });
 
   elements.selectNone.addEventListener("click", () => {
@@ -2512,6 +2562,7 @@ function bindEvents() {
     renderPipelineDag();
     renderHeroStatus();
     renderReadinessGate();
+    updateActionButtons();
   });
 
   elements.buttons.forEach((button) => {

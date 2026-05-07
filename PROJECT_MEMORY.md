@@ -33,6 +33,7 @@
 - `README.md`
 - `tests/test_github_executor.py`
 - `tests/test_web.py`
+- `openclaw_v2/webui/index.html`
 - `tests/test_webui_static.py`
 
 ## 最近进展
@@ -45,6 +46,7 @@
 - 2026-05-07：新增 `github_collect_review_resume` pipeline 和 `--workflow-run-ref`，可以直接回流一个已有 workflow run 的状态，不再额外触发 `dispatch_review`。
 - 2026-05-07：`collect_review` resume 的 workflow run ref 现在会贯穿 plan、prompt、GitHub workflow_view 命令和 Web dashboard 任务提交。
 - 2026-05-07：真实 live run `25504962543` 已验证 `github_collect_review_resume` 能直接收敛为 success。
+- 2026-05-07：Web UI 的 Launch Pad 现在暴露 `workflow run ref` 输入，并会在 `github_collect_review_resume` 选中时把它带进 task payload 和 readiness gate，避免 resume 流程还要手动改请求体。
 - 2026-05-07：Web UI 的 run compare 现在会显示左右 run 的最新 GitHub failure，以及 `latestFailureChanged` 差异，方便直接比较两次 run 的失败根因是否变化。
 - 2026-05-07：Web UI 的 recent runs 列表现在也会显示每次 run 的最新 GitHub failure、失败摘要和 recovery 提示，不用先点进 run detail 或 compare 才能看出最近几次协作失败发生在哪里。
 - 2026-05-07：Web UI 的 loaded run detail 和 artifact context 现在也会显示最新 GitHub failure 与 recovery，点开单次 run 后不再需要再切去 bridge 卡或复制文案才能看出当前协作阻塞点。

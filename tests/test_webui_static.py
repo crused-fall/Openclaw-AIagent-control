@@ -12,6 +12,15 @@ class WebUiStaticTests(unittest.TestCase):
         self.assertIn('return `<span class=\"status-chip ${tone}\">${escapeHtml(normalized)}</span>`;', source)
         self.assertNotIn('class=\"status-chip ${normalized}\"', source)
 
+    def test_launch_pad_exposes_workflow_run_ref_input(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "index.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="workflow-run-ref"', source)
+        self.assertIn('name="workflowRunRef"', source)
+        self.assertIn("Resume an existing GitHub Actions workflow run", source)
+
     def test_channel_health_status_uses_helper(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
             encoding="utf-8"
@@ -24,6 +33,19 @@ class WebUiStaticTests(unittest.TestCase):
             '${makeStatusChip(channels.every((item) => item.probeOk) ? "passed" : "warning")}',
             source,
         )
+
+    def test_task_payload_includes_workflow_run_ref_and_ready_state_checks_it(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function currentWorkflowRunRef()", source)
+        self.assertIn("function pipelineRequiresWorkflowRunRef()", source)
+        self.assertIn("function workflowRunRefReady()", source)
+        self.assertIn("workflowRunRef: currentWorkflowRunRef(),", source)
+        self.assertIn("const workflowRunRefIsReady = workflowRunRefReady();", source)
+        self.assertIn("elements.workflowRunRef.addEventListener(\"input\"", source)
+        self.assertIn("workflowRunRefReady()", source)
 
     def test_preflight_snapshot_status_is_shared_between_panels(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
