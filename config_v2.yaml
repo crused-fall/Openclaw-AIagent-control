@@ -10,7 +10,7 @@ runtime:
   cli_command_timeout_seconds: 180.0
   github_retry_attempts: 1
   github_retry_backoff_seconds: 1.0
-  github_workflow_view_poll_attempts: 6
+  github_workflow_view_poll_attempts: 15
   github_workflow_view_poll_interval_seconds: 2.0
   allowed_live_steps:
     - triage

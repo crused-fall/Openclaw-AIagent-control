@@ -64,7 +64,8 @@
 - 非 workflow 的 GitHub 失败现在也会汇总成 `github.latestFailure`，供 Web UI 和导出文案统一消费
 - Web UI 的 Bridge state 现在会优先显示最新 GitHub 失败，而不是把 `draft_pr` / `dispatch_review` 之类的真实失败误表述成“pending”
 - 新增 `github_bridge_smoke` pipeline，可绕过本地 `triage/implement/review` 单独验证 GitHub review workflow
-- `collect_review` 已支持短轮询等待，减少 workflow 刚触发时立即返回 `queued` 的手工重跑
+- `collect_review` 已支持约 30 秒的短轮询等待，减少 workflow 刚触发时立即返回 `queued` 的手工重跑
+- 2026-05-07 已用真实 `github_bridge_smoke` live run 验证更长 polling 窗口：workflow `25504962543` 在同一次 run 内成功从 dispatch 收敛到 collect success
 - 本地 CLI executor 已有超时护栏，`claude/codex` 长时间无响应时不会再无限挂住 run
 - GitHub 步骤 CLI 会打印 `github:` 摘要
 - GitHub bridge 的失败会分类为 auth / repository / workflow / reference / network / unknown

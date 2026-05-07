@@ -290,7 +290,7 @@ v2 已验证：
 - 已验证 `--diagnose-plan` 可以直接打印 step 的 assignment 候选、尝试链和 blocked 根因
 - 已验证 `dispatch_review -> collect_review` 可以把 workflow run 引用回流到后续 GitHub follow-up step
 - `collect_review` 现在还能回流 workflow status / conclusion，以及失败 job 摘要
-- `collect_review` 现在支持短轮询等待；如果 workflow 很快完成，同一次 live run 就能直接拿到最终状态
+- `collect_review` 现在支持短轮询等待；默认会轮询约 30 秒，如果 workflow 在这段窗口内完成，同一次 live run 就能直接拿到最终状态
 - GitHub bridge 现在会稳定回流 issue / PR / workflow run 引用，便于下游步骤继续消费
 - GitHub 步骤在 CLI 结果里会直接打印 `github:` 摘要，包含 repo、action、issue / PR / workflow refs
 - GitHub bridge 失败时会区分 `auth / repository / workflow / reference / network / unknown`，并保留 `blocked_reason`、`github_error`、`github_retryable` 和 `github_recovery_hint`

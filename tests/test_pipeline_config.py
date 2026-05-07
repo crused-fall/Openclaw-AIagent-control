@@ -16,7 +16,7 @@ class PipelineConfigTests(unittest.TestCase):
         self.assertEqual(config.runtime.cli_command_timeout_seconds, 180.0)
         self.assertEqual(config.runtime.github_retry_attempts, 1)
         self.assertEqual(config.runtime.github_retry_backoff_seconds, 1.0)
-        self.assertEqual(config.runtime.github_workflow_view_poll_attempts, 6)
+        self.assertEqual(config.runtime.github_workflow_view_poll_attempts, 15)
         self.assertEqual(config.runtime.github_workflow_view_poll_interval_seconds, 2.0)
         self.assertIn("review", config.runtime.allowed_live_steps)
 
