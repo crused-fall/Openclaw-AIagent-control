@@ -296,7 +296,7 @@ managed_agents:
 
 assignments:
   triage_local:
-    agent: claude_router
+    agent: claude_router_isolated
     manager: openclaw
     required_capabilities:
       - triage
@@ -322,7 +322,7 @@ assignments:
       - cursor_editor
 
   review_local:
-    agent: claude_router
+    agent: claude_router_isolated
     manager: openclaw
     required_capabilities:
       - review

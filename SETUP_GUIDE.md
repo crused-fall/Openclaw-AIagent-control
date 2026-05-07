@@ -180,7 +180,7 @@ python3 main_v2.py --live --request "修复登录页报错" --steps triage,imple
 如果 GitHub bridge 失败，CLI 还会直接打印 `stderr`、`github_failure_kind`、`github_retryable` 和 `github_recovery_hint`。
 如果 `gh workflow run` 返回 403 `Resource not accessible by personal access token`，优先改用 `gh auth login --web` 重新认证，或执行 `gh auth refresh -h github.com -s repo,workflow`；在 headless 环境中，可用 `gh auth login --with-token` 作为 `--web` 的替代方式。
 如果 `gh issue create` 只是因为仓库里还没有预设 labels 失败，系统现在会自动去掉 labels 重试一次，并在结果里打印 `github_label_fallback_used` 和 `github_ignored_labels`。
-如果本地 CLI 失败，结果里也会直接打印 `cli_failure_kind` 和 `cli_recovery_hint`。默认 `triage` 卡在 Claude 时，优先试 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`；如果想整体绕过 Claude 的前后监督步骤，直接改用 `mission_control_openclaw_default`；如果只想替换 `triage`，用 `mission_control_openclaw_triage`。
+如果本地 CLI 失败，结果里也会直接打印 `cli_failure_kind` 和 `cli_recovery_hint`。当前默认 `triage` / `review` 已经走隔离版 Claude；如果你刻意切回非隔离 `claude_router` 并且又卡住，优先试 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`；如果想整体绕过 Claude 的前后监督步骤，直接改用 `mission_control_openclaw_default`；如果只想替换 `triage`，用 `mission_control_openclaw_triage`。
 `codex_local` 现在默认带 `--ephemeral`，用于降低本机 `~/.codex` 状态库迁移冲突对 live run 的影响；如果结果里出现 `cli_failure_kind=usage_limit`，则需要等待 Codex 配额恢复或提升账号额度。
 如果 Codex 当前不可用，但你本机 OpenClaw agent 已具备仓库写权限，也可以临时绕过 Codex：`OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`。这会把 `implement` 这一步显式切到 `openclaw_local`，而不改变默认 pipeline 结构。
 这条 `openclaw_builder` 路径当前更适合本地 `triage/implement/review` 校验；如果实现结果没有导出可推送分支，`publish_branch` 现在会明确 `blocked`，不会再误继续到 GitHub 尾链。
