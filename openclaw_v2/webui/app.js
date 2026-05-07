@@ -1622,6 +1622,15 @@ function renderRecentRuns(bootstrap) {
   }
   elements.recentRuns.innerHTML = runs
     .map((run) => {
+      const latestFailure = run.insights?.github?.latestFailure || null;
+      const failureRecovery = formatGitHubRecoveryLine(null, latestFailure);
+      const failureSummary = formatGitHubFailureSummary(latestFailure);
+      const recentRunStatus =
+        latestFailure && ["blocked", "failed"].includes(normalizeStatusLabel(latestFailure.status))
+          ? latestFailure.status
+          : run.success
+            ? "succeeded"
+            : "warning";
       const counts = Object.entries(run.statusCounts || {})
         .map(([key, value]) => `${key}:${value}`)
         .join(" ");
@@ -1629,7 +1638,7 @@ function renderRecentRuns(bootstrap) {
         <article class="recent-run">
           <div class="result-card-header">
             <strong>${escapeHtml(run.runId)}</strong>
-            ${makeStatusChip(run.success ? "succeeded" : "warning")}
+            ${makeStatusChip(recentRunStatus)}
           </div>
           <p>${escapeHtml(run.request || "No request captured.")}</p>
           <div class="recent-run-meta">
@@ -1637,6 +1646,9 @@ function renderRecentRuns(bootstrap) {
             <span>${escapeHtml(`${run.stepCount || 0} planned steps`)}</span>
             <span>${escapeHtml(counts || "no status data")}</span>
           </div>
+          <small>${escapeHtml(formatGitHubFailureLine(run.insights?.github?.latestFailure || null))}</small>
+          ${failureSummary ? `<small>${escapeHtml(failureSummary)}</small>` : ""}
+          ${failureRecovery ? `<small>${escapeHtml(`Recovery: ${failureRecovery}`)}</small>` : ""}
           <small>${escapeHtml(formatAbsoluteTime(run.updatedAt))}</small>
           <div class="task-controls">
             <button class="ghost-button" type="button" data-run-id="${escapeHtml(run.runId)}">Load summary</button>

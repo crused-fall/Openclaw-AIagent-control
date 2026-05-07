@@ -354,6 +354,45 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         history_payload = await history_response.json()
         self.assertFalse(history_payload["insights"]["dryRun"])
 
+    async def test_bootstrap_recent_runs_preserve_latest_github_failure_summary(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-github-failure")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "run_id": "run-github-failure",
+                    "plan": [{"id": "draft_pr", "title": "Draft PR"}],
+                    "results": [
+                        {
+                            "work_item_id": "draft_pr",
+                            "status": "blocked",
+                            "mode": "github",
+                            "summary": "GitHub token does not have enough permission to trigger this workflow.",
+                            "artifacts": {
+                                "github_failure_kind": "insufficient_token_permissions",
+                                "github_retryable": False,
+                                "github_recovery_hint": "Refresh GitHub CLI auth with workflow-capable permissions.",
+                            },
+                        }
+                    ],
+                    "success": False,
+                },
+                handle,
+            )
+        with open(os.path.join(run_dir, "context.json"), "w", encoding="utf-8") as handle:
+            json.dump({"repo_path": self.repo_path, "user_request": "recent failure demo"}, handle)
+
+        bootstrap_response = await self.client.get("/api/bootstrap")
+        self.assertEqual(bootstrap_response.status, 200)
+        bootstrap_payload = await bootstrap_response.json()
+        recent = next(item for item in bootstrap_payload["recentRuns"] if item["runId"] == "run-github-failure")
+        failure = recent["insights"]["github"]["latestFailure"]
+
+        self.assertEqual(failure["stepId"], "draft_pr")
+        self.assertEqual(failure["failureKind"], "insufficient_token_permissions")
+        self.assertIn("permission", failure["summary"])
+        self.assertIn("workflow-capable permissions", failure["recoveryHint"])
+
     async def test_bootstrap_treats_runtime_snapshot_flags_and_lists_conservatively(self) -> None:
         class DummyOrchestrator:
             def __init__(self, config) -> None:

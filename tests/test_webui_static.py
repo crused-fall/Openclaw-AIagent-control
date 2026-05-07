@@ -90,6 +90,18 @@ class WebUiStaticTests(unittest.TestCase):
         self.assertNotIn('href="${escapeHtml(repoUrl)}"', source)
         self.assertNotIn('href="${escapeHtml(workflow.url)}"', source)
 
+    def test_recent_runs_surface_latest_github_failure(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderRecentRuns(bootstrap)", source)
+        self.assertIn("const latestFailure = run.insights?.github?.latestFailure || null;", source)
+        self.assertIn("const failureRecovery = formatGitHubRecoveryLine(null, latestFailure);", source)
+        self.assertIn("const failureSummary = formatGitHubFailureSummary(latestFailure);", source)
+        self.assertIn("formatGitHubFailureLine(run.insights?.github?.latestFailure || null)", source)
+        self.assertIn("Recovery: ${failureRecovery}", source)
+
     def test_hermes_panel_uses_overview_roles_and_active_run_roles(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
             encoding="utf-8"
