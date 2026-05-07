@@ -1685,7 +1685,16 @@ function renderArtifactBrowser(historyPayload) {
   state.currentHistory = historyPayload;
   elements.cleanupCurrentRun.disabled = false;
   const files = historyPayload.files || [];
-  elements.artifactContext.textContent = `${historyPayload.runId} · ${historyPayload.artifactsDir || "artifact dir unknown"}`;
+  const latestFailure = historyPayload.insights?.github?.latestFailure || null;
+  const failureLine = formatGitHubFailureLine(latestFailure);
+  const recoveryLine = formatGitHubRecoveryLine(null, latestFailure);
+  elements.artifactContext.textContent = [
+    `${historyPayload.runId} · ${historyPayload.artifactsDir || "artifact dir unknown"}`,
+    latestFailure ? failureLine : "",
+    latestFailure && recoveryLine ? recoveryLine : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   if (!files.length) {
     elements.artifactList.innerHTML = `<div class="empty-state">This run has no recorded artifact files.</div>`;
     elements.artifactViewer.innerHTML = `<div class="empty-state">No artifact file available to preview.</div>`;
@@ -1925,9 +1934,20 @@ function renderPlan(plan) {
 }
 
 function renderRunResults(runResult) {
+  const workflow = currentGitHubWorkflow();
+  const failure = currentGitHubFailure();
+  const failureLine = formatGitHubFailureLine(failure);
+  const failureSummary = formatGitHubFailureSummary(failure);
+  const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
   const results = runResult.results || [];
   const visibleResults = filterResults(results);
   const counts = statusCounts(results);
+  const summaryStatus =
+    failure && ["blocked", "failed"].includes(normalizeStatusLabel(failure.status))
+      ? failure.status
+      : runResult.success
+        ? "succeeded"
+        : "warning";
   const resultMarkup = visibleResults.length
     ? visibleResults
         .map((item) => {
@@ -1985,7 +2005,7 @@ function renderRunResults(runResult) {
       <div class="result-card">
         <div class="result-card-header">
           <strong>${escapeHtml(runResult.run_id || "run")}</strong>
-          ${makeStatusChip(runResult.success ? "succeeded" : "warning")}
+          ${makeStatusChip(summaryStatus)}
         </div>
         <dl class="meta-list">
           <div><dt>Artifacts</dt><dd>${escapeHtml(runResult.artifacts_dir || "n/a")}</dd></div>
@@ -1993,7 +2013,10 @@ function renderRunResults(runResult) {
           <div><dt>Results</dt><dd>${escapeHtml(String(results.length))}</dd></div>
           <div><dt>Status counts</dt><dd>${escapeHtml(formatCounts(counts))}</dd></div>
           <div><dt>Visible filter</dt><dd>${escapeHtml(state.resultFilter)}</dd></div>
+          <div><dt>GitHub latest failure</dt><dd>${escapeHtml(failureLine)}</dd></div>
         </dl>
+        ${failureSummary ? `<small>${escapeHtml(failureSummary)}</small>` : ""}
+        ${recoveryLine ? `<small>${escapeHtml(`Recovery: ${recoveryLine}`)}</small>` : ""}
       </div>
       <div class="result-grid">${resultMarkup}</div>
     </section>

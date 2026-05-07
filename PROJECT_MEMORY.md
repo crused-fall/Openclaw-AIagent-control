@@ -40,6 +40,7 @@
 - 2026-05-07：GitHub bridge cards 现在即使拿不到 issue / PR / workflow 引用，也会为失败步骤保留 operator 卡片，并显示 step summary、failure kind 和 recovery hint。
 - 2026-05-07：Web UI 的 run compare 现在会显示左右 run 的最新 GitHub failure，以及 `latestFailureChanged` 差异，方便直接比较两次 run 的失败根因是否变化。
 - 2026-05-07：Web UI 的 recent runs 列表现在也会显示每次 run 的最新 GitHub failure、失败摘要和 recovery 提示，不用先点进 run detail 或 compare 才能看出最近几次协作失败发生在哪里。
+- 2026-05-07：Web UI 的 loaded run detail 和 artifact context 现在也会显示最新 GitHub failure 与 recovery，点开单次 run 后不再需要再切去 bridge 卡或复制文案才能看出当前协作阻塞点。
 - 2026-05-03：GitHub review workflow 的 conclusion 和 failed jobs 已回流到 Web UI 的 run summary、issue update 和 PR note 文案。
 - 2026-05-03：GitHub review workflow failed jobs 的 run insights / UI helper / 回归测试已补齐，字符串形态的 failed jobs 也能正确显示。
 - 2026-05-03：Web UI 健康面板在 channels 为空时保持 `warning`，不再误报 `passed`。
@@ -48,7 +49,7 @@
 ## 下一步候选
 
 1. 继续稳定 `mission_control_default` 主链，优先做更多真实 GitHub run 验证，减少“本地成功但协作链路不可读”的情况。
-2. 继续收 GitHub bridge 的结果诊断和失败恢复，下一步优先考虑把 `latestFailure` 再下沉到 history detail / artifact context 等更靠近单次 run 浏览入口的位置。
+2. 继续收 GitHub bridge 的结果诊断和失败恢复，下一步优先考虑把真实 run 的 GitHub 失败 / 恢复信息和 review workflow 结果做一次端到端验证，而不是只停留在 UI 层静态/单元验证。
 3. 继续把 Web UI 作为本地主控台打磨，但避免把它做成独立产品面，而是服务 Mission Control 主线。
 4. 在默认 pipeline 稳定前，不把 Hermes 扩到 `implement`，也不急着把 OpenClaw 提升为默认控制入口。
 

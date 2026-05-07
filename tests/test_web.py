@@ -520,6 +520,45 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         file_payload = await file_response.json()
         self.assertIn("hello prompt", file_payload["content"])
 
+    async def test_history_endpoint_preserves_latest_github_failure_summary(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-history-github-failure")
+        os.makedirs(os.path.join(run_dir, "prompts"), exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "run_id": "run-history-github-failure",
+                    "plan": [{"id": "draft_pr", "title": "Draft PR"}],
+                    "results": [
+                        {
+                            "work_item_id": "draft_pr",
+                            "status": "blocked",
+                            "mode": "github",
+                            "summary": "GitHub token does not have enough permission to trigger this workflow.",
+                            "artifacts": {
+                                "github_failure_kind": "insufficient_token_permissions",
+                                "github_retryable": False,
+                                "github_recovery_hint": "Refresh GitHub CLI auth with workflow-capable permissions.",
+                            },
+                        }
+                    ],
+                    "success": False,
+                },
+                handle,
+            )
+        with open(os.path.join(run_dir, "context.json"), "w", encoding="utf-8") as handle:
+            json.dump({"repo_path": self.repo_path, "user_request": "history failure demo"}, handle)
+
+        response = await self.client.get("/api/history/run-history-github-failure")
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        failure = payload["insights"]["github"]["latestFailure"]
+
+        self.assertEqual(payload["runId"], "run-history-github-failure")
+        self.assertEqual(failure["stepId"], "draft_pr")
+        self.assertEqual(failure["failureKind"], "insufficient_token_permissions")
+        self.assertIn("permission", failure["summary"])
+        self.assertIn("workflow-capable permissions", failure["recoveryHint"])
+
     async def test_history_endpoint_tolerates_config_disappearing_after_initial_load(self) -> None:
         run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-1")
         os.makedirs(run_dir, exist_ok=True)

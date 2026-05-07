@@ -102,6 +102,23 @@ class WebUiStaticTests(unittest.TestCase):
         self.assertIn("formatGitHubFailureLine(run.insights?.github?.latestFailure || null)", source)
         self.assertIn("Recovery: ${failureRecovery}", source)
 
+    def test_run_detail_surfaces_latest_github_failure(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderRunResults(runResult)", source)
+        self.assertIn("const workflow = currentGitHubWorkflow();", source)
+        self.assertIn("const failure = currentGitHubFailure();", source)
+        self.assertIn("const failureLine = formatGitHubFailureLine(failure);", source)
+        self.assertIn("const failureSummary = formatGitHubFailureSummary(failure);", source)
+        self.assertIn("const recoveryLine = formatGitHubRecoveryLine(workflow, failure);", source)
+        self.assertIn("<div><dt>GitHub latest failure</dt><dd>${escapeHtml(failureLine)}</dd></div>", source)
+        self.assertIn("Recovery: ${recoveryLine}", source)
+        self.assertIn("const latestFailure = historyPayload.insights?.github?.latestFailure || null;", source)
+        self.assertIn("const failureLine = formatGitHubFailureLine(latestFailure);", source)
+        self.assertIn("const recoveryLine = formatGitHubRecoveryLine(null, latestFailure);", source)
+
     def test_hermes_panel_uses_overview_roles_and_active_run_roles(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
             encoding="utf-8"

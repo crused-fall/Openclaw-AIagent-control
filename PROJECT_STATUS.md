@@ -124,6 +124,7 @@
 - Web UI 的 history compare 现在也会保守忽略非列表的 `plan/results`，避免摘要里的结构异常拖出 `500`
 - Web UI 的 history compare 现在也会显示 `latestFailureChanged` 和左右 run 的 `latestFailures`，方便直接判断 GitHub 失败根因是否已经变化
 - Web UI 的 recent runs 列表现在也会显示每次 run 的最新 GitHub failure、失败摘要和 recovery 提示，方便直接从首页判断最近几次协作失败点
+- Web UI 的 loaded run detail 和 artifact context 现在也会显示最新 GitHub failure 与 recovery，单次 run 浏览入口和 bridge/operator 视图的失败语义已基本对齐
 - Web UI 的 runtime snapshot / Hermes overview / GitHub overview 现在会把字符串型布尔和坏列表保守降级，避免配置快照误报
 - Web API 的任务创建现在会拒绝非布尔的 `live`，避免字符串值误入 live 模式
 - Web API 的任务创建现在会严格校验 `steps` 形状，避免非字符串列表项进入后台执行
