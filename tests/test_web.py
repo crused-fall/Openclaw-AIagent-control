@@ -1450,6 +1450,7 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
     async def test_run_task_captures_progress_and_result(self) -> None:
         run_artifacts = os.path.join(self.repo_path, ".openclaw", "runs", "run-web-test")
         os.makedirs(run_artifacts, exist_ok=True)
+        captured: dict[str, str] = {}
         with open(os.path.join(run_artifacts, "summary.json"), "w", encoding="utf-8") as handle:
             json.dump(
                 {
@@ -1506,6 +1507,7 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
                 return []
 
             async def run(self, user_request, repo_path, selected_steps=None, progress_callback=None):
+                captured["workflow_run_ref"] = getattr(self, "workflow_run_ref", "")
                 if progress_callback is not None:
                     progress_callback("preflight:start")
                     progress_callback("step:done implement -> succeeded")
@@ -1521,6 +1523,7 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
                     "pipeline": "demo_pipeline",
                     "request": "Add a Web UI",
                     "steps": ["implement"],
+                    "workflowRunRef": "25504962543",
                     "live": False,
                 },
             )
@@ -1543,6 +1546,7 @@ class WebRunTaskTests(unittest.IsolatedAsyncioTestCase):
             messages = [item["message"] for item in task_payload["progress"]]
             self.assertIn("preflight:start", messages)
             self.assertIn("step:done implement -> succeeded", messages)
+            self.assertEqual(captured["workflow_run_ref"], "25504962543")
             self.assertEqual(task_payload["result"]["mode"], "run")
             self.assertEqual(task_payload["result"]["runResult"]["run_id"], "run-web-test")
             self.assertEqual(task_payload["result"]["history"]["runId"], "run-web-test")

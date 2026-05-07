@@ -257,6 +257,15 @@ def _selected_steps(payload: dict[str, Any]) -> list[str] | None:
     raise web.HTTPBadRequest(text="steps must be a comma-separated string or a list of step ids.")
 
 
+def _workflow_run_ref(payload: dict[str, Any]) -> str:
+    raw_ref = payload.get("workflowRunRef", payload.get("workflow_run_ref", ""))
+    if raw_ref in ("", None):
+        return ""
+    if not isinstance(raw_ref, str):
+        raise web.HTTPBadRequest(text="workflowRunRef must be a string.")
+    return raw_ref.strip()
+
+
 def _default_openclaw_agent_id(config: Any) -> str:
     env_value = os.getenv("OPENCLAW_AGENT_ID", "").strip()
     if env_value:
@@ -1473,6 +1482,7 @@ def _validate_task_submission(action: str, payload: dict[str, Any], config: Any)
         return
 
     selected_steps = _selected_steps(payload)
+    workflow_run_ref = _workflow_run_ref(payload)
 
     if action == "run":
         user_request = str(payload.get("request", "")).strip()
@@ -1484,6 +1494,7 @@ def _validate_task_submission(action: str, payload: dict[str, Any], config: Any)
         live = False
 
     orchestrator = HybridOrchestrator(config)
+    orchestrator.workflow_run_ref = workflow_run_ref
     if action == "run" and live:
         _validate_live_policy(
             orchestrator,
@@ -1503,6 +1514,7 @@ async def _execute_dashboard_action(
     payload = task.payload
     repo_path, config_path, config = _resolve_request_payload(app, payload)
     selected_steps = _selected_steps(payload)
+    workflow_run_ref = _workflow_run_ref(payload)
 
     if task.action == "doctor":
         task.add_progress("Running config diagnostics.")
@@ -1514,6 +1526,7 @@ async def _execute_dashboard_action(
         }
 
     orchestrator = HybridOrchestrator(config)
+    orchestrator.workflow_run_ref = workflow_run_ref
 
     if task.action in {"diagnose", "preflight"}:
         task.add_progress("Running preflight.")
@@ -1538,6 +1551,7 @@ async def _execute_dashboard_action(
     live = _read_json_bool_field(payload, "live", False)
     config.runtime.dry_run = not live
     orchestrator = HybridOrchestrator(config)
+    orchestrator.workflow_run_ref = workflow_run_ref
     if live:
         _validate_live_policy(
             orchestrator,

@@ -374,6 +374,69 @@ class OrchestratorExecutionTests(unittest.IsolatedAsyncioTestCase):
         )
         prepare.assert_not_awaited()
 
+    def test_resume_collect_review_plan_requires_an_explicit_workflow_run_ref(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        config.runtime.pipeline = "github_collect_review_resume"
+        orchestrator = HybridOrchestrator(config)
+
+        plan = orchestrator.build_plan()
+
+        self.assertEqual([item.id for item in plan], ["collect_review"])
+        self.assertEqual(plan[0].depends_on, [])
+        self.assertEqual(plan[0].metadata["requires_external_workflow_run_ref"], True)
+        self.assertIn("workflow run reference", plan[0].planning_blocked_reason)
+
+    async def test_resume_collect_review_keeps_injected_workflow_run_ref_through_execution(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        config.runtime.pipeline = "github_collect_review_resume"
+        orchestrator = HybridOrchestrator(config)
+        orchestrator.workflow_run_ref = "25504962543"
+
+        plan = orchestrator.build_plan()
+        self.assertEqual(plan[0].metadata["primary_workflow_run_ref"], "25504962543")
+        self.assertEqual(plan[0].planning_blocked_reason, "")
+
+        context = ExecutionContext(
+            run_id="run-resume",
+            user_request="Resume workflow review collection.",
+            repo_path=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+            dry_run=False,
+            artifacts_dir="/tmp/artifacts",
+            worktrees_dir="/tmp/worktrees",
+        )
+
+        async def prepare(work_item: WorkItem, execution_context: ExecutionContext) -> None:
+            work_item.workspace_path = execution_context.repo_path
+
+        async def execute_github(
+            work_item: WorkItem,
+            profile,
+            execution_context: ExecutionContext,
+            rendered_prompt: str,
+        ) -> AgentResult:
+            self.assertEqual(work_item.metadata["primary_workflow_run_ref"], "25504962543")
+            self.assertIn("25504962543", rendered_prompt)
+            self.assertIn("最新状态", rendered_prompt)
+            return AgentResult(
+                work_item_id=work_item.id,
+                profile=work_item.profile,
+                agent=work_item.agent,
+                mode=work_item.mode,
+                status=TaskStatus.SUCCEEDED,
+                summary="Workflow status collected.",
+            )
+
+        with (
+            mock.patch.object(orchestrator.worktree_manager, "prepare", new=mock.AsyncMock(side_effect=prepare)),
+            mock.patch.object(orchestrator.artifact_store, "write_workspace_manifest"),
+            mock.patch.object(orchestrator.artifact_store, "write_prompt", return_value="/tmp/prompt.txt"),
+            mock.patch.object(orchestrator.artifact_store, "write_result"),
+        ):
+            orchestrator.executors[ExecutionMode.GITHUB].execute = mock.AsyncMock(side_effect=execute_github)
+            results = await orchestrator._execute_ready_items(plan, context, {})
+
+        self.assertEqual(results[0].status, TaskStatus.SUCCEEDED)
+
     async def test_run_emits_progress_messages_for_dry_run_step(self) -> None:
         config = load_app_config("config_v2.yaml")
         config.runtime.dry_run = True

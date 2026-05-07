@@ -118,6 +118,13 @@ tests/
 - 适合在本地 `claude/codex` 环境不稳定时排除干扰
 - 它不会经过 `commit_changes` 和 `publish_branch` 步骤
 
+另有一条 GitHub review 回流恢复 pipeline：`github_collect_review_resume`
+
+- 只跑 `collect_review`
+- 用来继续收集一个已经存在的 GitHub Actions workflow run 的状态
+- 需要配合 `--workflow-run-ref`，可以传 run id 或 run URL
+- 适合在 workflow 已经触发、但你想稍后回来继续收集结果时使用
+
 ## 快速开始
 
 ### v2 Mission Control
@@ -214,6 +221,15 @@ python3 main_v2.py --pipeline mission_control_hermes_supervised \
 
 ```bash
 python3 main_v2.py --pipeline github_bridge_smoke --request "smoke test github bridge" --steps collect_review
+```
+
+如果你已经有一个现成的 GitHub Actions workflow run，要直接回流状态而不是新触发一次：
+
+```bash
+python3 main_v2.py --pipeline github_collect_review_resume \
+  --request "resume collect review" \
+  --steps collect_review \
+  --workflow-run-ref 25504962543
 ```
 
 5. live 执行

@@ -296,6 +296,21 @@ class PipelineConfigTests(unittest.TestCase):
         self.assertEqual(work_items["collect_review"].managed_agent, "github_review_followup_bridge")
         self.assertEqual(work_items["collect_review"].depends_on, ["dispatch_review"])
 
+    def test_github_collect_review_resume_pipeline_only_contains_collect_review_step(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        config.runtime.pipeline = "github_collect_review_resume"
+        planner = PipelinePlanner(config)
+
+        plan = planner.build_plan()
+        work_items = {item.id: item for item in plan}
+
+        self.assertEqual(list(work_items.keys()), ["collect_review"])
+        self.assertEqual(work_items["collect_review"].mode, ExecutionMode.GITHUB)
+        self.assertEqual(work_items["collect_review"].assignment, "collect_review_bridge")
+        self.assertEqual(work_items["collect_review"].managed_agent, "github_review_followup_bridge")
+        self.assertEqual(work_items["collect_review"].depends_on, [])
+        self.assertTrue(work_items["collect_review"].metadata["requires_external_workflow_run_ref"])
+
     def test_all_named_pipelines_build_without_duplicate_step_ids(self) -> None:
         config = load_app_config("config_v2.yaml")
 
@@ -306,6 +321,7 @@ class PipelineConfigTests(unittest.TestCase):
             "mission_control_openclaw_default",
             "mission_control_hermes_supervised",
             "github_bridge_smoke",
+            "github_collect_review_resume",
         ]:
             config.runtime.pipeline = pipeline_name
             planner = PipelinePlanner(config)
