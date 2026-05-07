@@ -71,6 +71,7 @@
 - GitHub 失败结果会保留 `stderr`、retryability 和恢复提示
 - GitHub bridge 的 `repository_unavailable` / `workflow_missing` 失败分支已补上回归测试，和现有 auth / permission / reference / network 路径一起覆盖主要失败形态
 - GitHub bridge 面板里的 repo / workflow 外链也已统一走 `safeExternalUrl`，避免把非 http(s) URL 直接挂到 `href`
+- GitHub bridge cards 现在即使拿不到 issue / PR / workflow 引用，也会为失败步骤保留 operator 卡片，并带出 summary / failure kind / recovery hint
 - GitHub bridge 已支持显式配置的网络类自动重试
 - GitHub repo 已支持显式开启的 `origin` fallback
 - `gh issue create` 如果因为仓库里缺少 labels 失败，会自动去掉 labels 重试一次，并把被忽略的 labels 回写到结果
@@ -121,6 +122,7 @@
 - Web UI 的历史与概览里，`success` / `dry_run` 这类状态位现在只认真正的 JSON 布尔值，字符串值不再被误报为 `true`
 - Web UI 的 history compare 现在会对 malformed `statusCounts` / `workflow` / `sessionCount` 做保守降级，避免比较摘要被坏字段拖垮
 - Web UI 的 history compare 现在也会保守忽略非列表的 `plan/results`，避免摘要里的结构异常拖出 `500`
+- Web UI 的 history compare 现在也会显示 `latestFailureChanged` 和左右 run 的 `latestFailures`，方便直接判断 GitHub 失败根因是否已经变化
 - Web UI 的 runtime snapshot / Hermes overview / GitHub overview 现在会把字符串型布尔和坏列表保守降级，避免配置快照误报
 - Web API 的任务创建现在会拒绝非布尔的 `live`，避免字符串值误入 live 模式
 - Web API 的任务创建现在会严格校验 `steps` 形状，避免非字符串列表项进入后台执行

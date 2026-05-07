@@ -751,13 +751,27 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
             json.dump(
                 {
                     "run_id": "run-b",
-                    "plan": [{"id": "publish_branch", "title": "Publish branch"}],
+                    "plan": [
+                        {"id": "publish_branch", "title": "Publish branch"},
+                        {"id": "draft_pr", "title": "Draft PR"},
+                    ],
                     "results": [
                         {
                             "work_item_id": "publish_branch",
                             "status": "blocked",
                             "mode": "cli",
                             "artifacts": {"source_branch": "branch-b"},
+                        },
+                        {
+                            "work_item_id": "draft_pr",
+                            "status": "blocked",
+                            "mode": "github",
+                            "summary": "GitHub token does not have enough permission to trigger this workflow.",
+                            "artifacts": {
+                                "github_failure_kind": "insufficient_token_permissions",
+                                "github_retryable": False,
+                                "github_recovery_hint": "Refresh GitHub CLI auth with workflow-capable permissions.",
+                            },
                         },
                         {
                             "work_item_id": "record_summary",
@@ -778,8 +792,14 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         payload = await response.json()
         self.assertEqual(len(payload["runs"]), 2)
         self.assertTrue(payload["comparison"]["branchChanged"])
+        self.assertTrue(payload["comparison"]["latestFailureChanged"])
         self.assertEqual(payload["comparison"]["hermesSessionDelta"], 1)
         self.assertTrue(any(item["stepId"] == "publish_branch" for item in payload["comparison"]["stepDiffs"]))
+        self.assertEqual(payload["runs"][1]["insights"]["github"]["latestFailure"]["stepId"], "draft_pr")
+        self.assertEqual(
+            payload["comparison"]["latestFailures"]["right"]["failureKind"],
+            "insufficient_token_permissions",
+        )
 
     async def test_history_compare_treats_string_success_flags_conservatively(self) -> None:
         runs_root = os.path.join(self.repo_path, ".openclaw", "runs")
@@ -1804,6 +1824,41 @@ class WebGitHubInsightTests(unittest.TestCase):
         self.assertEqual(cards[0]["githubFailureKind"], "workflow_failed")
         self.assertFalse(cards[0]["githubRetryable"])
         self.assertIn("Inspect the failed jobs", cards[0]["githubRecoveryHint"])
+
+    def test_failed_draft_pr_without_pr_ref_still_creates_bridge_card(self) -> None:
+        summary = {
+            "results": [
+                {
+                    "work_item_id": "draft_pr",
+                    "status": "blocked",
+                    "summary": "GitHub token does not have enough permission to trigger this workflow.",
+                    "artifacts": {
+                        "source_branch": "feature/test",
+                        "github_failure_kind": "insufficient_token_permissions",
+                        "github_retryable": False,
+                        "github_recovery_hint": "Refresh GitHub CLI auth with workflow-capable permissions.",
+                    },
+                }
+            ],
+            "plan": [{"id": "draft_pr", "title": "Draft PR"}],
+        }
+
+        insights = _summarize_run_insights(
+            summary,
+            {},
+            None,
+            default_github_repo="owner/repo",
+            github_base_branch="main",
+        )
+
+        cards = insights["github"]["cards"]
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0]["stepId"], "draft_pr")
+        self.assertEqual(cards[0]["kind"], "pr")
+        self.assertEqual(cards[0]["githubFailureKind"], "insufficient_token_permissions")
+        self.assertFalse(cards[0]["githubRetryable"])
+        self.assertIn("workflow-capable permissions", cards[0]["githubRecoveryHint"])
+        self.assertIn("permission", cards[0]["summary"])
 
     def test_latest_non_workflow_github_failure_is_preserved_in_run_insights(self) -> None:
         summary = {

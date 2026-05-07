@@ -495,13 +495,14 @@ def _summarize_run_insights(
         recovery_hint = str(artifacts.get("github_recovery_hint", "")).strip()
         retryable_present = "github_retryable" in artifacts
         retryable_value = _json_bool_value(artifacts.get("github_retryable", False))
+        step_summary = str(item.get("summary", "")).strip()
         if (failure_kind or recovery_hint) and work_item_id in github_step_map:
             github_latest_failure = {
                 "stepId": work_item_id,
                 "title": plan_titles.get(work_item_id, github_step_map[work_item_id][1]),
                 "status": status,
                 "failureKind": failure_kind,
-                "summary": str(item.get("summary", "")).strip(),
+                "summary": step_summary,
                 "recoveryHint": recovery_hint,
             }
             if retryable_present:
@@ -520,38 +521,49 @@ def _summarize_run_insights(
                 "title": plan_titles.get(work_item_id, label),
                 "status": status,
             }
+            if step_summary:
+                card["summary"] = step_summary
+            if failure_kind:
+                card["githubFailureKind"] = failure_kind
+            if retryable_present:
+                card["githubRetryable"] = retryable_value
+            if recovery_hint:
+                card["githubRecoveryHint"] = recovery_hint
+            failure_operator_card = bool(failure_kind or recovery_hint or (status in {"failed", "blocked"} and step_summary))
             if kind == "branch":
                 card["branch"] = github_branch
                 if github_repo and github_branch:
                     card["url"] = f"https://github.com/{github_repo}/tree/{github_branch}"
-                if github_branch:
+                if github_branch or failure_operator_card:
                     github_cards.append(card)
             elif kind == "issue":
                 issue_url = str(artifacts.get("issue_url", "")).strip()
                 issue_number = str(artifacts.get("issue_number", "")).strip()
-                if issue_url or issue_number:
+                if issue_url or issue_number or failure_operator_card:
                     card["url"] = issue_url
                     card["number"] = issue_number
                     github_cards.append(card)
-                    github_issue = {
-                        "url": issue_url,
-                        "number": issue_number,
-                        "status": status,
-                        "stepId": work_item_id,
-                    }
+                    if issue_url or issue_number:
+                        github_issue = {
+                            "url": issue_url,
+                            "number": issue_number,
+                            "status": status,
+                            "stepId": work_item_id,
+                        }
             elif kind == "pr":
                 pr_url = str(artifacts.get("pr_url", "")).strip()
                 pr_number = str(artifacts.get("pr_number", "")).strip()
-                if pr_url or pr_number:
+                if pr_url or pr_number or failure_operator_card:
                     card["url"] = pr_url
                     card["number"] = pr_number
                     github_cards.append(card)
-                    github_pr = {
-                        "url": pr_url,
-                        "number": pr_number,
-                        "status": status,
-                        "stepId": work_item_id,
-                    }
+                    if pr_url or pr_number:
+                        github_pr = {
+                            "url": pr_url,
+                            "number": pr_number,
+                            "status": status,
+                            "stepId": work_item_id,
+                        }
             elif kind == "workflow":
                 workflow_url = str(artifacts.get("workflow_run_url", "")).strip()
                 workflow_id = str(artifacts.get("workflow_run_id", "")).strip()
@@ -559,39 +571,30 @@ def _summarize_run_insights(
                 workflow_conclusion = str(artifacts.get("workflow_conclusion", "")).strip()
                 workflow_failed_jobs = str(artifacts.get("workflow_failed_jobs", "")).strip()
                 workflow_failed_job_count = _json_int_value(artifacts.get("workflow_failed_job_count", 0))
-                workflow_failure_kind = str(artifacts.get("github_failure_kind", "")).strip()
-                workflow_retryable_present = "github_retryable" in artifacts
-                workflow_retryable = _json_bool_value(artifacts.get("github_retryable", False))
-                workflow_recovery_hint = str(artifacts.get("github_recovery_hint", "")).strip()
-                if workflow_url or workflow_id:
+                if workflow_url or workflow_id or failure_operator_card:
                     card["url"] = workflow_url
                     card["number"] = workflow_id
                     card["workflowStatus"] = workflow_status
                     card["workflowConclusion"] = workflow_conclusion
                     card["workflowFailedJobs"] = workflow_failed_jobs
                     card["workflowFailedJobCount"] = workflow_failed_job_count
-                    if workflow_failure_kind:
-                        card["githubFailureKind"] = workflow_failure_kind
-                    if workflow_retryable_present:
-                        card["githubRetryable"] = workflow_retryable
-                    if workflow_recovery_hint:
-                        card["githubRecoveryHint"] = workflow_recovery_hint
                     github_cards.append(card)
-                    github_workflow = {
-                        "url": workflow_url,
-                        "id": workflow_id,
-                        "status": workflow_status,
-                        "conclusion": workflow_conclusion,
-                        "failedJobs": workflow_failed_jobs,
-                        "failedJobCount": workflow_failed_job_count,
-                        "stepId": work_item_id,
-                    }
-                    if workflow_failure_kind:
-                        github_workflow["failureKind"] = workflow_failure_kind
-                    if workflow_retryable_present:
-                        github_workflow["retryable"] = workflow_retryable
-                    if workflow_recovery_hint:
-                        github_workflow["recoveryHint"] = workflow_recovery_hint
+                    if workflow_url or workflow_id:
+                        github_workflow = {
+                            "url": workflow_url,
+                            "id": workflow_id,
+                            "status": workflow_status,
+                            "conclusion": workflow_conclusion,
+                            "failedJobs": workflow_failed_jobs,
+                            "failedJobCount": workflow_failed_job_count,
+                            "stepId": work_item_id,
+                        }
+                        if failure_kind:
+                            github_workflow["failureKind"] = failure_kind
+                        if retryable_present:
+                            github_workflow["retryable"] = retryable_value
+                        if recovery_hint:
+                            github_workflow["recoveryHint"] = recovery_hint
 
         if mode == "hermes" or any(str(key).startswith("hermes_") for key in artifacts):
             hermes_roles.append(
@@ -697,6 +700,8 @@ def _compare_run_histories(left: dict[str, Any], right: dict[str, Any]) -> dict[
     right_github = _json_object_value(right_insights.get("github"))
     left_workflow = _json_object_value(left_github.get("workflow"))
     right_workflow = _json_object_value(right_github.get("workflow"))
+    left_latest_failure = _json_object_value(left_github.get("latestFailure"))
+    right_latest_failure = _json_object_value(right_github.get("latestFailure"))
     left_hermes = _json_object_value(left_insights.get("hermes"))
     right_hermes = _json_object_value(right_insights.get("hermes"))
     return {
@@ -707,6 +712,11 @@ def _compare_run_histories(left: dict[str, Any], right: dict[str, Any]) -> dict[
             left_workflow.get("id", "")
             != right_workflow.get("id", "")
         ),
+        "latestFailureChanged": left_latest_failure != right_latest_failure,
+        "latestFailures": {
+            "left": left_latest_failure,
+            "right": right_latest_failure,
+        },
         "hermesSessionDelta": _json_int_value(right_hermes.get("sessionCount", 0))
         - _json_int_value(left_hermes.get("sessionCount", 0)),
     }

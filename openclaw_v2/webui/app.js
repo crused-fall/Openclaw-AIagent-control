@@ -304,6 +304,26 @@ function formatGitHubRecoveryLine(workflow, failure) {
   return `GitHub recovery: ${step}: ${hint}`;
 }
 
+function formatGitHubFailureLine(failure) {
+  if (!failure) {
+    return "GitHub failure: none";
+  }
+  const step = String(failure.title || failure.stepId || "GitHub step").trim() || "GitHub step";
+  const kind = String(failure.failureKind || failure.status || "attention").trim() || "attention";
+  return `GitHub failure: ${step} · ${kind}`;
+}
+
+function formatGitHubFailureSummary(failure) {
+  if (!failure) {
+    return "";
+  }
+  const summary = String(failure.summary || "").trim();
+  if (summary) {
+    return summary;
+  }
+  return String(failure.recoveryHint || "").trim();
+}
+
 function channelHealthStatus(channels) {
   if (!Array.isArray(channels) || !channels.length) {
     return "warning";
@@ -1087,6 +1107,9 @@ function renderGitHubBridge() {
                 const url = safeExternalUrl(card.url);
                 const number = card.number || card.branch || "";
                 const workflowTail = card.workflowConclusion || card.workflowStatus || "";
+                const summary = String(card.summary || "").trim();
+                const recoveryHint = String(card.githubRecoveryHint || "").trim();
+                const failureKind = String(card.githubFailureKind || "").trim();
                 return `
                   <article class="bridge-card">
                     <div class="result-card-header">
@@ -1094,7 +1117,9 @@ function renderGitHubBridge() {
                       ${makeStatusChip(card.status || "neutral")}
                     </div>
                     <p>${escapeHtml(card.kind === "branch" ? card.branch || "branch pending" : number || "link pending")}</p>
-                    <small>${escapeHtml(workflowTail || card.stepId || "")}</small>
+                    ${summary ? `<small>${escapeHtml(card.summary)}</small>` : ""}
+                    <small>${escapeHtml(workflowTail || failureKind || card.stepId || "")}</small>
+                    ${recoveryHint ? `<small>${escapeHtml(`Recovery: ${card.githubRecoveryHint}`)}</small>` : ""}
                     ${url ? `<a class="bridge-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Open ${escapeHtml(card.kind)}</a>` : ""}
                   </article>
                 `;
@@ -1288,30 +1313,39 @@ function renderRunCompare(payload) {
 
   const runs = payload.runs || [];
   const comparison = payload.comparison || {};
+  const latestFailures = comparison.latestFailures || {};
   elements.runCompare.innerHTML = `
     <div class="compare-grid">
       ${runs
         .map(
-          (run) => `
-            <article class="compare-run-card">
-              <div class="result-card-header">
-                <strong>${escapeHtml(run.runId)}</strong>
-                ${makeStatusChip(run.success ? "succeeded" : "warning")}
-              </div>
-              <p>${escapeHtml(run.request || "No request captured.")}</p>
-              <small>${escapeHtml(`updated ${formatAbsoluteTime(run.updatedAt)}`)}</small>
-              <div class="chip-row">
-                ${Object.entries(run.insights?.statusCounts || {})
-                  .map(
-                    ([status, value]) =>
-                      `<span class="route-badge tone-ink">${escapeHtml(`${status}:${value}`)}</span>`,
-                  )
-                  .join("")}
-              </div>
-              <small>${escapeHtml(`branch: ${run.insights?.github?.branch || "n/a"}`)}</small>
-              <small>${escapeHtml(`Hermes sessions: ${run.insights?.hermes?.sessionCount || 0}`)}</small>
-            </article>
-          `,
+          (run) => {
+            const latestFailure = run.insights?.github?.latestFailure || null;
+            const failureRecovery = formatGitHubRecoveryLine(null, latestFailure);
+            const failureSummary = formatGitHubFailureSummary(latestFailure);
+            return `
+              <article class="compare-run-card">
+                <div class="result-card-header">
+                  <strong>${escapeHtml(run.runId)}</strong>
+                  ${makeStatusChip(run.success ? "succeeded" : "warning")}
+                </div>
+                <p>${escapeHtml(run.request || "No request captured.")}</p>
+                <small>${escapeHtml(`updated ${formatAbsoluteTime(run.updatedAt)}`)}</small>
+                <div class="chip-row">
+                  ${Object.entries(run.insights?.statusCounts || {})
+                    .map(
+                      ([status, value]) =>
+                        `<span class="route-badge tone-ink">${escapeHtml(`${status}:${value}`)}</span>`,
+                    )
+                    .join("")}
+                </div>
+                <small>${escapeHtml(`branch: ${run.insights?.github?.branch || "n/a"}`)}</small>
+                <small>${escapeHtml(formatGitHubFailureLine(run.insights?.github?.latestFailure || null))}</small>
+                ${failureSummary ? `<small>${escapeHtml(failureSummary)}</small>` : ""}
+                ${failureRecovery ? `<small>${escapeHtml(failureRecovery)}</small>` : ""}
+                <small>${escapeHtml(`Hermes sessions: ${run.insights?.hermes?.sessionCount || 0}`)}</small>
+              </article>
+            `;
+          },
         )
         .join("")}
       <article class="diff-card">
@@ -1328,6 +1362,25 @@ function renderRunCompare(payload) {
             .join("")}
         </div>
         <small>${escapeHtml(`Branch changed: ${comparison.branchChanged ? "yes" : "no"} · Workflow changed: ${comparison.workflowChanged ? "yes" : "no"} · Hermes session delta: ${comparison.hermesSessionDelta || 0}`)}</small>
+      </article>
+      <article class="diff-card">
+        <div class="result-card-header">
+          <strong>GitHub failure delta</strong>
+          ${makeStatusChip(comparison.latestFailureChanged ? "warning" : "passed")}
+        </div>
+        <p>${escapeHtml(comparison.latestFailureChanged ? "Latest GitHub failure changed" : "Latest GitHub failure unchanged")}</p>
+        <small>${escapeHtml(`left: ${formatGitHubFailureLine(latestFailures.left || null)}`)}</small>
+        <small>${escapeHtml(`right: ${formatGitHubFailureLine(latestFailures.right || null)}`)}</small>
+        ${
+          formatGitHubFailureSummary(latestFailures.right || null)
+            ? `<small>${escapeHtml(formatGitHubFailureSummary(latestFailures.right || null))}</small>`
+            : ""
+        }
+        ${
+          formatGitHubRecoveryLine(null, latestFailures.right || null)
+            ? `<small>${escapeHtml(formatGitHubRecoveryLine(null, latestFailures.right || null))}</small>`
+            : ""
+        }
       </article>
       ${
         (comparison.stepDiffs || []).length
