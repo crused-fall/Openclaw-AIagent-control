@@ -243,6 +243,7 @@ python3 main_v2.py --live --request "修复登录页报错" --steps triage,imple
 运行中会输出 `[progress] preflight:start`、`[progress] step:start ...` 这类进度行，避免长步骤看起来像卡住。
 当前还启用了 `runtime.cli_command_timeout_seconds=180.0`，本地 `claude/codex` 长时间无响应时会明确超时失败，而不是无限挂住。
 CLI 失败结果现在也会带 `cli_failure_kind` 和 `cli_recovery_hint`。如果默认 `triage` 卡在 Claude，可以优先试 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`，或者直接切到 `mission_control_openclaw_triage` / `mission_control_openclaw_default`。
+现在如果默认 `triage` 在 Claude 预检阶段超时，preflight 会直接把 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 这条已验证的 OpenClaw fallback 路径提示出来，方便你直接切换。
 `codex_local` 现在默认用 `codex exec --ephemeral`，尽量避开本机 `~/.codex/state_*.sqlite` 迁移冲突；如果仍然返回 `cli_failure_kind=usage_limit`，说明是 Codex 账号配额问题，不是项目编排问题。
 如果 Codex 当前不可用，但你本机 OpenClaw agent 可写仓库，可以显式覆盖实现层：`OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`。这样 `mission_control_openclaw_default` 会让 OpenClaw 承担 `implement`，而不是继续卡在 Codex。
 这条 `openclaw_builder` 路径目前主要用于本地 `triage/implement/review`；如果实现结果没有导出可推送分支，`publish_branch` 现在会直接 `blocked`，而不是假装还能继续 GitHub 尾链。
