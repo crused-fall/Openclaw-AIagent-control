@@ -59,6 +59,7 @@
 - 2026-05-08：Web UI 的 recent runs 现在也会显示相邻 run 的 OpenClaw usage trend，token 变化方向已经能在首页一眼看出来。
 - 2026-05-08：Web UI 的 run summary / issue update / PR note copy 文本现在也会回流 OpenClaw usage 汇总，面板和桥接导出已经对齐。
 - 2026-05-08：Preflight 现在会对 Claude-backed CLI profile 先跑 print-mode 探针；当前机器上的 live smoke 已因此在 triage 前直接暴露 `claude_local` 的认证/可用性问题，而不是等到后续 step 超时。
+- 2026-05-08：在 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 下，`mission_control_openclaw_default` 已完整跑通 triage / implement / review live smoke，说明 OpenClaw 变体已经具备可用的本地闭环。
 - 2026-05-03：GitHub review workflow 的 conclusion 和 failed jobs 已回流到 Web UI 的 run summary、issue update 和 PR note 文案。
 - 2026-05-03：GitHub review workflow failed jobs 的 run insights / UI helper / 回归测试已补齐，字符串形态的 failed jobs 也能正确显示。
 - 2026-05-03：Web UI 健康面板在 channels 为空时保持 `warning`，不再误报 `passed`。
@@ -68,9 +69,10 @@
 
 1. 继续稳定 `mission_control_default` 主链，优先做更多真实 GitHub run 验证，减少“本地成功但协作链路不可读”的情况。
 2. 先决定 Claude CLI 可用性 / auth 这条 live 路径的恢复方式：要么把本机 headless Claude 登录补齐，要么在默认 pipeline 里为 triage / review 选择明确的本地 fallback，避免 live smoke 继续依赖隐式外部状态。
-3. 继续收 GitHub bridge 的结果诊断和失败恢复，下一步优先考虑把默认主链的 `publish_branch -> draft_pr -> dispatch_review -> collect_review` 也做一次真实端到端验证，而不是只停留在 smoke pipeline。
-4. 继续把 Web UI 作为本地主控台打磨，但避免把它做成独立产品面，而是服务 Mission Control 主线。
-5. 在默认 pipeline 稳定前，不把 Hermes 扩到 `implement`，也不急着把 OpenClaw 提升为默认控制入口。
+3. 基于 `mission_control_openclaw_default` 已跑通的结果，判断 OpenClaw 变体是否应该继续承担主力 live 基线，还是仅作为对照路径保留。
+4. 继续收 GitHub bridge 的结果诊断和失败恢复，下一步优先考虑把默认主链的 `publish_branch -> draft_pr -> dispatch_review -> collect_review` 也做一次真实端到端验证，而不是只停留在 smoke pipeline。
+5. 继续把 Web UI 作为本地主控台打磨，但避免把它做成独立产品面，而是服务 Mission Control 主线。
+6. 在默认 pipeline 稳定前，不把 Hermes 扩到 `implement`，也不急着把 OpenClaw 提升为默认控制入口。
 
 ## 记录规则
 

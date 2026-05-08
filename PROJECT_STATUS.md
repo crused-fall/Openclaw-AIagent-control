@@ -35,6 +35,7 @@
 - CLI 入口现在会把缺失的 `--config` 转成干净的 `SystemExit`，不再直接抛 traceback
 - CLI 的 `_print_preflight()` 现在会把 `preflight.json` 在 exists/open 之间消失、变成不可读、或变成非对象 JSON 的情况安静降级，不再让 run 结束后的预检摘要打印把进程拖成 traceback
 - live 预检现在会对 Claude-backed CLI profile 先做 print-mode 探针，headless Claude 不可用或未认证时会在 triage 前直接失败，不再把时间浪费在后续 step 超时上
+- 在 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 下，`mission_control_openclaw_default` 已完成 triage / implement / review live smoke，说明 OpenClaw 变体已经具备可用的本地闭环
 - 支持 `--web` 本地 Mission Control 控制台
 - live 运行时会输出 step 级 progress
 
@@ -153,7 +154,7 @@
 
 - 任务拆分仍然以配置驱动 pipeline 为主，已经支持 pipeline 继承 / 覆盖 / remove_steps 组合，planner 也已开始按依赖关系排序，但还不是智能动态 planner
 - OpenClaw 接入骨架已落地，但目前只安全接到 `triage` 变体 pipeline
-- OpenClaw 已验证“仓库外 workspace + repo 绝对路径 handoff”可运行，当前已有 `mission_control_openclaw_triage` 和 `mission_control_openclaw_default` 两条变体 pipeline
+- OpenClaw 已验证“仓库外 workspace + repo 绝对路径 handoff”可运行，当前已有 `mission_control_openclaw_triage` 和 `mission_control_openclaw_default` 两条变体 pipeline；后者已在本机用 `openclaw_builder` 跑通 triage / implement / review live smoke
 - Hermes 已作为本机 `supervisor + recorder` 接入，新增 `mission_control_hermes_supervised` 变体 pipeline，但不承担 `implement`
 - 当前分支上的 Web UI control room 已把 CLI / GitHub / Hermes / OpenClaw 的运行态集中到一个本地面板里
 - `Gemini` 和 `Cursor` 已进入受控 agent 注册表，但还没进入默认 assignment
