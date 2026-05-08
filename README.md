@@ -99,7 +99,7 @@ tests/
 另有两条 OpenClaw 变体 pipeline：
 
 - `mission_control_openclaw_triage`：只把 `triage` 切到本机 `openclaw agent --local --json`
-- `mission_control_openclaw_default`：把 `triage + review` 都切到 OpenClaw，本地 `implement` 和后续 GitHub 步骤保持不变（适用于 Claude 不可用时）
+- `mission_control_openclaw_default`：把 `triage + review` 都切到 OpenClaw；如果 Codex 当前不可用，可以把 `implement` 显式覆盖到 `openclaw_builder`，后续 GitHub 步骤保持不变（适用于 Claude/Codex 不可用时）
 - 当前这样设计是为了先替换最容易受 Claude 环境影响的监督层，不把 gateway / ACP 问题一次性扩大
 - OpenClaw executor 会显式把 repo 绝对路径传给 agent，并要求它先读取 repo 内的 `AGENTS.md`
 
