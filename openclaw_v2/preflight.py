@@ -372,6 +372,16 @@ class PreflightRunner:
             env.pop(key, None)
         return env
 
+    @staticmethod
+    def _claude_recovery_hint(profile_name: str) -> str:
+        hint = (
+            "Recovery: if Codex is unavailable, switch to `mission_control_openclaw_default` "
+            "and set `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`."
+        )
+        if profile_name == "claude_local":
+            hint += " For triage-only debugging, `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated` can isolate ANTHROPIC_* env."
+        return hint
+
     async def _check_claude_profiles(self, repo_path: str, plan: list[WorkItem]) -> list[PreflightCheck]:
         profile_map = {
             item.profile: self.config.profiles[item.profile]
@@ -403,19 +413,26 @@ class PreflightRunner:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
+            communicate = process.communicate()
             try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=20)
+                stdout, stderr = await asyncio.wait_for(communicate, timeout=20)
             except asyncio.TimeoutError:
+                communicate.close()
                 process.kill()
                 await process.communicate()
+                recovery_hint = self._claude_recovery_hint(profile_name)
                 checks.append(
                     PreflightCheck(
                         name=f"claude_cli:{profile_name}",
                         status=CheckStatus.FAILED,
                         message=(
-                            f"Claude CLI probe timed out for profile `{profile_name}` while checking print-mode auth."
+                            f"Claude CLI probe timed out for profile `{profile_name}` while checking print-mode auth. "
+                            f"{recovery_hint}"
                         ),
-                        details={"command": command},
+                        details={
+                            "command": command,
+                            "recovery_hint": recovery_hint,
+                        },
                     )
                 )
                 continue
@@ -439,6 +456,8 @@ class PreflightRunner:
                 tail = output.splitlines()[-1]
             if tail:
                 message = f"{message} {tail}"
+            recovery_hint = self._claude_recovery_hint(profile_name)
+            message = f"{message} {recovery_hint}"
             checks.append(
                 PreflightCheck(
                     name=f"claude_cli:{profile_name}",
@@ -449,6 +468,7 @@ class PreflightRunner:
                         "exit_code": process.returncode,
                         "stdout": output,
                         "stderr": error_output,
+                        "recovery_hint": recovery_hint,
                     },
                 )
             )
