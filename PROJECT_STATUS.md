@@ -133,6 +133,7 @@
 - Web UI 的 run insights 现在新增 `usage` 聚合层，会从 `summary.json` 里汇总 `openclaw_usage` / `openclaw_last_call_usage`，为后续成本展示打底
 - Web UI 的 recent runs 和 run summary 现在也会显示 OpenClaw usage 汇总，便于先按 token 量做粗粒度观察
 - Web UI 的 history compare 现在也会显示 OpenClaw usage delta，便于直接比较两次 run 的 token 消耗变化
+- Web UI 的 recent runs 现在也会显示相邻 run 的 OpenClaw usage trend，便于快速看出最近 token 消耗是上升、下降还是持平
 - Web UI 的 recent runs 列表现在也会显示每次 run 的最新 GitHub failure、失败摘要和 recovery 提示，方便直接从首页判断最近几次协作失败点
 - Web UI 的 loaded run detail 和 artifact context 现在也会显示最新 GitHub failure 与 recovery，单次 run 浏览入口和 bridge/operator 视图的失败语义已基本对齐
 - Web UI 的 runtime snapshot / Hermes overview / GitHub overview 现在会把字符串型布尔和坏列表保守降级，避免配置快照误报

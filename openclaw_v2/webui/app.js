@@ -499,6 +499,31 @@ function formatOpenClawUsageDelta(usageDelta) {
   return `OpenClaw usage delta: ${parts.join(" · ")}`;
 }
 
+function formatOpenClawUsageTrend(runs) {
+  if (!Array.isArray(runs)) {
+    return null;
+  }
+  const usageRuns = runs
+    .map((run) => {
+      const totalTokens = Number.isInteger(run?.insights?.usage?.openclawUsage?.total)
+        ? run.insights.usage.openclawUsage.total
+        : null;
+      return totalTokens === null ? null : { run, totalTokens };
+    })
+    .filter(Boolean);
+  if (usageRuns.length < 2) {
+    return null;
+  }
+
+  const latest = usageRuns[0];
+  const previous = usageRuns[1];
+  const delta = latest.totalTokens - previous.totalTokens;
+  return {
+    tone: delta > 0 ? "warning" : delta < 0 ? "passed" : "neutral",
+    text: `Latest ${latest.totalTokens} tokens vs previous ${previous.totalTokens} tokens (${delta >= 0 ? "+" : ""}${delta})`,
+  };
+}
+
 function actionableResults(results) {
   return (results || []).filter((item) => ["failed", "blocked", "skipped"].includes(item.status));
 }
@@ -1741,11 +1766,23 @@ function renderRequestPresets() {
 
 function renderRecentRuns(bootstrap) {
   const runs = bootstrap.recentRuns || [];
+  const usageTrend = formatOpenClawUsageTrend(runs);
   if (!runs.length) {
     elements.recentRuns.innerHTML = `<div class="empty-state">No recorded runs yet.</div>`;
     return;
   }
-  elements.recentRuns.innerHTML = runs
+  const trendMarkup = usageTrend
+    ? `
+      <article class="diff-card">
+        <div class="result-card-header">
+          <strong>OpenClaw usage trend</strong>
+          ${makeStatusChip(usageTrend.tone)}
+        </div>
+        <p>${escapeHtml(usageTrend.text)}</p>
+      </article>
+    `
+    : "";
+  elements.recentRuns.innerHTML = `${trendMarkup}${runs
     .map((run) => {
       const latestFailure = run.insights?.github?.latestFailure || null;
       const usageLine = formatOpenClawUsageSummary(run.insights?.usage || null);
@@ -1784,7 +1821,7 @@ function renderRecentRuns(bootstrap) {
         </article>
       `;
     })
-    .join("");
+    .join("")}`;
 
   elements.recentRuns.querySelectorAll("button[data-run-id]").forEach((button) => {
     button.addEventListener("click", () => {
