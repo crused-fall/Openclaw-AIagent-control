@@ -432,6 +432,73 @@ function formatCounts(counts) {
   return entries.map(([key, value]) => `${key}:${value}`).join(" · ");
 }
 
+function formatOpenClawUsageSummary(usage) {
+  if (!usage || typeof usage !== "object") {
+    return "";
+  }
+  const resultCount = Number.isInteger(usage.resultCount) ? usage.resultCount : 0;
+  const usageCount = Number.isInteger(usage.openclawUsageCount) ? usage.openclawUsageCount : 0;
+  const lastCallCount = Number.isInteger(usage.openclawLastCallUsageCount)
+    ? usage.openclawLastCallUsageCount
+    : 0;
+  const totalTokens = Number.isInteger(usage.openclawUsage?.total) ? usage.openclawUsage.total : 0;
+  const lastCallTokens = Number.isInteger(usage.openclawLastCallUsage?.total)
+    ? usage.openclawLastCallUsage.total
+    : 0;
+  if (!usageCount && !lastCallCount && !totalTokens && !lastCallTokens) {
+    return "";
+  }
+
+  const parts = [];
+  const resultLabel = resultCount ? `${usageCount}/${resultCount} results with usage` : `${usageCount} results with usage`;
+  parts.push(resultLabel);
+  if (totalTokens) {
+    parts.push(`total ${totalTokens} tokens`);
+  }
+  if (lastCallCount) {
+    parts.push(`${lastCallCount} last-call ${lastCallCount === 1 ? "sample" : "samples"}`);
+  }
+  if (lastCallTokens) {
+    parts.push(`last call ${lastCallTokens} tokens`);
+  }
+  return `OpenClaw usage: ${parts.join(" · ")}`;
+}
+
+function formatOpenClawUsageDelta(usageDelta) {
+  if (!usageDelta || typeof usageDelta !== "object") {
+    return "";
+  }
+  const left = usageDelta.left || {};
+  const right = usageDelta.right || {};
+  const leftResultCount = Number.isInteger(left.resultCount) ? left.resultCount : 0;
+  const rightResultCount = Number.isInteger(right.resultCount) ? right.resultCount : 0;
+  const leftUsageTotal = Number.isInteger(left.openclawUsage?.total) ? left.openclawUsage.total : 0;
+  const rightUsageTotal = Number.isInteger(right.openclawUsage?.total) ? right.openclawUsage.total : 0;
+  const leftLastCallTotal = Number.isInteger(left.openclawLastCallUsage?.total)
+    ? left.openclawLastCallUsage.total
+    : 0;
+  const rightLastCallTotal = Number.isInteger(right.openclawLastCallUsage?.total)
+    ? right.openclawLastCallUsage.total
+    : 0;
+
+  const parts = [];
+  if (leftResultCount || rightResultCount) {
+    parts.push(`results ${leftResultCount}→${rightResultCount} (${rightResultCount - leftResultCount >= 0 ? "+" : ""}${rightResultCount - leftResultCount})`);
+  }
+  if (leftUsageTotal || rightUsageTotal) {
+    const delta = rightUsageTotal - leftUsageTotal;
+    parts.push(`tokens ${leftUsageTotal}→${rightUsageTotal} (${delta >= 0 ? "+" : ""}${delta})`);
+  }
+  if (leftLastCallTotal || rightLastCallTotal) {
+    const delta = rightLastCallTotal - leftLastCallTotal;
+    parts.push(`last-call ${leftLastCallTotal}→${rightLastCallTotal} (${delta >= 0 ? "+" : ""}${delta})`);
+  }
+  if (!parts.length) {
+    return "";
+  }
+  return `OpenClaw usage delta: ${parts.join(" · ")}`;
+}
+
 function actionableResults(results) {
   return (results || []).filter((item) => ["failed", "blocked", "skipped"].includes(item.status));
 }
@@ -1335,12 +1402,14 @@ function renderRunCompare(payload) {
   const runs = payload.runs || [];
   const comparison = payload.comparison || {};
   const latestFailures = comparison.latestFailures || {};
+  const usageDeltaLine = formatOpenClawUsageDelta(comparison.usageDelta || null);
   elements.runCompare.innerHTML = `
     <div class="compare-grid">
       ${runs
         .map(
           (run) => {
             const latestFailure = run.insights?.github?.latestFailure || null;
+            const usageLine = formatOpenClawUsageSummary(run.insights?.usage || null);
             const failureRecovery = formatGitHubRecoveryLine(null, latestFailure);
             const failureSummary = formatGitHubFailureSummary(latestFailure);
             return `
@@ -1363,6 +1432,7 @@ function renderRunCompare(payload) {
                 <small>${escapeHtml(formatGitHubFailureLine(run.insights?.github?.latestFailure || null))}</small>
                 ${failureSummary ? `<small>${escapeHtml(failureSummary)}</small>` : ""}
                 ${failureRecovery ? `<small>${escapeHtml(failureRecovery)}</small>` : ""}
+                ${usageLine ? `<small>${escapeHtml(usageLine)}</small>` : ""}
                 <small>${escapeHtml(`Hermes sessions: ${run.insights?.hermes?.sessionCount || 0}`)}</small>
               </article>
             `;
@@ -1384,6 +1454,19 @@ function renderRunCompare(payload) {
         </div>
         <small>${escapeHtml(`Branch changed: ${comparison.branchChanged ? "yes" : "no"} · Workflow changed: ${comparison.workflowChanged ? "yes" : "no"} · Hermes session delta: ${comparison.hermesSessionDelta || 0}`)}</small>
       </article>
+      ${
+        usageDeltaLine
+          ? `
+            <article class="diff-card">
+              <div class="result-card-header">
+                <strong>OpenClaw usage delta</strong>
+                ${makeStatusChip("warning")}
+              </div>
+              <p>${escapeHtml(usageDeltaLine)}</p>
+            </article>
+          `
+          : ""
+      }
       <article class="diff-card">
         <div class="result-card-header">
           <strong>GitHub failure delta</strong>
@@ -1665,6 +1748,7 @@ function renderRecentRuns(bootstrap) {
   elements.recentRuns.innerHTML = runs
     .map((run) => {
       const latestFailure = run.insights?.github?.latestFailure || null;
+      const usageLine = formatOpenClawUsageSummary(run.insights?.usage || null);
       const failureRecovery = formatGitHubRecoveryLine(null, latestFailure);
       const failureSummary = formatGitHubFailureSummary(latestFailure);
       const recentRunStatus =
@@ -1691,6 +1775,7 @@ function renderRecentRuns(bootstrap) {
           <small>${escapeHtml(formatGitHubFailureLine(run.insights?.github?.latestFailure || null))}</small>
           ${failureSummary ? `<small>${escapeHtml(failureSummary)}</small>` : ""}
           ${failureRecovery ? `<small>${escapeHtml(`Recovery: ${failureRecovery}`)}</small>` : ""}
+          ${usageLine ? `<small>${escapeHtml(usageLine)}</small>` : ""}
           <small>${escapeHtml(formatAbsoluteTime(run.updatedAt))}</small>
           <div class="task-controls">
             <button class="ghost-button" type="button" data-run-id="${escapeHtml(run.runId)}">Load summary</button>
@@ -1975,12 +2060,13 @@ function renderPlan(plan) {
   `;
 }
 
-function renderRunResults(runResult) {
+function renderRunResults(runResult, insights = null) {
   const workflow = currentGitHubWorkflow();
   const failure = currentGitHubFailure();
   const failureLine = formatGitHubFailureLine(failure);
   const failureSummary = formatGitHubFailureSummary(failure);
   const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
+  const usageLine = formatOpenClawUsageSummary(insights?.usage || null);
   const results = runResult.results || [];
   const visibleResults = filterResults(results);
   const counts = statusCounts(results);
@@ -2056,6 +2142,7 @@ function renderRunResults(runResult) {
           <div><dt>Status counts</dt><dd>${escapeHtml(formatCounts(counts))}</dd></div>
           <div><dt>Visible filter</dt><dd>${escapeHtml(state.resultFilter)}</dd></div>
           <div><dt>GitHub latest failure</dt><dd>${escapeHtml(failureLine)}</dd></div>
+          ${usageLine ? `<div><dt>OpenClaw usage</dt><dd>${escapeHtml(usageLine)}</dd></div>` : ""}
         </dl>
         ${failureSummary ? `<small>${escapeHtml(failureSummary)}</small>` : ""}
         ${recoveryLine ? `<small>${escapeHtml(`Recovery: ${recoveryLine}`)}</small>` : ""}
@@ -2191,10 +2278,10 @@ function renderOutput(payload) {
     chunks.push(renderChecks(payload.preflight.checks));
   }
   if (payload.runResult) {
-    chunks.push(renderRunResults(payload.runResult));
+    chunks.push(renderRunResults(payload.runResult, payload.history?.insights || payload.insights || null));
   }
   if (payload.summary) {
-    chunks.push(renderRunResults(payload.summary));
+    chunks.push(renderRunResults(payload.summary, payload.insights || null));
   }
   elements.outputPane.innerHTML = chunks.join("") || `<div class="empty-state">No output captured.</div>`;
   if (payload.history) {

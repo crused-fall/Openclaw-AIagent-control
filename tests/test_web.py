@@ -118,6 +118,52 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("envPath", payload["integrations"]["hermes"])
         self.assertNotIn("managedAgents", payload["snapshot"])
         self.assertNotIn("assignments", payload["snapshot"])
+
+    async def test_bootstrap_recent_runs_include_openclaw_usage_summary(self) -> None:
+        run_dir = os.path.join(self.repo_path, ".openclaw", "runs", "run-usage")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "summary.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "run_id": "run-usage",
+                    "plan": [],
+                    "results": [
+                        {
+                            "work_item_id": "triage",
+                            "status": "succeeded",
+                            "artifacts": {
+                                "openclaw_usage": {
+                                    "input": 80,
+                                    "output": 20,
+                                    "cacheRead": 400,
+                                    "total": 100,
+                                },
+                                "openclaw_last_call_usage": {
+                                    "input": 8,
+                                    "output": 2,
+                                    "cacheRead": 40,
+                                    "total": 10,
+                                },
+                            },
+                        }
+                    ],
+                    "success": True,
+                },
+                handle,
+            )
+
+        response = await self.client.get("/api/bootstrap")
+        self.assertEqual(response.status, 200)
+        payload = await response.json()
+        recent = payload["recentRuns"][0]
+        usage = recent["insights"]["usage"]
+        self.assertEqual(recent["runId"], "run-usage")
+        self.assertEqual(usage["resultCount"], 1)
+        self.assertEqual(usage["openclawUsageCount"], 1)
+        self.assertEqual(usage["openclawLastCallUsageCount"], 1)
+        self.assertEqual(usage["openclawUsage"]["total"], 100)
+        self.assertEqual(usage["openclawLastCallUsage"]["total"], 10)
+
     async def test_index_serves_readiness_and_output_controls(self) -> None:
         response = await self.client.get("/")
         self.assertEqual(response.status, 200)
@@ -804,7 +850,21 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
                             "work_item_id": "publish_branch",
                             "status": "succeeded",
                             "mode": "cli",
-                            "artifacts": {"source_branch": "branch-a"},
+                            "artifacts": {
+                                "source_branch": "branch-a",
+                                "openclaw_usage": {
+                                    "input": 10,
+                                    "output": 4,
+                                    "cacheRead": 100,
+                                    "total": 14,
+                                },
+                                "openclaw_last_call_usage": {
+                                    "input": 3,
+                                    "output": 1,
+                                    "cacheRead": 20,
+                                    "total": 4,
+                                },
+                            },
                         },
                         {
                             "work_item_id": "draft_pr",
@@ -838,7 +898,23 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
                             "work_item_id": "publish_branch",
                             "status": "blocked",
                             "mode": "cli",
-                            "artifacts": {"source_branch": "branch-b"},
+                            "artifacts": {
+                                "source_branch": "branch-b",
+                                "openclaw_usage": {
+                                    "input": 30,
+                                    "output": 12,
+                                    "cacheRead": 300,
+                                    "cacheWrite": 5,
+                                    "total": 47,
+                                },
+                                "openclaw_last_call_usage": {
+                                    "input": 6,
+                                    "output": 2,
+                                    "cacheRead": 40,
+                                    "cacheWrite": 1,
+                                    "total": 9,
+                                },
+                            },
                         },
                         {
                             "work_item_id": "draft_pr",
@@ -872,6 +948,8 @@ class WebBootstrapTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(payload["comparison"]["branchChanged"])
         self.assertTrue(payload["comparison"]["latestFailureChanged"])
         self.assertEqual(payload["comparison"]["hermesSessionDelta"], 1)
+        self.assertEqual(payload["comparison"]["usageDelta"]["openclawUsageTotalDelta"], 33)
+        self.assertEqual(payload["comparison"]["usageDelta"]["openclawLastCallUsageTotalDelta"], 5)
         self.assertTrue(any(item["stepId"] == "publish_branch" for item in payload["comparison"]["stepDiffs"]))
         self.assertEqual(payload["runs"][1]["insights"]["github"]["latestFailure"]["stepId"], "draft_pr")
         self.assertEqual(
@@ -1858,6 +1936,146 @@ class WebHermesInsightTests(unittest.TestCase):
         self.assertEqual(roles["triage"], "supervisor")
         self.assertEqual(insights["hermes"]["sessionCount"], 2)
         self.assertTrue(insights["hermes"]["used"])
+
+
+class WebUsageInsightTests(unittest.TestCase):
+    def test_openclaw_usage_is_aggregated_in_run_insights(self) -> None:
+        summary = {
+            "results": [
+                {
+                    "work_item_id": "triage",
+                    "status": "succeeded",
+                    "artifacts": {
+                        "openclaw_usage": {
+                            "input": 100,
+                            "output": 40,
+                            "cacheRead": 1000,
+                            "total": 140,
+                        },
+                        "openclaw_last_call_usage": {
+                            "input": 10,
+                            "output": 4,
+                            "cacheRead": 100,
+                            "cacheWrite": 2,
+                            "total": 14,
+                        },
+                    },
+                },
+                {
+                    "work_item_id": "review",
+                    "status": "succeeded",
+                    "artifacts": {
+                        "openclaw_usage": {
+                            "input": 200,
+                            "output": 60,
+                            "cacheRead": 2000,
+                            "cacheWrite": 20,
+                            "total": 260,
+                        },
+                        "openclaw_last_call_usage": {
+                            "input": 20,
+                            "output": 6,
+                            "cacheRead": 200,
+                            "total": 26,
+                        },
+                    },
+                },
+                {
+                    "work_item_id": "implement",
+                    "status": "succeeded",
+                    "artifacts": {},
+                },
+            ],
+            "plan": [],
+        }
+
+        insights = _summarize_run_insights(
+            summary,
+            {},
+            None,
+            default_github_repo="",
+            github_base_branch="main",
+        )
+
+        usage = insights["usage"]
+        self.assertEqual(usage["resultCount"], 3)
+        self.assertEqual(usage["openclawUsageCount"], 2)
+        self.assertEqual(usage["openclawLastCallUsageCount"], 2)
+        self.assertEqual(
+            usage["openclawUsage"],
+            {
+                "input": 300,
+                "output": 100,
+                "cacheRead": 3000,
+                "cacheWrite": 20,
+                "total": 400,
+            },
+        )
+        self.assertEqual(
+            usage["openclawLastCallUsage"],
+            {
+                "input": 30,
+                "output": 10,
+                "cacheRead": 300,
+                "cacheWrite": 2,
+                "total": 40,
+            },
+        )
+
+    def test_openclaw_usage_ignores_malformed_payloads(self) -> None:
+        summary = {
+            "results": [
+                {
+                    "work_item_id": "triage",
+                    "status": "succeeded",
+                    "artifacts": {
+                        "openclaw_usage": {"input": "100", "output": 10, "total": 20},
+                        "openclaw_last_call_usage": "bad",
+                    },
+                },
+                {
+                    "work_item_id": "review",
+                    "status": "succeeded",
+                    "artifacts": {
+                        "openclaw_usage": {"input": True, "cacheRead": 5, "total": 7},
+                    },
+                },
+            ],
+            "plan": [],
+        }
+
+        insights = _summarize_run_insights(
+            summary,
+            {},
+            None,
+            default_github_repo="",
+            github_base_branch="main",
+        )
+
+        usage = insights["usage"]
+        self.assertEqual(usage["resultCount"], 2)
+        self.assertEqual(usage["openclawUsageCount"], 2)
+        self.assertEqual(usage["openclawLastCallUsageCount"], 0)
+        self.assertEqual(
+            usage["openclawUsage"],
+            {
+                "input": 0,
+                "output": 10,
+                "cacheRead": 5,
+                "cacheWrite": 0,
+                "total": 27,
+            },
+        )
+        self.assertEqual(
+            usage["openclawLastCallUsage"],
+            {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0,
+            },
+        )
 
 
 class WebGitHubInsightTests(unittest.TestCase):

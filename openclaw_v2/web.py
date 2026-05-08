@@ -20,6 +20,7 @@ from .config import AppConfig, diagnose_app_config, load_app_config, resolve_run
 from .github_support import normalize_github_repo, resolve_github_repo_from_origin
 from .models import TaskStatus
 from .orchestrator import HybridOrchestrator
+from .usage_stats import compare_openclaw_usage, summarize_openclaw_usage
 
 APP_CONFIG_PATH = web.AppKey("config_path", str)
 APP_REPO_PATH = web.AppKey("repo_path", str)
@@ -457,6 +458,7 @@ def _summarize_run_insights(
 ) -> dict[str, Any]:
     results = _summary_results(summary)
     plan = _summary_plan(summary)
+    usage_summary = summarize_openclaw_usage(summary)
     plan_titles = {
         str(item.get("id", "")).strip(): str(item.get("title", "")).strip()
         for item in plan
@@ -660,6 +662,7 @@ def _summarize_run_insights(
             "roles": hermes_roles,
             "checks": hermes_checks,
         },
+        "usage": usage_summary,
     }
 
 
@@ -713,6 +716,8 @@ def _compare_run_histories(left: dict[str, Any], right: dict[str, Any]) -> dict[
     right_latest_failure = _json_object_value(right_github.get("latestFailure"))
     left_hermes = _json_object_value(left_insights.get("hermes"))
     right_hermes = _json_object_value(right_insights.get("hermes"))
+    left_usage = _json_object_value(left_insights.get("usage"))
+    right_usage = _json_object_value(right_insights.get("usage"))
     return {
         "countDiffs": count_diffs,
         "stepDiffs": step_diffs,
@@ -726,6 +731,7 @@ def _compare_run_histories(left: dict[str, Any], right: dict[str, Any]) -> dict[
             "left": left_latest_failure,
             "right": right_latest_failure,
         },
+        "usageDelta": compare_openclaw_usage(left_usage, right_usage),
         "hermesSessionDelta": _json_int_value(right_hermes.get("sessionCount", 0))
         - _json_int_value(left_hermes.get("sessionCount", 0)),
     }

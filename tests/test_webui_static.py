@@ -124,12 +124,34 @@ class WebUiStaticTests(unittest.TestCase):
         self.assertIn("formatGitHubFailureLine(run.insights?.github?.latestFailure || null)", source)
         self.assertIn("Recovery: ${failureRecovery}", source)
 
+    def test_openclaw_usage_is_rendered_from_run_insights(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function formatOpenClawUsageSummary(usage)", source)
+        self.assertIn("function formatOpenClawUsageDelta(usageDelta)", source)
+        self.assertIn("const usageLine = formatOpenClawUsageSummary(run.insights?.usage || null);", source)
+        self.assertIn("const usageLine = formatOpenClawUsageSummary(insights?.usage || null);", source)
+        self.assertIn("const usageDeltaLine = formatOpenClawUsageDelta(comparison.usageDelta || null);", source)
+        self.assertIn("OpenClaw usage", source)
+        self.assertIn("OpenClaw usage delta", source)
+        self.assertIn(
+            "chunks.push(renderRunResults(payload.runResult, payload.history?.insights || payload.insights || null));",
+            source,
+        )
+        self.assertIn(
+            "chunks.push(renderRunResults(payload.summary, payload.insights || null));",
+            source,
+        )
+        self.assertIn("comparison.usageDelta", source)
+
     def test_run_detail_surfaces_latest_github_failure(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn("function renderRunResults(runResult)", source)
+        self.assertIn("function renderRunResults(runResult, insights = null)", source)
         self.assertIn("const workflow = currentGitHubWorkflow();", source)
         self.assertIn("const failure = currentGitHubFailure();", source)
         self.assertIn("const failureLine = formatGitHubFailureLine(failure);", source)
