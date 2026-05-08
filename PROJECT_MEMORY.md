@@ -57,6 +57,7 @@
 - 2026-05-08：Web UI 的 recent runs 和 run summary 现在也会显示 OpenClaw usage 汇总，token 量已经能直接在控制台里读出来，下一步可以再决定是否做金额换算或趋势图。
 - 2026-05-08：Web UI 的 history compare 现在也会显示 OpenClaw usage delta，已经能直接看两次 run 的 token 消耗差异。
 - 2026-05-08：Web UI 的 recent runs 现在也会显示相邻 run 的 OpenClaw usage trend，token 变化方向已经能在首页一眼看出来。
+- 2026-05-08：Web UI 的 run summary / issue update / PR note copy 文本现在也会回流 OpenClaw usage 汇总，面板和桥接导出已经对齐。
 - 2026-05-03：GitHub review workflow 的 conclusion 和 failed jobs 已回流到 Web UI 的 run summary、issue update 和 PR note 文案。
 - 2026-05-03：GitHub review workflow failed jobs 的 run insights / UI helper / 回归测试已补齐，字符串形态的 failed jobs 也能正确显示。
 - 2026-05-03：Web UI 健康面板在 channels 为空时保持 `warning`，不再误报 `passed`。

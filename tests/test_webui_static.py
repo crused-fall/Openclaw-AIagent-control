@@ -132,13 +132,20 @@ class WebUiStaticTests(unittest.TestCase):
         self.assertIn("function formatOpenClawUsageSummary(usage)", source)
         self.assertIn("function formatOpenClawUsageDelta(usageDelta)", source)
         self.assertIn("function formatOpenClawUsageTrend(runs)", source)
+        self.assertIn("function currentOpenClawUsage()", source)
         self.assertIn("const usageLine = formatOpenClawUsageSummary(run.insights?.usage || null);", source)
         self.assertIn("const usageLine = formatOpenClawUsageSummary(insights?.usage || null);", source)
         self.assertIn("const usageDeltaLine = formatOpenClawUsageDelta(comparison.usageDelta || null);", source)
         self.assertIn("const usageTrend = formatOpenClawUsageTrend(runs);", source)
+        self.assertIn("const usageLine = formatOpenClawUsageSummary(currentOpenClawUsage());", source)
+        self.assertIn("lines.push(usageLine);", source)
+        self.assertIn("lines.push(`- ${usageLine}`);", source)
         self.assertIn("OpenClaw usage trend", source)
         self.assertIn("OpenClaw usage", source)
         self.assertIn("OpenClaw usage delta", source)
+        self.assertIn("generateRunSummaryText()", source)
+        self.assertIn("generateIssueUpdateText()", source)
+        self.assertIn("generatePrNoteText()", source)
         self.assertIn(
             "chunks.push(renderRunResults(payload.runResult, payload.history?.insights || payload.insights || null));",
             source,

@@ -524,6 +524,14 @@ function formatOpenClawUsageTrend(runs) {
   };
 }
 
+function currentOpenClawUsage() {
+  const runPayload = extractRunPayload(state.currentOutput);
+  if (!runPayload) {
+    return null;
+  }
+  return runPayload.history?.insights?.usage || runPayload.insights?.usage || null;
+}
+
 function actionableResults(results) {
   return (results || []).filter((item) => ["failed", "blocked", "skipped"].includes(item.status));
 }
@@ -2210,6 +2218,7 @@ function generateRunSummaryText() {
   const counts = formatCounts(statusCounts(results));
   const actionable = actionableResults(results);
   const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
+  const usageLine = formatOpenClawUsageSummary(currentOpenClawUsage());
   const lines = [
     `Run ID: ${runResult.run_id || "n/a"}`,
     `Pipeline: ${runPayload.pipeline || "n/a"}`,
@@ -2220,6 +2229,9 @@ function generateRunSummaryText() {
     formatReviewWorkflowLine(workflow),
     `Status counts: ${counts}`,
   ];
+  if (usageLine) {
+    lines.push(usageLine);
+  }
   if (recoveryLine) {
     lines.push(recoveryLine);
   }
@@ -2244,6 +2256,7 @@ function generateIssueUpdateText() {
   const results = runResult.results || [];
   const actionable = actionableResults(results);
   const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
+  const usageLine = formatOpenClawUsageSummary(currentOpenClawUsage());
   const lines = [
     "OpenClaw progress update",
     "",
@@ -2255,6 +2268,9 @@ function generateIssueUpdateText() {
     `- ${formatReviewWorkflowLine(workflow)}`,
     `- Status counts: ${formatCounts(statusCounts(results))}`,
   ];
+  if (usageLine) {
+    lines.push(`- ${usageLine}`);
+  }
   if (recoveryLine) {
     lines.push(`- ${recoveryLine}`);
   }
@@ -2283,6 +2299,7 @@ function generatePrNoteText() {
     .map((fact) => `${fact.label}:${fact.value}`)
     .join(" · ");
   const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
+  const usageLine = formatOpenClawUsageSummary(currentOpenClawUsage());
   const lines = [
     "PR-ready note",
     "",
@@ -2295,6 +2312,9 @@ function generatePrNoteText() {
     formatReviewWorkflowLine(workflow),
     `Status counts: ${formatCounts(statusCounts(runResult.results || []))}`,
   ];
+  if (usageLine) {
+    lines.push(usageLine);
+  }
   if (recoveryLine) {
     lines.push(recoveryLine);
   }
