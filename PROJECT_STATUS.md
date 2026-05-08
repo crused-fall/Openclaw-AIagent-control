@@ -1,6 +1,6 @@
 # OpenClaw Project Status
 
-更新时间：2026-05-07
+更新时间：2026-05-08
 
 ## 当前记录入口
 
@@ -34,6 +34,7 @@
 - `--doctor-config` 已有 CLI 回归测试并合并到 main，锁定配置诊断路径不会误进入交互模式
 - CLI 入口现在会把缺失的 `--config` 转成干净的 `SystemExit`，不再直接抛 traceback
 - CLI 的 `_print_preflight()` 现在会把 `preflight.json` 在 exists/open 之间消失、变成不可读、或变成非对象 JSON 的情况安静降级，不再让 run 结束后的预检摘要打印把进程拖成 traceback
+- live 预检现在会对 Claude-backed CLI profile 先做 print-mode 探针，headless Claude 不可用或未认证时会在 triage 前直接失败，不再把时间浪费在后续 step 超时上
 - 支持 `--web` 本地 Mission Control 控制台
 - live 运行时会输出 step 级 progress
 
