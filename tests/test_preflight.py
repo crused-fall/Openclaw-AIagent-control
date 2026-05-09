@@ -227,6 +227,32 @@ class PreflightOpenClawTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("openclaw_builder", checks[0].message)
         self.assertIn("mission_control_openclaw_default", checks[0].message)
 
+    async def test_claude_isolated_probe_uses_openclaw_fallback_when_not_logged_in(self) -> None:
+        config = load_app_config("config_v2.yaml")
+        config.runtime.dry_run = False
+        runner = PreflightRunner(config)
+        plan = [
+            WorkItem(
+                id="triage",
+                title="Triage user request",
+                profile="claude_local_isolated",
+                agent=AgentType.CLAUDE,
+                mode=ExecutionMode.CLI,
+                prompt_template="",
+            )
+        ]
+
+        with mock.patch("openclaw_v2.preflight.shutil.which", return_value="/usr/bin/claude"):
+            with mock.patch(
+                "openclaw_v2.preflight.asyncio.create_subprocess_exec",
+                new=mock.AsyncMock(return_value=_FakeProcess(1, "", "Not logged in · Please run /login\n")),
+            ):
+                checks = await runner._check_claude_profiles("/tmp/repo", plan)
+
+        self.assertEqual(checks[0].status, CheckStatus.FAILED)
+        self.assertIn("claude_local_isolated", checks[0].message)
+        self.assertIn("OpenClaw fallback is the practical live path", checks[0].message)
+
     async def test_claude_cli_probe_timeout_suggests_openclaw_fallback_path(self) -> None:
         config = load_app_config("config_v2.yaml")
         config.runtime.dry_run = False

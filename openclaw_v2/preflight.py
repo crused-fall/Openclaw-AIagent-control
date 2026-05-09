@@ -373,13 +373,15 @@ class PreflightRunner:
         return env
 
     @staticmethod
-    def _claude_recovery_hint(profile_name: str) -> str:
+    def _claude_recovery_hint(profile_name: str, stderr_text: str = "") -> str:
         hint = (
             "Recovery: if Codex is unavailable, switch to `mission_control_openclaw_default` "
             "and set `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`."
         )
         if profile_name == "claude_local":
             hint += " For triage-only debugging, `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated` can isolate ANTHROPIC_* env."
+        if profile_name.endswith("_isolated") and ("Not logged in" in stderr_text or "Please run /login" in stderr_text):
+            hint += " The isolated Claude profile is not authenticated here, so the OpenClaw fallback is the practical live path."
         return hint
 
     async def _check_claude_profiles(self, repo_path: str, plan: list[WorkItem]) -> list[PreflightCheck]:
@@ -456,7 +458,7 @@ class PreflightRunner:
                 tail = output.splitlines()[-1]
             if tail:
                 message = f"{message} {tail}"
-            recovery_hint = self._claude_recovery_hint(profile_name)
+            recovery_hint = self._claude_recovery_hint(profile_name, error_output or output)
             message = f"{message} {recovery_hint}"
             checks.append(
                 PreflightCheck(
