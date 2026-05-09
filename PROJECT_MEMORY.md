@@ -62,6 +62,7 @@
 - 2026-05-08：Claude 预检失败提示现在会直接带出 `mission_control_openclaw_default` + `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 的 OpenClaw fallback 路径，并补 triage 侧 `claude_router_isolated` 的隔离建议。
 - 2026-05-08：在 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 下，`mission_control_openclaw_default` 已完整跑通 triage / implement / review live smoke，说明 OpenClaw 变体已经具备可用的本地闭环。
 - 2026-05-09：当前机器上的 `mission_control_default --live` 仍会在 `claude_local` 认证超时处被挡住；后续 live 入口要继续显式切到 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`，不要把默认主链误当成当前机器上的可用入口。
+- 2026-05-09：即使 triage / review 改用 `claude_router_isolated`，当前机器上的 `claude_local_isolated` 也未登录；默认 live 仍不应再在 Claude 路径上继续耗时，实际可继续的入口还是 OpenClaw fallback。
 - 2026-05-03：GitHub review workflow 的 conclusion 和 failed jobs 已回流到 Web UI 的 run summary、issue update 和 PR note 文案。
 - 2026-05-03：GitHub review workflow failed jobs 的 run insights / UI helper / 回归测试已补齐，字符串形态的 failed jobs 也能正确显示。
 - 2026-05-03：Web UI 健康面板在 channels 为空时保持 `warning`，不再误报 `passed`。
