@@ -38,6 +38,7 @@
 - 这条 Claude 预检失败现在会直接提示 `mission_control_openclaw_default` + `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 的 OpenClaw fallback 路径，并补充 triage 侧的 `claude_router_isolated` 隔离建议
 - 2026-05-09：当前机器上的 `mission_control_default --live` 预检仍会因 `claude_local` 认证超时被挡住；要继续 live 路径，仍需要显式切到 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
 - 2026-05-09：即使把 triage / review 都切到 `claude_router_isolated`，当前机器上的 `claude_local_isolated` 也未登录；默认 live 仍会在预检阶段被挡住，实际可继续的入口还是 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
+- 2026-05-09：Claude CLI 诊断现在会在 `_isolated` 未登录时直接说明 OpenClaw fallback 才是实际可继续的 live 路径，不再让 triage / review 隔离看起来像还能单独救活默认 live
 - 在 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 下，`mission_control_openclaw_default` 已完成 triage / implement / review live smoke，说明 OpenClaw 变体已经具备可用的本地闭环
 - 支持 `--web` 本地 Mission Control 控制台
 - live 运行时会输出 step 级 progress
