@@ -1,6 +1,6 @@
 # OpenClaw Working Memory
 
-更新时间：2026-05-08
+更新时间：2026-05-09
 
 ## 主目标
 
@@ -61,6 +61,7 @@
 - 2026-05-08：Preflight 现在会对 Claude-backed CLI profile 先跑 print-mode 探针；当前机器上的 live smoke 已因此在 triage 前直接暴露 `claude_local` 的认证/可用性问题，而不是等到后续 step 超时。
 - 2026-05-08：Claude 预检失败提示现在会直接带出 `mission_control_openclaw_default` + `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 的 OpenClaw fallback 路径，并补 triage 侧 `claude_router_isolated` 的隔离建议。
 - 2026-05-08：在 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 下，`mission_control_openclaw_default` 已完整跑通 triage / implement / review live smoke，说明 OpenClaw 变体已经具备可用的本地闭环。
+- 2026-05-09：当前机器上的 `mission_control_default --live` 仍会在 `claude_local` 认证超时处被挡住；后续 live 入口要继续显式切到 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`，不要把默认主链误当成当前机器上的可用入口。
 - 2026-05-03：GitHub review workflow 的 conclusion 和 failed jobs 已回流到 Web UI 的 run summary、issue update 和 PR note 文案。
 - 2026-05-03：GitHub review workflow failed jobs 的 run insights / UI helper / 回归测试已补齐，字符串形态的 failed jobs 也能正确显示。
 - 2026-05-03：Web UI 健康面板在 channels 为空时保持 `warning`，不再误报 `passed`。
