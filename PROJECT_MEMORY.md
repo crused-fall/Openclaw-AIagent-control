@@ -66,7 +66,7 @@
 - 2026-05-09：Claude CLI 的 isolated 失败提示现在也会直接指向 OpenClaw fallback，避免 triage / review 隔离看起来像还能单独救活默认 live。
 - 2026-05-10：Web UI 的 readiness gate 和 health 面板现在会直接显示 preflight recovery hint，操作员不用再回到 CLI 日志里找 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`。
 - 2026-05-10：Web UI 的 run summary / issue update / PR note copy 现在也会回流 preflight recovery hint，复制出去的 operator 文案和页面上的回退提示保持一致。
-- 2026-05-11：PR #13 对应的 `openclaw-review.yml` 在 head `ac70fa6` 上成功完成，workflow run `25642896608` 证明当前分支的 GitHub review smoke 还能正常收敛。
+- 2026-05-11：PR #13 对应的 `openclaw-review.yml` 在 head `88b8afd` 上成功完成，workflow run `25642959803` 证明当前分支的 GitHub review smoke 还能正常收敛。
 - 2026-05-03：GitHub review workflow 的 conclusion 和 failed jobs 已回流到 Web UI 的 run summary、issue update 和 PR note 文案。
 - 2026-05-03：GitHub review workflow failed jobs 的 run insights / UI helper / 回归测试已补齐，字符串形态的 failed jobs 也能正确显示。
 - 2026-05-03：Web UI 健康面板在 channels 为空时保持 `warning`，不再误报 `passed`。
