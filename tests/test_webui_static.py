@@ -159,6 +159,23 @@ class WebUiStaticTests(unittest.TestCase):
         )
         self.assertIn("comparison.usageDelta", source)
 
+    def test_preflight_recovery_hint_is_shared_across_copy_surfaces(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function currentPreflightRecoveryHint()", source)
+        self.assertIn("function formatPreflightRecoveryLine(preflightRecovery)", source)
+        self.assertIn("const preflightRecovery = currentPreflightRecoveryHint();", source)
+        self.assertIn('<div><dt>Preflight recovery</dt><dd>${escapeHtml(preflightRecovery)}</dd></div>', source)
+        self.assertIn("const preflightRecoveryLine = formatPreflightRecoveryLine(currentPreflightRecoveryHint());", source)
+        self.assertEqual(source.count("lines.push(preflightRecoveryLine);"), 2)
+        self.assertEqual(source.count("lines.push(`- ${preflightRecoveryLine}`);"), 1)
+        self.assertEqual(
+            source.count("const preflightRecoveryLine = formatPreflightRecoveryLine(currentPreflightRecoveryHint());"),
+            3,
+        )
+
     def test_run_detail_surfaces_latest_github_failure(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
             encoding="utf-8"

@@ -377,6 +377,15 @@ function formatPreflightRecoveryHint(checks) {
   return "";
 }
 
+function currentPreflightRecoveryHint() {
+  return formatPreflightRecoveryHint(latestPreflightChecks());
+}
+
+function formatPreflightRecoveryLine(preflightRecovery) {
+  const hint = String(preflightRecovery || "").trim();
+  return hint ? `Preflight recovery: ${hint}` : "";
+}
+
 function currentHistoryPayload() {
   if (state.currentHistory) {
     return state.currentHistory;
@@ -1940,7 +1949,7 @@ function renderHealthSnapshot(payload) {
   renderReadinessGate();
   const channels = payload.channels || [];
   const preflight = preflightSnapshotStatus(latestPreflightChecks());
-  const preflightRecovery = formatPreflightRecoveryHint(latestPreflightChecks());
+  const preflightRecovery = currentPreflightRecoveryHint();
   const preflightSource = latestPreflightSource();
   const gateway = payload.gateway || {};
   const memory = payload.memory || {};
@@ -2133,6 +2142,7 @@ function renderRunResults(runResult, insights = null) {
   const failureLine = formatGitHubFailureLine(failure);
   const failureSummary = formatGitHubFailureSummary(failure);
   const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
+  const preflightRecovery = currentPreflightRecoveryHint();
   const usageLine = formatOpenClawUsageSummary(insights?.usage || null);
   const results = runResult.results || [];
   const visibleResults = filterResults(results);
@@ -2208,6 +2218,7 @@ function renderRunResults(runResult, insights = null) {
           <div><dt>Results</dt><dd>${escapeHtml(String(results.length))}</dd></div>
           <div><dt>Status counts</dt><dd>${escapeHtml(formatCounts(counts))}</dd></div>
           <div><dt>Visible filter</dt><dd>${escapeHtml(state.resultFilter)}</dd></div>
+          ${preflightRecovery ? `<div><dt>Preflight recovery</dt><dd>${escapeHtml(preflightRecovery)}</dd></div>` : ""}
           <div><dt>GitHub latest failure</dt><dd>${escapeHtml(failureLine)}</dd></div>
           ${usageLine ? `<div><dt>OpenClaw usage</dt><dd>${escapeHtml(usageLine)}</dd></div>` : ""}
         </dl>
@@ -2239,6 +2250,7 @@ function generateRunSummaryText() {
   const results = runResult.results || [];
   const counts = formatCounts(statusCounts(results));
   const actionable = actionableResults(results);
+  const preflightRecoveryLine = formatPreflightRecoveryLine(currentPreflightRecoveryHint());
   const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
   const usageLine = formatOpenClawUsageSummary(currentOpenClawUsage());
   const lines = [
@@ -2253,6 +2265,9 @@ function generateRunSummaryText() {
   ];
   if (usageLine) {
     lines.push(usageLine);
+  }
+  if (preflightRecoveryLine) {
+    lines.push(preflightRecoveryLine);
   }
   if (recoveryLine) {
     lines.push(recoveryLine);
@@ -2277,6 +2292,7 @@ function generateIssueUpdateText() {
   const failure = currentGitHubFailure();
   const results = runResult.results || [];
   const actionable = actionableResults(results);
+  const preflightRecoveryLine = formatPreflightRecoveryLine(currentPreflightRecoveryHint());
   const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
   const usageLine = formatOpenClawUsageSummary(currentOpenClawUsage());
   const lines = [
@@ -2292,6 +2308,9 @@ function generateIssueUpdateText() {
   ];
   if (usageLine) {
     lines.push(`- ${usageLine}`);
+  }
+  if (preflightRecoveryLine) {
+    lines.push(`- ${preflightRecoveryLine}`);
   }
   if (recoveryLine) {
     lines.push(`- ${recoveryLine}`);
@@ -2320,6 +2339,7 @@ function generatePrNoteText() {
   const readiness = readinessFacts()
     .map((fact) => `${fact.label}:${fact.value}`)
     .join(" · ");
+  const preflightRecoveryLine = formatPreflightRecoveryLine(currentPreflightRecoveryHint());
   const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
   const usageLine = formatOpenClawUsageSummary(currentOpenClawUsage());
   const lines = [
@@ -2336,6 +2356,9 @@ function generatePrNoteText() {
   ];
   if (usageLine) {
     lines.push(usageLine);
+  }
+  if (preflightRecoveryLine) {
+    lines.push(preflightRecoveryLine);
   }
   if (recoveryLine) {
     lines.push(recoveryLine);
