@@ -67,6 +67,8 @@
 - 2026-05-10：Web UI 的 readiness gate 和 health 面板现在会直接显示 preflight recovery hint，操作员不用再回到 CLI 日志里找 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`。
 - 2026-05-10：Web UI 的 run summary / issue update / PR note copy 现在也会回流 preflight recovery hint，复制出去的 operator 文案和页面上的回退提示保持一致。
 - 2026-05-11：PR #13 对应的 `openclaw-review.yml` 在 head `88b8afd` 上成功完成，workflow run `25642959803` 证明当前分支的 GitHub review smoke 还能正常收敛。
+- 2026-05-11：`mission_control_default --live` 仍会被 `claude_local` 预检超时挡住；刚跑的 full tail-chain live smoke `run-20260510T234853Z-1e0133` 复现了这个 blocker，并再次把 OpenClaw fallback 路径提示出来。
+- 2026-05-11：`mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder + OPENCLAW_AGENT_ID=openclaw-control-ext` 这条 fallback live smoke `run-20260510T235024Z-9e4662` 已重新确认可用，triage / implement / review 都成功。
 - 2026-05-03：GitHub review workflow 的 conclusion 和 failed jobs 已回流到 Web UI 的 run summary、issue update 和 PR note 文案。
 - 2026-05-03：GitHub review workflow failed jobs 的 run insights / UI helper / 回归测试已补齐，字符串形态的 failed jobs 也能正确显示。
 - 2026-05-03：Web UI 健康面板在 channels 为空时保持 `warning`，不再误报 `passed`。
