@@ -339,6 +339,7 @@ function preflightSnapshotStatus(checks) {
       status: "neutral",
       summary: "No preflight snapshot loaded yet.",
       detail: "Run Preflight or load a recent run to surface the last report here.",
+      recoveryHint: "",
     };
   }
 
@@ -355,7 +356,25 @@ function preflightSnapshotStatus(checks) {
       ? `${problems.length} preflight checks need attention.`
       : "Latest preflight snapshot is clean.",
     detail: `${normalized.length} checks captured from the latest snapshot.`,
+    recoveryHint: formatPreflightRecoveryHint(normalized),
   };
+}
+
+function formatPreflightRecoveryHint(checks) {
+  if (!Array.isArray(checks)) {
+    return "";
+  }
+  for (const check of checks) {
+    const message = String(check?.message || "").trim();
+    if (!message) {
+      continue;
+    }
+    const recoveryIndex = message.indexOf("Recovery:");
+    if (recoveryIndex >= 0) {
+      return message.slice(recoveryIndex).trim();
+    }
+  }
+  return "";
 }
 
 function currentHistoryPayload() {
@@ -755,6 +774,7 @@ function renderReadinessGate() {
   const planItems = effectivePlanItems();
   const preflightChecks = latestPreflightChecks();
   const preflight = preflightSnapshotStatus(preflightChecks);
+  const preflightRecovery = formatPreflightRecoveryHint(preflightChecks);
   const allowedLiveSteps = Array.isArray(runtime.allowed_live_steps) ? runtime.allowed_live_steps : [];
   const usesOpenClaw = planItems.some((item) => {
     const mode = String(item.mode || "").toLowerCase();
@@ -899,7 +919,7 @@ function renderReadinessGate() {
       name: "Latest preflight",
       status: preflight.status,
       summary: preflight.summary,
-      detail: preflight.detail,
+      detail: preflightRecovery ? `${preflight.detail} ${preflightRecovery}` : preflight.detail,
     },
   ];
 
@@ -1920,6 +1940,7 @@ function renderHealthSnapshot(payload) {
   renderReadinessGate();
   const channels = payload.channels || [];
   const preflight = preflightSnapshotStatus(latestPreflightChecks());
+  const preflightRecovery = formatPreflightRecoveryHint(latestPreflightChecks());
   const preflightSource = latestPreflightSource();
   const gateway = payload.gateway || {};
   const memory = payload.memory || {};
@@ -1969,6 +1990,7 @@ function renderHealthSnapshot(payload) {
         <div class="meta-list">
           <div><dt>Summary</dt><dd>${escapeHtml(preflight.summary)}</dd></div>
           <div><dt>Detail</dt><dd>${escapeHtml(preflight.detail)}</dd></div>
+          ${preflightRecovery ? `<div><dt>Recovery</dt><dd>${escapeHtml(preflightRecovery)}</dd></div>` : ""}
           <div><dt>Source</dt><dd>${escapeHtml(preflightSource)}</dd></div>
         </div>
       </article>

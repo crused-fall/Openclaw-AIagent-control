@@ -54,11 +54,14 @@ class WebUiStaticTests(unittest.TestCase):
 
         self.assertIn("function latestPreflightSource()", source)
         self.assertIn("function preflightSnapshotStatus(checks)", source)
+        self.assertIn("function formatPreflightRecoveryHint(checks)", source)
         self.assertIn("const preflight = preflightSnapshotStatus(preflightChecks);", source)
+        self.assertIn("const preflightRecovery = formatPreflightRecoveryHint(preflightChecks);", source)
         self.assertIn("const preflight = preflightSnapshotStatus(latestPreflightChecks());", source)
         self.assertIn("const preflightSource = latestPreflightSource();", source)
         self.assertIn("<div><dt>Source</dt><dd>${escapeHtml(preflightSource)}</dd></div>", source)
         self.assertIn('${makeStatusChip(preflight.status)}', source)
+        self.assertIn('<div><dt>Recovery</dt><dd>${escapeHtml(preflightRecovery)}</dd></div>', source)
         self.assertNotIn(
             'No preflight snapshot loaded yet.',
             source.split("function preflightSnapshotStatus(checks)")[0],

@@ -1,6 +1,6 @@
 # OpenClaw Project Status
 
-更新时间：2026-05-09
+更新时间：2026-05-10
 
 ## 当前记录入口
 
@@ -39,6 +39,7 @@
 - 2026-05-09：当前机器上的 `mission_control_default --live` 预检仍会因 `claude_local` 认证超时被挡住；要继续 live 路径，仍需要显式切到 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
 - 2026-05-09：即使把 triage / review 都切到 `claude_router_isolated`，当前机器上的 `claude_local_isolated` 也未登录；默认 live 仍会在预检阶段被挡住，实际可继续的入口还是 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
 - 2026-05-09：Claude CLI 诊断现在会在 `_isolated` 未登录时直接说明 OpenClaw fallback 才是实际可继续的 live 路径，不再让 triage / review 隔离看起来像还能单独救活默认 live
+- 2026-05-10：Web UI 的 readiness gate 和 health 预检面板现在会直接显示 preflight recovery hint，帮助操作员一眼看出默认 live 该切到 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
 - 在 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 下，`mission_control_openclaw_default` 已完成 triage / implement / review live smoke，说明 OpenClaw 变体已经具备可用的本地闭环
 - 支持 `--web` 本地 Mission Control 控制台
 - live 运行时会输出 step 级 progress
