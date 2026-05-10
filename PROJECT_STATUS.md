@@ -41,6 +41,7 @@
 - 2026-05-09：Claude CLI 诊断现在会在 `_isolated` 未登录时直接说明 OpenClaw fallback 才是实际可继续的 live 路径，不再让 triage / review 隔离看起来像还能单独救活默认 live
 - 2026-05-10：Web UI 的 readiness gate 和 health 预检面板现在会直接显示 preflight recovery hint，帮助操作员一眼看出默认 live 该切到 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
 - 2026-05-10：Web UI 的 run summary / issue update / PR note copy 现在也会回流 preflight recovery hint，和 readiness gate / health 面板一起把默认 live 的回退路径写到可复制文本里
+- 2026-05-11：PR #13 对应的 `openclaw-review.yml` 在 head `ac70fa6` 上成功跑完，workflow run `25642896608` 已验证当前分支的 GitHub review smoke 仍然可用
 - 在 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 下，`mission_control_openclaw_default` 已完成 triage / implement / review live smoke，说明 OpenClaw 变体已经具备可用的本地闭环
 - 支持 `--web` 本地 Mission Control 控制台
 - live 运行时会输出 step 级 progress
