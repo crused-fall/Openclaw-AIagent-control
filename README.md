@@ -118,6 +118,7 @@ tests/
 - 适合在本地 `claude/codex` 环境不稳定时排除干扰
 - 它不会经过 `commit_changes` 和 `publish_branch` 步骤
 - 如果这条 smoke 的请求本身不产生文件变更，`commit_changes` / `publish_branch` 会按规则跳过，这属于预期的 no-op 结果
+- 最新 fallback live smoke `run-20260511T224925Z-0203e7` 仍然是 no-op：`commit_changes` / `publish_branch` / `draft_pr` / `dispatch_review` / `collect_review` 跳过，而 `triage` / `review` / `sync_issue` / `update_issue` 成功
 
 另有一条 GitHub review 回流恢复 pipeline：`github_collect_review_resume`
 

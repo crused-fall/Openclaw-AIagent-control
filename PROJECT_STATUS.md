@@ -46,6 +46,7 @@
 - 2026-05-11：`mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder + OPENCLAW_AGENT_ID=openclaw-control-ext` 这条 fallback live smoke `run-20260510T235024Z-9e4662` 已重新跑通 triage / implement / review，确认当前机器仍有可用的本地 live 入口
 - 2026-05-11：`mission_control_openclaw_default` 的 fallback tail-chain smoke `run-20260511T000053Z-03cb79` 结果显示请求本身是 no-op，因此 `commit_changes` / `publish_branch` / `draft_pr` / `dispatch_review` / `collect_review` 按规则跳过，但 `triage` / `review` / `sync_issue` / `update_issue` 仍然实跑成功
 - 2026-05-11：最新 fallback tail-chain smoke 仍确认 `mission_control_default` 会被 `claude_local` 预检挡住，而 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder + OPENCLAW_AGENT_ID=openclaw-control-ext` 仍可继续跑
+- 2026-05-11：最新 fallback live smoke `run-20260511T225359Z-f9e37e` 仍然 no-op；`README.md` 的 `github_bridge_smoke` 说明已追加这条记录，`commit_changes` / `publish_branch` / `draft_pr` / `dispatch_review` / `collect_review` 继续跳过，`triage` / `review` / `sync_issue` / `update_issue` 成功
 - 在 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 下，`mission_control_openclaw_default` 已完成 triage / implement / review live smoke，说明 OpenClaw 变体已经具备可用的本地闭环
 - 支持 `--web` 本地 Mission Control 控制台
 - live 运行时会输出 step 级 progress
