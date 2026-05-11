@@ -66,7 +66,7 @@
 - 2026-05-09：Claude CLI 的 isolated 失败提示现在也会直接指向 OpenClaw fallback，避免 triage / review 隔离看起来像还能单独救活默认 live。
 - 2026-05-10：Web UI 的 readiness gate 和 health 面板现在会直接显示 preflight recovery hint，操作员不用再回到 CLI 日志里找 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`。
 - 2026-05-10：Web UI 的 run summary / issue update / PR note copy 现在也会回流 preflight recovery hint，复制出去的 operator 文案和页面上的回退提示保持一致。
-- 2026-05-11：PR #13 对应的 `openclaw-review.yml` 在 head `88b8afd` 上成功完成，workflow run `25642959803` 证明当前分支的 GitHub review smoke 还能正常收敛。
+- 2026-05-11：PR #13 对应的 `openclaw-review.yml` 在 head `400ad43` 上成功完成，workflow run `25643659466` 证明当前分支的 GitHub review smoke 还能正常收敛；README 也补了 `github_bridge_smoke` 的 no-op tail-chain 说明。
 - 2026-05-11：`mission_control_default --live` 仍会被 `claude_local` 预检超时挡住；刚跑的 full tail-chain live smoke `run-20260510T234853Z-1e0133` 复现了这个 blocker，并再次把 OpenClaw fallback 路径提示出来。
 - 2026-05-11：`mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder + OPENCLAW_AGENT_ID=openclaw-control-ext` 这条 fallback live smoke `run-20260510T235024Z-9e4662` 已重新确认可用，triage / implement / review 都成功。
 - 2026-05-11：`mission_control_openclaw_default` 的 fallback tail-chain smoke `run-20260511T000053Z-03cb79` 证实了 no-op 请求会自然跳过 `commit_changes` / `publish_branch` / `draft_pr` / `dispatch_review` / `collect_review`，但 `sync_issue` / `update_issue` 仍然会完成。
