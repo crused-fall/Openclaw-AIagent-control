@@ -117,6 +117,7 @@ tests/
 - 用来单独验证 GitHub review workflow 的触发和状态回流
 - 适合在本地 `claude/codex` 环境不稳定时排除干扰
 - 它不会经过 `commit_changes` 和 `publish_branch` 步骤
+- 如果这条 smoke 的请求本身不产生文件变更，`commit_changes` / `publish_branch` 会按规则跳过，这属于预期的 no-op 结果
 
 另有一条 GitHub review 回流恢复 pipeline：`github_collect_review_resume`
 
