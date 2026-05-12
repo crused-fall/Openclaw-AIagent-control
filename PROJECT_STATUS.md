@@ -1,6 +1,6 @@
 # OpenClaw Project Status
 
-更新时间：2026-05-12
+更新时间：2026-05-10
 
 ## 当前记录入口
 
@@ -49,7 +49,6 @@
 - 2026-05-11：最新 fallback live smoke `run-20260511T225359Z-f9e37e` 仍然 no-op；`README.md` 的 `github_bridge_smoke` 说明已追加这条记录，`commit_changes` / `publish_branch` / `draft_pr` / `dispatch_review` / `collect_review` 继续跳过，`triage` / `review` / `sync_issue` / `update_issue` 成功
 - 2026-05-12：`mission_control_default --live` 仍被 `claude_local` 预检超时挡住；最新 live smoke `run-20260511T230911Z-6e0886` 复现了这个 blocker，并继续给出 OpenClaw fallback 提示
 - 在 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 下，`mission_control_openclaw_default` 已完成 triage / implement / review live smoke，说明 OpenClaw 变体已经具备可用的本地闭环
-- 2026-05-12：在 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=openclaw_router`、`OPENCLAW_ASSIGN_REVIEW_LOCAL=openclaw_router` 和 `OPENCLAW_AGENT_ID=openclaw-control-ext` 下，`mission_control_default` 的 live smoke `run-20260512T102057Z-4098c0` 已完整跑通 `triage -> implement -> review -> commit_changes -> publish_branch -> sync_issue -> update_issue -> draft_pr -> dispatch_review -> collect_review`，`openclaw-review.yml` workflow `25728503893` 也成功完成，说明默认主链在 OpenClaw override 下已可端到端收敛
 - 支持 `--web` 本地 Mission Control 控制台
 - live 运行时会输出 step 级 progress
 

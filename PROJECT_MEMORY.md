@@ -1,6 +1,6 @@
 # OpenClaw Working Memory
 
-更新时间：2026-05-12
+更新时间：2026-05-10
 
 ## 主目标
 
@@ -73,7 +73,6 @@
 - 2026-05-11：最新 fallback tail-chain smoke 继续表明 `mission_control_default` 仍被 `claude_local` 预检挡住，而 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder + OPENCLAW_AGENT_ID=openclaw-control-ext` 仍能继续跑。
 - 2026-05-11：最新 fallback live smoke `run-20260511T225359Z-f9e37e` 仍然 no-op；`README.md` 的 `github_bridge_smoke` 说明已补上这条记录，tail-chain 继续按 no-op 规则跳过，当前最新可用事实仍是 fallback 组合能继续跑。
 - 2026-05-12：`mission_control_default --live` 仍被 `claude_local` 预检超时挡住；`run-20260511T230911Z-6e0886` 复现了 blocker，当前可继续的 live 入口还是 OpenClaw fallback。
-- 2026-05-12：在 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=openclaw_router`、`OPENCLAW_ASSIGN_REVIEW_LOCAL=openclaw_router`、`OPENCLAW_AGENT_ID=openclaw-control-ext` 下，`mission_control_default` 的 live smoke `run-20260512T102057Z-4098c0` 已完整跑通默认尾链并让 `openclaw-review.yml` workflow `25728503893` 成功完成；这说明默认主链在 OpenClaw override 下已经能端到端收敛，但当前机器的纯 Claude 默认 live 入口仍然被预检挡住。
 - 2026-05-03：GitHub review workflow 的 conclusion 和 failed jobs 已回流到 Web UI 的 run summary、issue update 和 PR note 文案。
 - 2026-05-03：GitHub review workflow failed jobs 的 run insights / UI helper / 回归测试已补齐，字符串形态的 failed jobs 也能正确显示。
 - 2026-05-03：Web UI 健康面板在 channels 为空时保持 `warning`，不再误报 `passed`。
