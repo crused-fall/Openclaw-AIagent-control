@@ -159,6 +159,28 @@ class WebUiStaticTests(unittest.TestCase):
         )
         self.assertIn("comparison.usageDelta", source)
 
+    def test_token_stats_panel_is_rendered_from_usage_helpers(self) -> None:
+        app_source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        html_source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "index.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="token-stats-panel"', html_source)
+        self.assertIn("function formatUsageBreakdown(usage)", app_source)
+        self.assertIn("function tokenStatsSnapshot(bootstrap)", app_source)
+        self.assertIn("function renderTokenStatsPanel(bootstrap)", app_source)
+        self.assertIn("elements.tokenStatsPanel", app_source)
+        self.assertIn("renderTokenStatsPanel(bootstrap);", app_source)
+        self.assertIn("renderTokenStatsPanel(state.bootstrap || {});", app_source)
+        self.assertIn("formatOpenClawUsageSummary(usage)", app_source)
+        self.assertIn("formatOpenClawUsageTrend(snapshot.recentRuns)", app_source)
+        self.assertIn("Aggregate breakdown", app_source)
+        self.assertIn("Last-call breakdown", app_source)
+        self.assertNotIn("estimatedCost", app_source)
+        self.assertNotIn("usd", app_source.lower())
+
     def test_preflight_recovery_hint_is_shared_across_copy_surfaces(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
             encoding="utf-8"

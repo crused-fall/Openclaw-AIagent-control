@@ -28,6 +28,7 @@ const elements = {
   githubBridge: document.getElementById("github-bridge"),
   hermesPanel: document.getElementById("hermes-panel"),
   recentRuns: document.getElementById("recent-runs"),
+  tokenStatsPanel: document.getElementById("token-stats-panel"),
   pruneKeepLatest: document.getElementById("prune-keep-latest"),
   pruneRuns: document.getElementById("prune-runs"),
   housekeepingStatus: document.getElementById("housekeeping-status"),
@@ -558,6 +559,94 @@ function currentOpenClawUsage() {
     return null;
   }
   return runPayload.history?.insights?.usage || runPayload.insights?.usage || null;
+}
+
+function formatUsageBreakdown(usage) {
+  if (!usage || typeof usage !== "object") {
+    return "";
+  }
+  return ["input", "output", "cacheRead", "cacheWrite", "total"]
+    .map((field) => `${field} ${Number.isInteger(usage[field]) ? usage[field] : 0}`)
+    .join(" · ");
+}
+
+function tokenStatsSnapshot(bootstrap) {
+  const runPayload = extractRunPayload(state.currentOutput);
+  if (runPayload) {
+    return {
+      label: runPayload.runResult?.run_id || runPayload.summary?.run_id || "loaded run",
+      source: "loaded run",
+      usage: runPayload.history?.insights?.usage || runPayload.insights?.usage || null,
+      recentRuns: Array.isArray(bootstrap?.recentRuns) ? bootstrap.recentRuns : [],
+    };
+  }
+
+  const recentRuns = Array.isArray(bootstrap?.recentRuns) ? bootstrap.recentRuns : [];
+  const latestRun = recentRuns[0] || null;
+  return {
+    label: latestRun?.runId || "latest recent run",
+    source: latestRun ? "latest recent run" : "no recent runs",
+    usage: latestRun?.insights?.usage || null,
+    recentRuns,
+  };
+}
+
+function renderTokenStatsPanel(bootstrap) {
+  const snapshot = tokenStatsSnapshot(bootstrap);
+  const usage = snapshot.usage;
+  const usageSummary = formatOpenClawUsageSummary(usage);
+  const usageTrend = formatOpenClawUsageTrend(snapshot.recentRuns);
+  const usageSummaryMarkup = usageSummary ? `<p>${escapeHtml(usageSummary)}</p>` : "";
+
+  if (!elements.tokenStatsPanel) {
+    return;
+  }
+
+  if (!usage) {
+    elements.tokenStatsPanel.innerHTML = `
+      <div class="empty-state">No OpenClaw usage artifacts were found for ${escapeHtml(snapshot.label)}.</div>
+      ${usageTrend ? `<small>${escapeHtml(`Recent trend: ${usageTrend.text}`)}</small>` : ""}
+    `;
+    return;
+  }
+
+  const aggregateBreakdown = formatUsageBreakdown(usage.openclawUsage || null);
+  const lastCallBreakdown = formatUsageBreakdown(usage.openclawLastCallUsage || null);
+  elements.tokenStatsPanel.innerHTML = `
+    <article class="result-card">
+      <div class="result-card-header">
+        <strong>${escapeHtml(snapshot.label)}</strong>
+        ${makeStatusChip("passed")}
+      </div>
+      ${usageSummaryMarkup}
+      <small>${escapeHtml(`Source: ${snapshot.source}`)}</small>
+      <div class="metric-grid">
+        <div class="metric-card">
+          <dt>Results with usage</dt>
+          <dd>${escapeHtml(String(Number.isInteger(usage.openclawUsageCount) ? usage.openclawUsageCount : 0))}</dd>
+          <small>${escapeHtml(`${Number.isInteger(usage.resultCount) ? usage.resultCount : 0} total results`)}</small>
+        </div>
+        <div class="metric-card">
+          <dt>Total tokens</dt>
+          <dd>${escapeHtml(String(Number.isInteger(usage.openclawUsage?.total) ? usage.openclawUsage.total : 0))}</dd>
+          <small>${escapeHtml("Aggregate OpenClaw usage")}</small>
+        </div>
+        <div class="metric-card">
+          <dt>Last-call samples</dt>
+          <dd>${escapeHtml(String(Number.isInteger(usage.openclawLastCallUsageCount) ? usage.openclawLastCallUsageCount : 0))}</dd>
+          <small>${escapeHtml("Most recent call coverage")}</small>
+        </div>
+        <div class="metric-card">
+          <dt>Last-call tokens</dt>
+          <dd>${escapeHtml(String(Number.isInteger(usage.openclawLastCallUsage?.total) ? usage.openclawLastCallUsage.total : 0))}</dd>
+          <small>${escapeHtml("Most recent call total")}</small>
+        </div>
+      </div>
+      ${aggregateBreakdown ? `<div class="metric-card full"><dt>Aggregate breakdown</dt><dd>${escapeHtml(aggregateBreakdown)}</dd></div>` : ""}
+      ${lastCallBreakdown ? `<div class="metric-card full"><dt>Last-call breakdown</dt><dd>${escapeHtml(lastCallBreakdown)}</dd></div>` : ""}
+      ${usageTrend ? `<small>${escapeHtml(`Recent trend: ${usageTrend.text}`)}</small>` : ""}
+    </article>
+  `;
 }
 
 function actionableResults(results) {
@@ -2039,6 +2128,7 @@ function renderBootstrap(bootstrap) {
   renderPipelineDag();
   renderReadinessGate();
   renderRecentRuns(bootstrap);
+  renderTokenStatsPanel(bootstrap);
   renderCompareSelectors(bootstrap);
   renderGitHubBridge();
   renderHermesPanel();
@@ -2396,6 +2486,7 @@ function renderOutput(payload) {
   renderReadinessGate();
   renderGitHubBridge();
   renderHermesPanel();
+  renderTokenStatsPanel(state.bootstrap || {});
 }
 
 async function fetchJson(url, options = {}) {
