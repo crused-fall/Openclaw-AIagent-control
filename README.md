@@ -99,7 +99,7 @@ tests/
 另有两条 OpenClaw 变体 pipeline：
 
 - `mission_control_openclaw_triage`：只把 `triage` 切到本机 `openclaw agent --local --json`
-- `mission_control_openclaw_default`：把 `triage + review` 都切到 OpenClaw，本地 `implement` 和后续 GitHub 步骤保持不变（适用于 Claude 不可用时）
+- `mission_control_openclaw_default`：把 `triage + review` 都切到 OpenClaw；如果 Codex 当前不可用，可以把 `implement` 显式覆盖到 `openclaw_builder`，后续 GitHub 步骤保持不变（适用于 Claude/Codex 不可用时）
 - 当前这样设计是为了先替换最容易受 Claude 环境影响的监督层，不把 gateway / ACP 问题一次性扩大
 - OpenClaw executor 会显式把 repo 绝对路径传给 agent，并要求它先读取 repo 内的 `AGENTS.md`
 
@@ -117,6 +117,15 @@ tests/
 - 用来单独验证 GitHub review workflow 的触发和状态回流
 - 适合在本地 `claude/codex` 环境不稳定时排除干扰
 - 它不会经过 `commit_changes` 和 `publish_branch` 步骤
+- 如果这条 smoke 的请求本身不产生文件变更，`commit_changes` / `publish_branch` 会按规则跳过，这属于预期的 no-op 结果
+- 最新 fallback live smoke `run-20260511T224925Z-0203e7` 仍然是 no-op：`commit_changes` / `publish_branch` / `draft_pr` / `dispatch_review` / `collect_review` 跳过，而 `triage` / `review` / `sync_issue` / `update_issue` 成功
+
+另有一条 GitHub review 回流恢复 pipeline：`github_collect_review_resume`
+
+- 只跑 `collect_review`
+- 用来继续收集一个已经存在的 GitHub Actions workflow run 的状态
+- 需要配合 `--workflow-run-ref`，可以传 run id 或 run URL
+- 适合在 workflow 已经触发、但你想稍后回来继续收集结果时使用
 
 ## 快速开始
 
@@ -216,6 +225,15 @@ python3 main_v2.py --pipeline mission_control_hermes_supervised \
 python3 main_v2.py --pipeline github_bridge_smoke --request "smoke test github bridge" --steps collect_review
 ```
 
+如果你已经有一个现成的 GitHub Actions workflow run，要直接回流状态而不是新触发一次：
+
+```bash
+python3 main_v2.py --pipeline github_collect_review_resume \
+  --request "resume collect review" \
+  --steps collect_review \
+  --workflow-run-ref 25504962543
+```
+
 5. live 执行
 
 ```bash
@@ -226,7 +244,8 @@ python3 main_v2.py --live --request "修复登录页报错" --steps triage,imple
 如果某一步只能靠 fallback 才能继续，live 会直接中止，并要求你显式检查 assignment 配置。
 运行中会输出 `[progress] preflight:start`、`[progress] step:start ...` 这类进度行，避免长步骤看起来像卡住。
 当前还启用了 `runtime.cli_command_timeout_seconds=180.0`，本地 `claude/codex` 长时间无响应时会明确超时失败，而不是无限挂住。
-CLI 失败结果现在也会带 `cli_failure_kind` 和 `cli_recovery_hint`。如果默认 `triage` 卡在 Claude，可以优先试 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`，或者直接切到 `mission_control_openclaw_triage` / `mission_control_openclaw_default`。
+CLI 失败结果现在也会带 `cli_failure_kind` 和 `cli_recovery_hint`。如果默认 `triage` 卡在 Claude，可以优先试 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated`；如果隔离 Claude 仍显示未登录，就别继续重试，直接切到 `mission_control_openclaw_triage` / `mission_control_openclaw_default`，或配合 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 走已验证的 OpenClaw fallback。
+现在如果默认 `triage` 在 Claude 预检阶段超时，preflight 会直接把 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 这条已验证的 OpenClaw fallback 路径提示出来，方便你直接切换。
 `codex_local` 现在默认用 `codex exec --ephemeral`，尽量避开本机 `~/.codex/state_*.sqlite` 迁移冲突；如果仍然返回 `cli_failure_kind=usage_limit`，说明是 Codex 账号配额问题，不是项目编排问题。
 如果 Codex 当前不可用，但你本机 OpenClaw agent 可写仓库，可以显式覆盖实现层：`OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`。这样 `mission_control_openclaw_default` 会让 OpenClaw 承担 `implement`，而不是继续卡在 Codex。
 这条 `openclaw_builder` 路径目前主要用于本地 `triage/implement/review`；如果实现结果没有导出可推送分支，`publish_branch` 现在会直接 `blocked`，而不是假装还能继续 GitHub 尾链。

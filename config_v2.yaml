@@ -1152,3 +1152,24 @@ pipelines:
           {user_request}
 
           如果当前没有实现分支，请直接使用默认基线分支。
+
+  github_collect_review_resume:
+    extends: github_bridge_smoke
+    remove_steps:
+      - dispatch_review
+    steps:
+      - id: collect_review
+        depends_on: []
+        title: Resume GitHub review workflow status collection
+        metadata:
+          requires_external_workflow_run_ref: true
+        prompt_template: |
+          请收集现有 GitHub review workflow run 的最新状态，不要触发新的 dispatch_review。
+
+          用户请求：
+          {user_request}
+
+          目标 workflow run：
+          {primary_workflow_run_ref}
+
+          {dependency_summaries}

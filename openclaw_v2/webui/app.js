@@ -34,6 +34,7 @@ const elements = {
   healthAgentId: document.getElementById("health-agent-id"),
   checkHealth: document.getElementById("check-health"),
   healthPanel: document.getElementById("health-panel"),
+  workflowRunRef: document.getElementById("workflow-run-ref"),
   taskState: document.getElementById("task-state"),
   cancelTask: document.getElementById("cancel-task"),
   taskMeta: document.getElementById("task-meta"),
@@ -338,6 +339,7 @@ function preflightSnapshotStatus(checks) {
       status: "neutral",
       summary: "No preflight snapshot loaded yet.",
       detail: "Run Preflight or load a recent run to surface the last report here.",
+      recoveryHint: "",
     };
   }
 
@@ -354,7 +356,34 @@ function preflightSnapshotStatus(checks) {
       ? `${problems.length} preflight checks need attention.`
       : "Latest preflight snapshot is clean.",
     detail: `${normalized.length} checks captured from the latest snapshot.`,
+    recoveryHint: formatPreflightRecoveryHint(normalized),
   };
+}
+
+function formatPreflightRecoveryHint(checks) {
+  if (!Array.isArray(checks)) {
+    return "";
+  }
+  for (const check of checks) {
+    const message = String(check?.message || "").trim();
+    if (!message) {
+      continue;
+    }
+    const recoveryIndex = message.indexOf("Recovery:");
+    if (recoveryIndex >= 0) {
+      return message.slice(recoveryIndex).trim();
+    }
+  }
+  return "";
+}
+
+function currentPreflightRecoveryHint() {
+  return formatPreflightRecoveryHint(latestPreflightChecks());
+}
+
+function formatPreflightRecoveryLine(preflightRecovery) {
+  const hint = String(preflightRecovery || "").trim();
+  return hint ? `Preflight recovery: ${hint}` : "";
 }
 
 function currentHistoryPayload() {
@@ -400,6 +429,7 @@ function setCopyFeedback(message) {
 
 function updateActionButtons() {
   const requestReady = Boolean((elements.request.value || "").trim());
+  const workflowRunRefIsReady = workflowRunRefReady();
   const taskActive = ["queued", "running"].includes(state.currentTaskStatus);
   elements.buttons.forEach((button) => {
     if (taskActive) {
@@ -407,7 +437,7 @@ function updateActionButtons() {
       return;
     }
     if (button.dataset.action === "run") {
-      button.disabled = !requestReady;
+      button.disabled = !requestReady || !workflowRunRefIsReady;
       return;
     }
     button.disabled = false;
@@ -428,6 +458,106 @@ function formatCounts(counts) {
     return "no step results";
   }
   return entries.map(([key, value]) => `${key}:${value}`).join(" · ");
+}
+
+function formatOpenClawUsageSummary(usage) {
+  if (!usage || typeof usage !== "object") {
+    return "";
+  }
+  const resultCount = Number.isInteger(usage.resultCount) ? usage.resultCount : 0;
+  const usageCount = Number.isInteger(usage.openclawUsageCount) ? usage.openclawUsageCount : 0;
+  const lastCallCount = Number.isInteger(usage.openclawLastCallUsageCount)
+    ? usage.openclawLastCallUsageCount
+    : 0;
+  const totalTokens = Number.isInteger(usage.openclawUsage?.total) ? usage.openclawUsage.total : 0;
+  const lastCallTokens = Number.isInteger(usage.openclawLastCallUsage?.total)
+    ? usage.openclawLastCallUsage.total
+    : 0;
+  if (!usageCount && !lastCallCount && !totalTokens && !lastCallTokens) {
+    return "";
+  }
+
+  const parts = [];
+  const resultLabel = resultCount ? `${usageCount}/${resultCount} results with usage` : `${usageCount} results with usage`;
+  parts.push(resultLabel);
+  if (totalTokens) {
+    parts.push(`total ${totalTokens} tokens`);
+  }
+  if (lastCallCount) {
+    parts.push(`${lastCallCount} last-call ${lastCallCount === 1 ? "sample" : "samples"}`);
+  }
+  if (lastCallTokens) {
+    parts.push(`last call ${lastCallTokens} tokens`);
+  }
+  return `OpenClaw usage: ${parts.join(" · ")}`;
+}
+
+function formatOpenClawUsageDelta(usageDelta) {
+  if (!usageDelta || typeof usageDelta !== "object") {
+    return "";
+  }
+  const left = usageDelta.left || {};
+  const right = usageDelta.right || {};
+  const leftResultCount = Number.isInteger(left.resultCount) ? left.resultCount : 0;
+  const rightResultCount = Number.isInteger(right.resultCount) ? right.resultCount : 0;
+  const leftUsageTotal = Number.isInteger(left.openclawUsage?.total) ? left.openclawUsage.total : 0;
+  const rightUsageTotal = Number.isInteger(right.openclawUsage?.total) ? right.openclawUsage.total : 0;
+  const leftLastCallTotal = Number.isInteger(left.openclawLastCallUsage?.total)
+    ? left.openclawLastCallUsage.total
+    : 0;
+  const rightLastCallTotal = Number.isInteger(right.openclawLastCallUsage?.total)
+    ? right.openclawLastCallUsage.total
+    : 0;
+
+  const parts = [];
+  if (leftResultCount || rightResultCount) {
+    parts.push(`results ${leftResultCount}→${rightResultCount} (${rightResultCount - leftResultCount >= 0 ? "+" : ""}${rightResultCount - leftResultCount})`);
+  }
+  if (leftUsageTotal || rightUsageTotal) {
+    const delta = rightUsageTotal - leftUsageTotal;
+    parts.push(`tokens ${leftUsageTotal}→${rightUsageTotal} (${delta >= 0 ? "+" : ""}${delta})`);
+  }
+  if (leftLastCallTotal || rightLastCallTotal) {
+    const delta = rightLastCallTotal - leftLastCallTotal;
+    parts.push(`last-call ${leftLastCallTotal}→${rightLastCallTotal} (${delta >= 0 ? "+" : ""}${delta})`);
+  }
+  if (!parts.length) {
+    return "";
+  }
+  return `OpenClaw usage delta: ${parts.join(" · ")}`;
+}
+
+function formatOpenClawUsageTrend(runs) {
+  if (!Array.isArray(runs)) {
+    return null;
+  }
+  const usageRuns = runs
+    .map((run) => {
+      const totalTokens = Number.isInteger(run?.insights?.usage?.openclawUsage?.total)
+        ? run.insights.usage.openclawUsage.total
+        : null;
+      return totalTokens === null ? null : { run, totalTokens };
+    })
+    .filter(Boolean);
+  if (usageRuns.length < 2) {
+    return null;
+  }
+
+  const latest = usageRuns[0];
+  const previous = usageRuns[1];
+  const delta = latest.totalTokens - previous.totalTokens;
+  return {
+    tone: delta > 0 ? "warning" : delta < 0 ? "passed" : "neutral",
+    text: `Latest ${latest.totalTokens} tokens vs previous ${previous.totalTokens} tokens (${delta >= 0 ? "+" : ""}${delta})`,
+  };
+}
+
+function currentOpenClawUsage() {
+  const runPayload = extractRunPayload(state.currentOutput);
+  if (!runPayload) {
+    return null;
+  }
+  return runPayload.history?.insights?.usage || runPayload.insights?.usage || null;
 }
 
 function actionableResults(results) {
@@ -644,12 +774,16 @@ function renderReadinessGate() {
   const health = state.healthSnapshot;
   const healthCurrent = healthSnapshotIsCurrent();
   const requestText = (elements.request.value || "").trim();
+  const workflowRunRefValue = currentWorkflowRunRef();
+  const workflowRunRefRequired = pipelineRequiresWorkflowRunRef();
+  const workflowRunRefIsReady = workflowRunRefReady();
   const pipelineSteps = currentPipelineSteps();
   const explicitSelection = selectedSteps();
   const effectiveIds = effectiveStepIds();
   const planItems = effectivePlanItems();
   const preflightChecks = latestPreflightChecks();
   const preflight = preflightSnapshotStatus(preflightChecks);
+  const preflightRecovery = formatPreflightRecoveryHint(preflightChecks);
   const allowedLiveSteps = Array.isArray(runtime.allowed_live_steps) ? runtime.allowed_live_steps : [];
   const usesOpenClaw = planItems.some((item) => {
     const mode = String(item.mode || "").toLowerCase();
@@ -685,6 +819,22 @@ function renderReadinessGate() {
           ? "Live mode requires an explicit subset."
           : `Pipeline: ${elements.pipeline.value || bootstrap.snapshot?.defaultPipeline || "n/a"}`
         : "Refresh bootstrap or check config_v2.yaml.",
+    },
+    {
+      name: "Workflow run ref",
+      status: !workflowRunRefRequired
+        ? "neutral"
+        : workflowRunRefIsReady
+          ? "passed"
+          : "blocked",
+      summary: !workflowRunRefRequired
+        ? "Selected route does not require an existing workflow run reference."
+        : workflowRunRefIsReady
+          ? "Resume workflow reference is ready."
+          : "Provide a GitHub workflow run reference before launching this pipeline.",
+      detail: !workflowRunRefRequired
+        ? "No resume-only step is in the active route."
+        : workflowRunRefValue || "workflowRunRef is missing.",
     },
     {
       name: "Live policy",
@@ -778,7 +928,7 @@ function renderReadinessGate() {
       name: "Latest preflight",
       status: preflight.status,
       summary: preflight.summary,
-      detail: preflight.detail,
+      detail: preflightRecovery ? `${preflight.detail} ${preflightRecovery}` : preflight.detail,
     },
   ];
 
@@ -1314,12 +1464,14 @@ function renderRunCompare(payload) {
   const runs = payload.runs || [];
   const comparison = payload.comparison || {};
   const latestFailures = comparison.latestFailures || {};
+  const usageDeltaLine = formatOpenClawUsageDelta(comparison.usageDelta || null);
   elements.runCompare.innerHTML = `
     <div class="compare-grid">
       ${runs
         .map(
           (run) => {
             const latestFailure = run.insights?.github?.latestFailure || null;
+            const usageLine = formatOpenClawUsageSummary(run.insights?.usage || null);
             const failureRecovery = formatGitHubRecoveryLine(null, latestFailure);
             const failureSummary = formatGitHubFailureSummary(latestFailure);
             return `
@@ -1342,6 +1494,7 @@ function renderRunCompare(payload) {
                 <small>${escapeHtml(formatGitHubFailureLine(run.insights?.github?.latestFailure || null))}</small>
                 ${failureSummary ? `<small>${escapeHtml(failureSummary)}</small>` : ""}
                 ${failureRecovery ? `<small>${escapeHtml(failureRecovery)}</small>` : ""}
+                ${usageLine ? `<small>${escapeHtml(usageLine)}</small>` : ""}
                 <small>${escapeHtml(`Hermes sessions: ${run.insights?.hermes?.sessionCount || 0}`)}</small>
               </article>
             `;
@@ -1363,6 +1516,19 @@ function renderRunCompare(payload) {
         </div>
         <small>${escapeHtml(`Branch changed: ${comparison.branchChanged ? "yes" : "no"} · Workflow changed: ${comparison.workflowChanged ? "yes" : "no"} · Hermes session delta: ${comparison.hermesSessionDelta || 0}`)}</small>
       </article>
+      ${
+        usageDeltaLine
+          ? `
+            <article class="diff-card">
+              <div class="result-card-header">
+                <strong>OpenClaw usage delta</strong>
+                ${makeStatusChip("warning")}
+              </div>
+              <p>${escapeHtml(usageDeltaLine)}</p>
+            </article>
+          `
+          : ""
+      }
       <article class="diff-card">
         <div class="result-card-header">
           <strong>GitHub failure delta</strong>
@@ -1435,6 +1601,26 @@ function selectedSteps() {
   return Array.from(elements.stepGrid.querySelectorAll("input[type=checkbox]:checked")).map(
     (input) => input.value,
   );
+}
+
+function currentWorkflowRunRef() {
+  return String(elements.workflowRunRef.value || "").trim();
+}
+
+function pipelineRequiresWorkflowRunRef() {
+  const pipelineSteps = currentPipelineSteps();
+  if (!pipelineSteps.length) {
+    return false;
+  }
+  const effectiveIds = new Set(effectiveStepIds());
+  return pipelineSteps.some(
+    (step) =>
+      Boolean(step?.metadata?.requires_external_workflow_run_ref) && effectiveIds.has(step.id),
+  );
+}
+
+function workflowRunRefReady() {
+  return !pipelineRequiresWorkflowRunRef() || Boolean(currentWorkflowRunRef());
 }
 
 function renderWorkspaceMetrics(bootstrap) {
@@ -1560,6 +1746,7 @@ function renderStepGrid() {
       renderPipelineDag();
       renderHeroStatus();
       renderReadinessGate();
+      updateActionButtons();
     });
   });
 }
@@ -1616,13 +1803,26 @@ function renderRequestPresets() {
 
 function renderRecentRuns(bootstrap) {
   const runs = bootstrap.recentRuns || [];
+  const usageTrend = formatOpenClawUsageTrend(runs);
   if (!runs.length) {
     elements.recentRuns.innerHTML = `<div class="empty-state">No recorded runs yet.</div>`;
     return;
   }
-  elements.recentRuns.innerHTML = runs
+  const trendMarkup = usageTrend
+    ? `
+      <article class="diff-card">
+        <div class="result-card-header">
+          <strong>OpenClaw usage trend</strong>
+          ${makeStatusChip(usageTrend.tone)}
+        </div>
+        <p>${escapeHtml(usageTrend.text)}</p>
+      </article>
+    `
+    : "";
+  elements.recentRuns.innerHTML = `${trendMarkup}${runs
     .map((run) => {
       const latestFailure = run.insights?.github?.latestFailure || null;
+      const usageLine = formatOpenClawUsageSummary(run.insights?.usage || null);
       const failureRecovery = formatGitHubRecoveryLine(null, latestFailure);
       const failureSummary = formatGitHubFailureSummary(latestFailure);
       const recentRunStatus =
@@ -1649,6 +1849,7 @@ function renderRecentRuns(bootstrap) {
           <small>${escapeHtml(formatGitHubFailureLine(run.insights?.github?.latestFailure || null))}</small>
           ${failureSummary ? `<small>${escapeHtml(failureSummary)}</small>` : ""}
           ${failureRecovery ? `<small>${escapeHtml(`Recovery: ${failureRecovery}`)}</small>` : ""}
+          ${usageLine ? `<small>${escapeHtml(usageLine)}</small>` : ""}
           <small>${escapeHtml(formatAbsoluteTime(run.updatedAt))}</small>
           <div class="task-controls">
             <button class="ghost-button" type="button" data-run-id="${escapeHtml(run.runId)}">Load summary</button>
@@ -1657,7 +1858,7 @@ function renderRecentRuns(bootstrap) {
         </article>
       `;
     })
-    .join("");
+    .join("")}`;
 
   elements.recentRuns.querySelectorAll("button[data-run-id]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1748,6 +1949,7 @@ function renderHealthSnapshot(payload) {
   renderReadinessGate();
   const channels = payload.channels || [];
   const preflight = preflightSnapshotStatus(latestPreflightChecks());
+  const preflightRecovery = currentPreflightRecoveryHint();
   const preflightSource = latestPreflightSource();
   const gateway = payload.gateway || {};
   const memory = payload.memory || {};
@@ -1797,6 +1999,7 @@ function renderHealthSnapshot(payload) {
         <div class="meta-list">
           <div><dt>Summary</dt><dd>${escapeHtml(preflight.summary)}</dd></div>
           <div><dt>Detail</dt><dd>${escapeHtml(preflight.detail)}</dd></div>
+          ${preflightRecovery ? `<div><dt>Recovery</dt><dd>${escapeHtml(preflightRecovery)}</dd></div>` : ""}
           <div><dt>Source</dt><dd>${escapeHtml(preflightSource)}</dd></div>
         </div>
       </article>
@@ -1933,12 +2136,14 @@ function renderPlan(plan) {
   `;
 }
 
-function renderRunResults(runResult) {
+function renderRunResults(runResult, insights = null) {
   const workflow = currentGitHubWorkflow();
   const failure = currentGitHubFailure();
   const failureLine = formatGitHubFailureLine(failure);
   const failureSummary = formatGitHubFailureSummary(failure);
   const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
+  const preflightRecovery = currentPreflightRecoveryHint();
+  const usageLine = formatOpenClawUsageSummary(insights?.usage || null);
   const results = runResult.results || [];
   const visibleResults = filterResults(results);
   const counts = statusCounts(results);
@@ -2013,7 +2218,9 @@ function renderRunResults(runResult) {
           <div><dt>Results</dt><dd>${escapeHtml(String(results.length))}</dd></div>
           <div><dt>Status counts</dt><dd>${escapeHtml(formatCounts(counts))}</dd></div>
           <div><dt>Visible filter</dt><dd>${escapeHtml(state.resultFilter)}</dd></div>
+          ${preflightRecovery ? `<div><dt>Preflight recovery</dt><dd>${escapeHtml(preflightRecovery)}</dd></div>` : ""}
           <div><dt>GitHub latest failure</dt><dd>${escapeHtml(failureLine)}</dd></div>
+          ${usageLine ? `<div><dt>OpenClaw usage</dt><dd>${escapeHtml(usageLine)}</dd></div>` : ""}
         </dl>
         ${failureSummary ? `<small>${escapeHtml(failureSummary)}</small>` : ""}
         ${recoveryLine ? `<small>${escapeHtml(`Recovery: ${recoveryLine}`)}</small>` : ""}
@@ -2043,7 +2250,9 @@ function generateRunSummaryText() {
   const results = runResult.results || [];
   const counts = formatCounts(statusCounts(results));
   const actionable = actionableResults(results);
+  const preflightRecoveryLine = formatPreflightRecoveryLine(currentPreflightRecoveryHint());
   const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
+  const usageLine = formatOpenClawUsageSummary(currentOpenClawUsage());
   const lines = [
     `Run ID: ${runResult.run_id || "n/a"}`,
     `Pipeline: ${runPayload.pipeline || "n/a"}`,
@@ -2054,6 +2263,12 @@ function generateRunSummaryText() {
     formatReviewWorkflowLine(workflow),
     `Status counts: ${counts}`,
   ];
+  if (usageLine) {
+    lines.push(usageLine);
+  }
+  if (preflightRecoveryLine) {
+    lines.push(preflightRecoveryLine);
+  }
   if (recoveryLine) {
     lines.push(recoveryLine);
   }
@@ -2077,7 +2292,9 @@ function generateIssueUpdateText() {
   const failure = currentGitHubFailure();
   const results = runResult.results || [];
   const actionable = actionableResults(results);
+  const preflightRecoveryLine = formatPreflightRecoveryLine(currentPreflightRecoveryHint());
   const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
+  const usageLine = formatOpenClawUsageSummary(currentOpenClawUsage());
   const lines = [
     "OpenClaw progress update",
     "",
@@ -2089,6 +2306,12 @@ function generateIssueUpdateText() {
     `- ${formatReviewWorkflowLine(workflow)}`,
     `- Status counts: ${formatCounts(statusCounts(results))}`,
   ];
+  if (usageLine) {
+    lines.push(`- ${usageLine}`);
+  }
+  if (preflightRecoveryLine) {
+    lines.push(`- ${preflightRecoveryLine}`);
+  }
   if (recoveryLine) {
     lines.push(`- ${recoveryLine}`);
   }
@@ -2116,7 +2339,9 @@ function generatePrNoteText() {
   const readiness = readinessFacts()
     .map((fact) => `${fact.label}:${fact.value}`)
     .join(" · ");
+  const preflightRecoveryLine = formatPreflightRecoveryLine(currentPreflightRecoveryHint());
   const recoveryLine = formatGitHubRecoveryLine(workflow, failure);
+  const usageLine = formatOpenClawUsageSummary(currentOpenClawUsage());
   const lines = [
     "PR-ready note",
     "",
@@ -2129,6 +2354,12 @@ function generatePrNoteText() {
     formatReviewWorkflowLine(workflow),
     `Status counts: ${formatCounts(statusCounts(runResult.results || []))}`,
   ];
+  if (usageLine) {
+    lines.push(usageLine);
+  }
+  if (preflightRecoveryLine) {
+    lines.push(preflightRecoveryLine);
+  }
   if (recoveryLine) {
     lines.push(recoveryLine);
   }
@@ -2149,10 +2380,10 @@ function renderOutput(payload) {
     chunks.push(renderChecks(payload.preflight.checks));
   }
   if (payload.runResult) {
-    chunks.push(renderRunResults(payload.runResult));
+    chunks.push(renderRunResults(payload.runResult, payload.history?.insights || payload.insights || null));
   }
   if (payload.summary) {
-    chunks.push(renderRunResults(payload.summary));
+    chunks.push(renderRunResults(payload.summary, payload.insights || null));
   }
   elements.outputPane.innerHTML = chunks.join("") || `<div class="empty-state">No output captured.</div>`;
   if (payload.history) {
@@ -2329,6 +2560,7 @@ function taskPayload(action) {
     repoPath: elements.repoPath.value,
     configPath: elements.configPath.value,
     pipeline: elements.pipeline.value,
+    workflowRunRef: currentWorkflowRunRef(),
     request: elements.request.value,
     steps: selectedSteps(),
     live: state.live,
@@ -2431,6 +2663,12 @@ function bindEvents() {
     renderReadinessGate();
   });
 
+  elements.workflowRunRef.addEventListener("input", () => {
+    renderLaunchBrief();
+    renderReadinessGate();
+    updateActionButtons();
+  });
+
   elements.compareLeftRun.addEventListener("change", () => {
     loadRunCompare().catch((error) => {
       elements.runCompare.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
@@ -2501,6 +2739,7 @@ function bindEvents() {
     renderPipelineDag();
     renderHeroStatus();
     renderReadinessGate();
+    updateActionButtons();
   });
 
   elements.selectNone.addEventListener("click", () => {
@@ -2512,6 +2751,7 @@ function bindEvents() {
     renderPipelineDag();
     renderHeroStatus();
     renderReadinessGate();
+    updateActionButtons();
   });
 
   elements.buttons.forEach((button) => {

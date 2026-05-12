@@ -23,6 +23,7 @@ class PreflightRunner:
         checks.extend(self._check_planning_blocks(plan))
         checks.extend(self._check_managed_assignments(plan))
         checks.extend(await self._check_required_commands(plan))
+        checks.extend(await self._check_claude_profiles(repo_path, plan))
         checks.extend(await self._check_openclaw_profiles(repo_path, plan))
         checks.extend(self._check_hermes_profiles(plan))
         checks.extend(await self._check_hermes_runtime(repo_path, plan))
@@ -362,6 +363,118 @@ class PreflightRunner:
                         details={"workspace": workspace, "repo_path": repo_path},
                     )
                 )
+        return checks
+
+    @staticmethod
+    def _profile_env(profile) -> dict[str, str]:
+        env = os.environ.copy()
+        for key in profile.unset_env:
+            env.pop(key, None)
+        return env
+
+    @staticmethod
+    def _claude_recovery_hint(profile_name: str, stderr_text: str = "") -> str:
+        hint = (
+            "Recovery: if Codex is unavailable, switch to `mission_control_openclaw_default` "
+            "and set `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`."
+        )
+        if profile_name == "claude_local":
+            hint += " For triage-only debugging, `OPENCLAW_ASSIGN_TRIAGE_LOCAL=claude_router_isolated` can isolate ANTHROPIC_* env."
+        if profile_name.endswith("_isolated") and ("Not logged in" in stderr_text or "Please run /login" in stderr_text):
+            hint += " The isolated Claude profile is not authenticated here, so the OpenClaw fallback is the practical live path."
+        return hint
+
+    async def _check_claude_profiles(self, repo_path: str, plan: list[WorkItem]) -> list[PreflightCheck]:
+        profile_map = {
+            item.profile: self.config.profiles[item.profile]
+            for item in plan
+            if item.mode == ExecutionMode.CLI
+            and self.config.profiles[item.profile].command
+            and self.config.profiles[item.profile].command[0] == "claude"
+        }
+        if not profile_map or self.config.runtime.dry_run or shutil.which("claude") is None:
+            return []
+
+        checks: list[PreflightCheck] = []
+        for profile_name, profile in profile_map.items():
+            command = [
+                token.format(
+                    prompt="Reply with exactly READY",
+                    repo_path=repo_path,
+                    run_id="preflight",
+                    artifacts_dir="",
+                    workspace_path=repo_path,
+                    branch_name="",
+                )
+                for token in profile.command
+            ]
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                cwd=repo_path,
+                env=self._profile_env(profile),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            communicate = process.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(communicate, timeout=20)
+            except asyncio.TimeoutError:
+                communicate.close()
+                process.kill()
+                await process.communicate()
+                recovery_hint = self._claude_recovery_hint(profile_name)
+                checks.append(
+                    PreflightCheck(
+                        name=f"claude_cli:{profile_name}",
+                        status=CheckStatus.FAILED,
+                        message=(
+                            f"Claude CLI probe timed out for profile `{profile_name}` while checking print-mode auth. "
+                            f"{recovery_hint}"
+                        ),
+                        details={
+                            "command": command,
+                            "recovery_hint": recovery_hint,
+                        },
+                    )
+                )
+                continue
+
+            output = stdout.decode("utf-8", errors="replace").strip()
+            error_output = stderr.decode("utf-8", errors="replace").strip()
+            if process.returncode == 0:
+                checks.append(
+                    PreflightCheck(
+                        name=f"claude_cli:{profile_name}",
+                        status=CheckStatus.PASSED,
+                        message=f"Claude profile `{profile_name}` passed a print-mode probe.",
+                        details={"command": command},
+                    )
+                )
+                continue
+
+            message = f"Claude CLI probe failed for profile `{profile_name}`."
+            tail = error_output.splitlines()[-1] if error_output else ""
+            if not tail and output:
+                tail = output.splitlines()[-1]
+            if tail:
+                message = f"{message} {tail}"
+            recovery_hint = self._claude_recovery_hint(profile_name, error_output or output)
+            message = f"{message} {recovery_hint}"
+            checks.append(
+                PreflightCheck(
+                    name=f"claude_cli:{profile_name}",
+                    status=CheckStatus.FAILED,
+                    message=message,
+                    details={
+                        "command": command,
+                        "exit_code": process.returncode,
+                        "stdout": output,
+                        "stderr": error_output,
+                        "recovery_hint": recovery_hint,
+                    },
+                )
+            )
+
         return checks
 
     def _check_hermes_profiles(self, plan: list[WorkItem]) -> list[PreflightCheck]:

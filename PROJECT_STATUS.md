@@ -1,6 +1,6 @@
 # OpenClaw Project Status
 
-更新时间：2026-05-07
+更新时间：2026-05-10
 
 ## 当前记录入口
 
@@ -34,6 +34,21 @@
 - `--doctor-config` 已有 CLI 回归测试并合并到 main，锁定配置诊断路径不会误进入交互模式
 - CLI 入口现在会把缺失的 `--config` 转成干净的 `SystemExit`，不再直接抛 traceback
 - CLI 的 `_print_preflight()` 现在会把 `preflight.json` 在 exists/open 之间消失、变成不可读、或变成非对象 JSON 的情况安静降级，不再让 run 结束后的预检摘要打印把进程拖成 traceback
+- live 预检现在会对 Claude-backed CLI profile 先做 print-mode 探针，headless Claude 不可用或未认证时会在 triage 前直接失败，不再把时间浪费在后续 step 超时上
+- 这条 Claude 预检失败现在会直接提示 `mission_control_openclaw_default` + `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 的 OpenClaw fallback 路径，并补充 triage 侧的 `claude_router_isolated` 隔离建议
+- 2026-05-09：当前机器上的 `mission_control_default --live` 预检仍会因 `claude_local` 认证超时被挡住；要继续 live 路径，仍需要显式切到 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
+- 2026-05-09：即使把 triage / review 都切到 `claude_router_isolated`，当前机器上的 `claude_local_isolated` 也未登录；默认 live 仍会在预检阶段被挡住，实际可继续的入口还是 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
+- 2026-05-09：Claude CLI 诊断现在会在 `_isolated` 未登录时直接说明 OpenClaw fallback 才是实际可继续的 live 路径，不再让 triage / review 隔离看起来像还能单独救活默认 live
+- 2026-05-10：Web UI 的 readiness gate 和 health 预检面板现在会直接显示 preflight recovery hint，帮助操作员一眼看出默认 live 该切到 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
+- 2026-05-10：Web UI 的 run summary / issue update / PR note copy 现在也会回流 preflight recovery hint，和 readiness gate / health 面板一起把默认 live 的回退路径写到可复制文本里
+- 2026-05-11：PR #13 对应的 `openclaw-review.yml` 在 head `400ad43` 上成功跑完，workflow run `25643659466` 已验证当前分支的 GitHub review smoke 仍然可用；README 也补了 `github_bridge_smoke` 的 no-op tail-chain 说明
+- 2026-05-11：`mission_control_default --live` 仍会在 `claude_local` 预检超时处被挡住；刚跑的 full tail-chain live smoke `run-20260510T234853Z-1e0133` 复现了同样的 blocker，并继续给出 OpenClaw fallback 提示
+- 2026-05-11：`mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder + OPENCLAW_AGENT_ID=openclaw-control-ext` 这条 fallback live smoke `run-20260510T235024Z-9e4662` 已重新跑通 triage / implement / review，确认当前机器仍有可用的本地 live 入口
+- 2026-05-11：`mission_control_openclaw_default` 的 fallback tail-chain smoke `run-20260511T000053Z-03cb79` 结果显示请求本身是 no-op，因此 `commit_changes` / `publish_branch` / `draft_pr` / `dispatch_review` / `collect_review` 按规则跳过，但 `triage` / `review` / `sync_issue` / `update_issue` 仍然实跑成功
+- 2026-05-11：最新 fallback tail-chain smoke 仍确认 `mission_control_default` 会被 `claude_local` 预检挡住，而 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder + OPENCLAW_AGENT_ID=openclaw-control-ext` 仍可继续跑
+- 2026-05-11：最新 fallback live smoke `run-20260511T225359Z-f9e37e` 仍然 no-op；`README.md` 的 `github_bridge_smoke` 说明已追加这条记录，`commit_changes` / `publish_branch` / `draft_pr` / `dispatch_review` / `collect_review` 继续跳过，`triage` / `review` / `sync_issue` / `update_issue` 成功
+- 2026-05-12：`mission_control_default --live` 仍被 `claude_local` 预检超时挡住；最新 live smoke `run-20260511T230911Z-6e0886` 复现了这个 blocker，并继续给出 OpenClaw fallback 提示
+- 在 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 下，`mission_control_openclaw_default` 已完成 triage / implement / review live smoke，说明 OpenClaw 变体已经具备可用的本地闭环
 - 支持 `--web` 本地 Mission Control 控制台
 - live 运行时会输出 step 级 progress
 
@@ -57,6 +72,11 @@
 - 受控 agent 池：Claude / Gemini / Codex / Cursor / OpenClaw
 - GitHub issue / PR / workflow run refs 回流
 - `dispatch_review -> collect_review` workflow 状态回流已落地
+- 新增 `github_collect_review_resume` pipeline 和 `--workflow-run-ref`，可直接回流已有 workflow run 而不重新触发 `dispatch_review`
+- `collect_review` resume 现在会保留外部注入的 workflow run ref，并在 prompt / GitHub workflow_view 命令里一致使用
+- 已用真实 live run `25504962543` 验证 `github_collect_review_resume` 可以直接收敛为 success
+- 2026-05-07：重新跑通 `github_collect_review_resume` live smoke，workflow run `25504962543` 仍能直接收敛为 success
+- 2026-05-07：全量 Python 单测 221 项通过，`node --check openclaw_v2/webui/app.js` 通过，当前基线可继续作为收口底座
 - `collect_review` 已支持 failed jobs 摘要回流
 - Web UI 的 run summary / issue update / PR note 现在也会回流 review workflow 的 conclusion 和 failed jobs，方便直接把异步检查结果转成可读结论
 - `collect_review` 在 workflow failed / action_required / in_progress 等状态下，现在也会统一带出 `github_failure_kind`、`github_retryable` 和 `github_recovery_hint`
@@ -64,6 +84,7 @@
 - 非 workflow 的 GitHub 失败现在也会汇总成 `github.latestFailure`，供 Web UI 和导出文案统一消费
 - Web UI 的 Bridge state 现在会优先显示最新 GitHub 失败，而不是把 `draft_pr` / `dispatch_review` 之类的真实失败误表述成“pending”
 - 新增 `github_bridge_smoke` pipeline，可绕过本地 `triage/implement/review` 单独验证 GitHub review workflow
+- Web UI 的 Launch Pad 现在暴露 `workflow run ref` 输入，并会在 `github_collect_review_resume` 选中时把它带入 task payload 和 readiness gate，减少手动改请求体的需要
 - `collect_review` 已支持约 30 秒的短轮询等待，减少 workflow 刚触发时立即返回 `queued` 的手工重跑
 - 2026-05-07 已用真实 `github_bridge_smoke` live run 验证更长 polling 窗口：workflow `25504962543` 在同一次 run 内成功从 dispatch 收敛到 collect success
 - 本地 CLI executor 已有超时护栏，`claude/codex` 长时间无响应时不会再无限挂住 run
@@ -124,6 +145,11 @@
 - Web UI 的 history compare 现在会对 malformed `statusCounts` / `workflow` / `sessionCount` 做保守降级，避免比较摘要被坏字段拖垮
 - Web UI 的 history compare 现在也会保守忽略非列表的 `plan/results`，避免摘要里的结构异常拖出 `500`
 - Web UI 的 history compare 现在也会显示 `latestFailureChanged` 和左右 run 的 `latestFailures`，方便直接判断 GitHub 失败根因是否已经变化
+- Web UI 的 run insights 现在新增 `usage` 聚合层，会从 `summary.json` 里汇总 `openclaw_usage` / `openclaw_last_call_usage`，为后续成本展示打底
+- Web UI 的 recent runs 和 run summary 现在也会显示 OpenClaw usage 汇总，便于先按 token 量做粗粒度观察
+- Web UI 的 history compare 现在也会显示 OpenClaw usage delta，便于直接比较两次 run 的 token 消耗变化
+- Web UI 的 recent runs 现在也会显示相邻 run 的 OpenClaw usage trend，便于快速看出最近 token 消耗是上升、下降还是持平
+- Web UI 的 run summary / issue update / PR note copy 文本现在也会回流 OpenClaw usage 汇总，桥接输出和可视面板的语义已经对齐
 - Web UI 的 recent runs 列表现在也会显示每次 run 的最新 GitHub failure、失败摘要和 recovery 提示，方便直接从首页判断最近几次协作失败点
 - Web UI 的 loaded run detail 和 artifact context 现在也会显示最新 GitHub failure 与 recovery，单次 run 浏览入口和 bridge/operator 视图的失败语义已基本对齐
 - Web UI 的 runtime snapshot / Hermes overview / GitHub overview 现在会把字符串型布尔和坏列表保守降级，避免配置快照误报
@@ -141,7 +167,7 @@
 
 - 任务拆分仍然以配置驱动 pipeline 为主，已经支持 pipeline 继承 / 覆盖 / remove_steps 组合，planner 也已开始按依赖关系排序，但还不是智能动态 planner
 - OpenClaw 接入骨架已落地，但目前只安全接到 `triage` 变体 pipeline
-- OpenClaw 已验证“仓库外 workspace + repo 绝对路径 handoff”可运行，当前已有 `mission_control_openclaw_triage` 和 `mission_control_openclaw_default` 两条变体 pipeline
+- OpenClaw 已验证“仓库外 workspace + repo 绝对路径 handoff”可运行，当前已有 `mission_control_openclaw_triage` 和 `mission_control_openclaw_default` 两条变体 pipeline；后者已在本机用 `openclaw_builder` 跑通 triage / implement / review live smoke
 - Hermes 已作为本机 `supervisor + recorder` 接入，新增 `mission_control_hermes_supervised` 变体 pipeline，但不承担 `implement`
 - 当前分支上的 Web UI control room 已把 CLI / GitHub / Hermes / OpenClaw 的运行态集中到一个本地面板里
 - `Gemini` 和 `Cursor` 已进入受控 agent 注册表，但还没进入默认 assignment
