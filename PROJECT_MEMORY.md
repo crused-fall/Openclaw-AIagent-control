@@ -1,6 +1,6 @@
 # OpenClaw Working Memory
 
-更新时间：2026-05-10
+更新时间：2026-05-12
 
 ## 主目标
 
@@ -58,6 +58,7 @@
 - 2026-05-08：Web UI 的 history compare 现在也会显示 OpenClaw usage delta，已经能直接看两次 run 的 token 消耗差异。
 - 2026-05-08：Web UI 的 recent runs 现在也会显示相邻 run 的 OpenClaw usage trend，token 变化方向已经能在首页一眼看出来。
 - 2026-05-08：Web UI 的 run summary / issue update / PR note copy 文本现在也会回流 OpenClaw usage 汇总，面板和桥接导出已经对齐。
+- 2026-05-12：Web UI 新增 Token Stats 面板，会优先展示当前加载 run 的 `openclaw_usage` / `openclaw_last_call_usage`，没有加载 run 时则回退到最近一次 recent run；这个面板只做 token breakdown，不做 cost / rate 估算。
 - 2026-05-08：Preflight 现在会对 Claude-backed CLI profile 先跑 print-mode 探针；当前机器上的 live smoke 已因此在 triage 前直接暴露 `claude_local` 的认证/可用性问题，而不是等到后续 step 超时。
 - 2026-05-08：Claude 预检失败提示现在会直接带出 `mission_control_openclaw_default` + `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 的 OpenClaw fallback 路径，并补 triage 侧 `claude_router_isolated` 的隔离建议。
 - 2026-05-08：在 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 下，`mission_control_openclaw_default` 已完整跑通 triage / implement / review live smoke，说明 OpenClaw 变体已经具备可用的本地闭环。
