@@ -249,6 +249,7 @@ CLI 失败结果现在也会带 `cli_failure_kind` 和 `cli_recovery_hint`。如
 `codex_local` 现在默认用 `codex exec --ephemeral`，尽量避开本机 `~/.codex/state_*.sqlite` 迁移冲突；如果仍然返回 `cli_failure_kind=usage_limit`，说明是 Codex 账号配额问题，不是项目编排问题。
 如果 Codex 当前不可用，但你本机 OpenClaw agent 可写仓库，可以显式覆盖实现层：`OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`。这样 `mission_control_openclaw_default` 会让 OpenClaw 承担 `implement`，而不是继续卡在 Codex。
 这条 `openclaw_builder` 路径目前主要用于本地 `triage/implement/review`；如果实现结果没有导出可推送分支，`publish_branch` 现在会直接 `blocked`，而不是假装还能继续 GitHub 尾链。
+在 `OPENCLAW_ASSIGN_TRIAGE_LOCAL=openclaw_router`、`OPENCLAW_ASSIGN_REVIEW_LOCAL=openclaw_router` 和 `OPENCLAW_AGENT_ID=openclaw-control-ext` 下，`mission_control_default --live` 已在 `run-20260512T102057Z-4098c0` 跑通 `triage -> implement -> review -> commit_changes -> publish_branch -> sync_issue -> update_issue -> draft_pr -> dispatch_review -> collect_review`，并由 `openclaw-review.yml` workflow `25728503893` 收敛为 success；这说明默认主链在 OpenClaw override 下也能端到端收敛。
 当前主线已经补了显式的 `commit_changes` 步骤：只有实现工作区中的改动被提交为干净 commit 后，`publish_branch` 才会继续；如果提交后工作区仍不干净，链路会继续明确 `blocked`。
 如果 live 计划里包含隔离 CLI worktree，而仓库还有未提交改动，preflight 现在会直接拦下；这些 worktree 只基于已提交 `HEAD`，不会自动带上本地脏改动。
 如果当前本地基线分支已经领先上游（例如 `main` ahead of `origin/main`），而计划又要继续 `publish_branch` 或 GitHub 尾链，preflight 现在会在 live 前直接拦下；否则新建的实现分支会把这些未发布的本地提交一起带进 PR。
