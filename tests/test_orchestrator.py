@@ -374,6 +374,79 @@ class OrchestratorExecutionTests(unittest.IsolatedAsyncioTestCase):
         )
         prepare.assert_not_awaited()
 
+    async def test_run_converts_executor_exception_into_failed_result_and_finishes_cleanup(self) -> None:
+        orchestrator = HybridOrchestrator(load_app_config("config_v2.yaml"))
+        repo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        triage = WorkItem(
+            id="triage",
+            title="Triage user request",
+            profile="claude_local",
+            agent=AgentType.CLAUDE,
+            mode=ExecutionMode.CLI,
+            prompt_template="",
+            assignment="triage_local",
+            managed_agent="claude_router",
+            workspace_path=repo_path,
+        )
+        plan = [triage]
+
+        async def execute_cli(
+            work_item: WorkItem,
+            profile,
+            context: ExecutionContext,
+            rendered_prompt: str,
+        ) -> AgentResult:
+            raise RuntimeError("executor crashed")
+
+        preflight_report = mock.Mock(ok=True, checks=[])
+        with mock.patch.object(orchestrator, "build_plan", return_value=plan), mock.patch.object(
+            orchestrator.preflight_runner,
+            "run",
+            new=mock.AsyncMock(return_value=preflight_report),
+        ), mock.patch.object(
+            orchestrator.worktree_manager,
+            "prepare",
+            new=mock.AsyncMock(),
+        ), mock.patch.object(
+            orchestrator.worktree_manager,
+            "cleanup",
+            new=mock.AsyncMock(),
+        ) as cleanup, mock.patch.object(
+            orchestrator.artifact_store,
+            "initialize_run",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_preflight_report",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_workspace_manifest",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_prompt",
+            return_value="/tmp/prompt.txt",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_result",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_run_summary",
+        ) as write_run_summary:
+            orchestrator.executors[ExecutionMode.CLI].execute = mock.AsyncMock(side_effect=execute_cli)
+
+            result = await orchestrator.run(
+                "test request",
+                repo_path,
+                selected_steps=["triage"],
+            )
+
+        self.assertFalse(result.success)
+        self.assertEqual(len(result.results), 1)
+        self.assertEqual(result.results[0].status, TaskStatus.FAILED)
+        self.assertIn("Execution failed for Triage user request", result.results[0].summary)
+        self.assertIn("executor crashed", result.results[0].summary)
+        cleanup.assert_awaited_once()
+        write_run_summary.assert_called_once()
+
     async def test_run_emits_progress_messages_for_dry_run_step(self) -> None:
         config = load_app_config("config_v2.yaml")
         config.runtime.dry_run = True

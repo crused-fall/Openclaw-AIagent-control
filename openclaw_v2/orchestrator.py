@@ -354,6 +354,7 @@ class HybridOrchestrator:
     ) -> list[AgentResult]:
         immediate_results: list[AgentResult] = []
         tasks = []
+        executing_items: list[WorkItem] = []
         for work_item in ready_items:
             if work_item.planning_blocked_reason:
                 work_item.status = TaskStatus.BLOCKED
@@ -400,6 +401,7 @@ class HybridOrchestrator:
                     ),
                 )
                 tasks.append(executor.execute(work_item, profile, context, rendered_prompt))
+                executing_items.append(work_item)
             except Exception as error:
                 work_item.status = TaskStatus.FAILED
                 immediate_results.append(
@@ -422,7 +424,35 @@ class HybridOrchestrator:
                     f"step:fail {work_item.id} -> Preparation failed: {error}",
                 )
         if tasks:
-            immediate_results.extend(await asyncio.gather(*tasks))
+            gathered_results = await asyncio.gather(*tasks, return_exceptions=True)
+            for work_item, outcome in zip(executing_items, gathered_results):
+                if isinstance(outcome, BaseException):
+                    if isinstance(outcome, asyncio.CancelledError):
+                        raise outcome
+                    work_item.status = TaskStatus.FAILED
+                    immediate_results.append(
+                        AgentResult(
+                            work_item_id=work_item.id,
+                            profile=work_item.profile,
+                            agent=work_item.agent,
+                            mode=work_item.mode,
+                            status=TaskStatus.FAILED,
+                            summary=f"Execution failed for {work_item.title}: {outcome}",
+                            output=str(outcome),
+                            stderr=str(outcome),
+                            artifacts={
+                                "workspace_path": work_item.workspace_path,
+                                "branch_name": work_item.branch_name,
+                                **self._trace_artifacts(work_item),
+                            },
+                        )
+                    )
+                    self._emit_progress(
+                        progress_callback,
+                        f"step:fail {work_item.id} -> Execution failed: {outcome}",
+                    )
+                    continue
+                immediate_results.append(outcome)
         return immediate_results
 
     async def run(
