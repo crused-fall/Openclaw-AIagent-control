@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest import mock
 
-from openclaw_v2.config import load_app_config
+from openclaw_v2.config import AppConfig, GitHubConfig, RuntimeConfig, load_app_config
 from openclaw_v2.models import AgentResult, AgentType, ExecutionContext, ExecutionMode, TaskStatus, WorkItem
 from openclaw_v2.orchestrator import HybridOrchestrator
 
@@ -338,6 +338,61 @@ class OrchestratorDependencyTests(unittest.TestCase):
 
 
 class OrchestratorExecutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_run_preserves_posix_runtime_roots_in_context(self) -> None:
+        config = AppConfig(
+            runtime=RuntimeConfig(
+                pipeline="mission_control_default",
+                dry_run=True,
+                artifacts_dir="/tmp/artifacts",
+                worktrees_dir="/tmp/worktrees",
+            ),
+            github=GitHubConfig(),
+            profiles={},
+            managed_agents={},
+            assignments={},
+            pipelines={},
+        )
+        orchestrator = HybridOrchestrator(config)
+        preflight_report = mock.Mock(ok=True, checks=[])
+        captured_context = None
+
+        def capture_initialize_run(context, plan) -> None:
+            nonlocal captured_context
+            captured_context = context
+
+        with mock.patch.object(orchestrator, "build_plan", return_value=[]), mock.patch.object(
+            HybridOrchestrator,
+            "_make_run_id",
+            return_value="run-fixed",
+        ), mock.patch.object(
+            orchestrator.preflight_runner,
+            "run",
+            new=mock.AsyncMock(return_value=preflight_report),
+        ), mock.patch.object(
+            orchestrator.worktree_manager,
+            "cleanup",
+            new=mock.AsyncMock(),
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "initialize_run",
+            side_effect=capture_initialize_run,
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_preflight_report",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_run_summary",
+        ), mock.patch.object(
+            orchestrator.artifact_store,
+            "write_workspace_manifest",
+        ):
+            result = await orchestrator.run("test", r"C:\\repo")
+
+        self.assertTrue(result.success)
+        self.assertIsNotNone(captured_context)
+        self.assertEqual(captured_context.artifacts_dir, "/tmp/artifacts/run-fixed")
+        self.assertEqual(captured_context.worktrees_dir, "/tmp/worktrees/run-fixed")
+
     async def test_execute_ready_items_blocks_planning_errors_without_preparation(self) -> None:
         orchestrator = HybridOrchestrator(load_app_config("config_v2.yaml"))
         context = ExecutionContext(

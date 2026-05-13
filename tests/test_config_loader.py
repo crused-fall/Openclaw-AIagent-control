@@ -6,11 +6,17 @@ import subprocess
 from unittest import mock
 from types import SimpleNamespace
 
-from openclaw_v2.config import _load_yaml, load_app_config
+from openclaw_v2.config import _load_yaml, load_app_config, resolve_runtime_path
 from openclaw_v2.models import AgentType, ExecutionMode
 
 
 class ConfigLoaderTests(unittest.TestCase):
+    def test_resolve_runtime_path_preserves_posix_absolute_configured_path(self) -> None:
+        self.assertEqual(
+            resolve_runtime_path(r"C:\\repo", "/tmp/openclaw-worktrees"),
+            "/tmp/openclaw-worktrees",
+        )
+
     def test_load_yaml_ruby_fallback_uses_safe_load(self) -> None:
         with tempfile.NamedTemporaryFile("w+", suffix=".yaml", encoding="utf-8") as handle:
             handle.write("runtime:\n  pipeline: demo\n")

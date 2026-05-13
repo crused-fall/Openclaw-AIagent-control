@@ -1,5 +1,11 @@
 # OpenClaw Project Status
 
+## 2026-05-13 Update
+
+- Normalized POSIX-style runtime paths on Windows for `resolve_runtime_path`, orchestration run roots, worktree paths, and agent handoff `AGENTS.md` references.
+- Added regression coverage for Windows path handling in `tests/test_config_loader.py`, `tests/test_orchestrator.py`, `tests/test_openclaw_executor.py`, `tests/test_hermes_executor.py`, and `tests/test_worktree.py`.
+
+
 更新时间：2026-05-07
 
 ## 当前记录入口

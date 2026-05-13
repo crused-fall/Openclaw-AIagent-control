@@ -15,6 +15,7 @@ except ModuleNotFoundError:
     yaml = None
 
 from .models import AgentType, CheckStatus, ExecutionMode, PreflightCheck
+from .paths import is_absolute_runtime_path, join_runtime_path
 
 
 @dataclass
@@ -914,6 +915,6 @@ def load_app_config(path: str) -> AppConfig:
 
 
 def resolve_runtime_path(base_path: str, configured_path: str) -> str:
-    if os.path.isabs(configured_path):
-        return configured_path
-    return os.path.join(base_path, configured_path)
+    if is_absolute_runtime_path(configured_path):
+        return configured_path.replace("\\", "/") if configured_path.startswith("/") else configured_path
+    return join_runtime_path(base_path, configured_path)

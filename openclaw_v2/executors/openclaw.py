@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from typing import Any
 
 from ..config import ProfileConfig
 from ..models import AgentResult, ExecutionContext, TaskStatus, WorkItem, parse_control_output
+from ..paths import join_runtime_path
 from .base import Executor
 
 
@@ -38,7 +38,7 @@ class OpenClawExecutor(Executor):
         work_item: WorkItem,
     ) -> str:
         target_path = work_item.workspace_path or context.repo_path
-        agents_path = os.path.join(target_path, "AGENTS.md")
+        agents_path = join_runtime_path(target_path, "AGENTS.md")
         lines = [
             "OpenClaw repository handoff:",
             f"- Primary repository path: {target_path}",
