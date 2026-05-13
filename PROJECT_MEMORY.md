@@ -1,5 +1,12 @@
 # OpenClaw Working Memory
 
+## 2026-05-13 Working Note
+
+- Current Windows queue slice: keep POSIX-style runtime paths stable across config resolution, run context creation, worktree allocation, and executor handoff prompts.
+- Touched files in this slice: `openclaw_v2/paths.py`, `openclaw_v2/config.py`, `openclaw_v2/orchestrator.py`, `openclaw_v2/worktree.py`, `openclaw_v2/executors/openclaw.py`, `openclaw_v2/executors/hermes.py`, plus focused regression tests.
+- Next likely slice: investigate the separate config-loader dependency gap (`PyYAML`/Ruby fallback) now that Windows path regressions are covered.
+
+
 更新时间：2026-05-07
 
 ## 主目标

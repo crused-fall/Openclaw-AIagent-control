@@ -8,6 +8,7 @@ from typing import Callable
 
 from .artifacts import ArtifactStore
 from .config import AppConfig, resolve_runtime_path
+from .paths import join_runtime_path
 from .executors import CLIExecutor, GitHubWorkflowExecutor, HermesExecutor, OpenClawExecutor
 from .models import AgentResult, CheckStatus, ExecutionContext, ExecutionMode, RunResult, TaskStatus, WorkItem
 from .planner import PipelinePlanner
@@ -441,8 +442,8 @@ class HybridOrchestrator:
             user_request=user_request,
             repo_path=repo_path,
             dry_run=self.config.runtime.dry_run,
-            artifacts_dir=os.path.join(artifacts_root, run_id),
-            worktrees_dir=os.path.join(worktrees_root, run_id),
+            artifacts_dir=join_runtime_path(artifacts_root, run_id),
+            worktrees_dir=join_runtime_path(worktrees_root, run_id),
         )
         self.artifact_store.initialize_run(context, plan)
         self._emit_progress(progress_callback, "preflight:start")

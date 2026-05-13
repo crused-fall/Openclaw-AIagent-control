@@ -5,6 +5,7 @@ import os
 import re
 
 from .models import ExecutionContext, ExecutionMode, WorkItem
+from .paths import join_runtime_path
 
 
 class WorktreeManager:
@@ -44,7 +45,7 @@ class WorktreeManager:
             work_item.metadata["workspace_prepared"] = True
             return
 
-        workspace_path = os.path.join(context.worktrees_dir, work_item.id)
+        workspace_path = join_runtime_path(context.worktrees_dir, work_item.id)
         branch_name = self._branch_name(context.run_id, work_item.id)
 
         work_item.workspace_path = workspace_path
