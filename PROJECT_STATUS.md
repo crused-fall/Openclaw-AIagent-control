@@ -1,198 +1,76 @@
 # OpenClaw Project Status
 
-更新时间：2026-05-12
+更新时间：2026-05-13
 
 ## 当前记录入口
 
-- 阶段性状态与已完成能力：`PROJECT_STATUS.md`
-- 当前目标、目标文件与下一步工作记忆：`PROJECT_MEMORY.md`
+- `PROJECT_STATUS.md`：当前完成度、稳定基线、阻塞项
+- `PROJECT_MEMORY.md`：当前主线目标、目标文件、下一步工作记忆
+- `PROJECT_LOG.md`：完整项目日志与历史归档
 
-## 当前主线目标
+## 项目完成度快照
 
-- 稳定默认 `mission_control_default` pipeline
-- 继续补 GitHub bridge 的结果诊断、review 透传和失败恢复
-- 继续收敛本地 Web UI control room 的安全边界与协作可读性
-- 保持 Hermes 只做 `supervisor + recorder`，不接 `implement`
+> 这些百分比是按主线目标估算，不是按提交量统计。
 
-## 当前阶段
+| 方向 | 估算进展 | 当前状态 | 说明 |
+| --- | ---: | --- | --- |
+| v2 Mission Control 主骨架 | 90% | 稳定 | `main_v2.py` + `openclaw_v2/` 已成为真实主线 |
+| 默认 pipeline 骨架 | 85% | 稳定但未完全收口 | `triage -> collect_review` 结构完整，dry-run / preflight / diagnose 能用 |
+| GitHub 协作尾链 | 80% | 可用 | issue / PR / review workflow / resume / recovery hint 已落地 |
+| Web UI control room | 88% | 可用 | 已覆盖 launch / history / compare / health / bridge / housekeeping / token stats |
+| OpenClaw 本地接入 | 75% | 可用但非默认 | fallback live 路径可跑，尚未成为默认总控入口 |
+| Hermes supervisor + recorder | 70% | 可用但受限 | triage / review / record_summary 可接，明确不承担 implement |
+| 成本统计 / 自动 fallback / 更细 review-merge 阶段 | 35% | 未完成 | 属于当前主要剩余工作 |
+| 整体项目完成度 | 78% | 接近收口 | 已接近“几乎完成”，但还没到默认主链稳定可发布 |
 
-项目已经从“多模型 API 路由原型”进入“修改版方案四 Mission Control 骨架”阶段。
+## 当前主线判断
 
-这意味着：
+- 项目已经从“多模型 API demo”转成“以 CLI + GitHub workflow 为中心的 Mission Control”。
+- `openclaw.py` 仍保留，但只代表 v1 legacy；主线实现已经是 `main_v2.py` + `openclaw_v2/`。
+- 当前最重要的不是再扩新 agent，而是把默认 `mission_control_default` 的 live 稳定性、GitHub 协作尾链复跑性和角色边界收口清楚。
+- OpenClaw 当前已经是可靠 fallback 执行器，但还不是默认统一总控入口。
 
-- `openclaw.py` 仍可运行，但只代表 v1 legacy
-- 核心演进方向已经转向 `main_v2.py` + `openclaw_v2/`
-- OpenClaw 已进入执行层与受控 agent 体系，但还没有成为默认统一总控入口
+## 当前稳定基线
 
-## 已完成
+### 已完成并可复用的能力
 
-### Control Layer
+- `main_v2.py` 统一入口、`--doctor-config`、`--diagnose-plan`、`--preflight-only`、`--web`
+- assignment / managed-agent / capability / fallback 解析链
+- `commit_changes` 显式 stage + implement worktree / branch 复用
+- GitHub issue / PR / workflow / review workflow / resume / recovery hint 回流
+- Web UI control room：launch pad、readiness gate、health、recent runs、history compare、GitHub bridge、housekeeping、token stats
+- Web / history / cleanup / config / preflight / worktree 的大规模 race hardening
+- Hermes `supervisor + recorder` 变体 pipeline
+- OpenClaw fallback live 入口：`mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
 
-- `main_v2.py` 已可作为统一入口
-- 支持 `--steps`、`--request`、`--live`、`--preflight-only`
-- 支持 `--list-managed-agents`、`--doctor-config`、`--diagnose-plan`
-- `--doctor-config` 已有 CLI 回归测试并合并到 main，锁定配置诊断路径不会误进入交互模式
-- CLI 入口现在会把缺失的 `--config` 转成干净的 `SystemExit`，不再直接抛 traceback
-- CLI 的 `_print_preflight()` 现在会把 `preflight.json` 在 exists/open 之间消失、变成不可读、或变成非对象 JSON 的情况安静降级，不再让 run 结束后的预检摘要打印把进程拖成 traceback
-- live 预检现在会对 Claude-backed CLI profile 先做 print-mode 探针，headless Claude 不可用或未认证时会在 triage 前直接失败，不再把时间浪费在后续 step 超时上
-- 这条 Claude 预检失败现在会直接提示 `mission_control_openclaw_default` + `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 的 OpenClaw fallback 路径，并补充 triage 侧的 `claude_router_isolated` 隔离建议
-- 2026-05-09：当前机器上的 `mission_control_default --live` 预检仍会因 `claude_local` 认证超时被挡住；要继续 live 路径，仍需要显式切到 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
-- 2026-05-09：即使把 triage / review 都切到 `claude_router_isolated`，当前机器上的 `claude_local_isolated` 也未登录；默认 live 仍会在预检阶段被挡住，实际可继续的入口还是 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
-- 2026-05-09：Claude CLI 诊断现在会在 `_isolated` 未登录时直接说明 OpenClaw fallback 才是实际可继续的 live 路径，不再让 triage / review 隔离看起来像还能单独救活默认 live
-- 2026-05-10：Web UI 的 readiness gate 和 health 预检面板现在会直接显示 preflight recovery hint，帮助操作员一眼看出默认 live 该切到 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder`
-- 2026-05-10：Web UI 的 run summary / issue update / PR note copy 现在也会回流 preflight recovery hint，和 readiness gate / health 面板一起把默认 live 的回退路径写到可复制文本里
-- 2026-05-11：PR #13 对应的 `openclaw-review.yml` 在 head `400ad43` 上成功跑完，workflow run `25643659466` 已验证当前分支的 GitHub review smoke 仍然可用；README 也补了 `github_bridge_smoke` 的 no-op tail-chain 说明
-- 2026-05-11：`mission_control_default --live` 仍会在 `claude_local` 预检超时处被挡住；刚跑的 full tail-chain live smoke `run-20260510T234853Z-1e0133` 复现了同样的 blocker，并继续给出 OpenClaw fallback 提示
-- 2026-05-11：`mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder + OPENCLAW_AGENT_ID=openclaw-control-ext` 这条 fallback live smoke `run-20260510T235024Z-9e4662` 已重新跑通 triage / implement / review，确认当前机器仍有可用的本地 live 入口
-- 2026-05-11：`mission_control_openclaw_default` 的 fallback tail-chain smoke `run-20260511T000053Z-03cb79` 结果显示请求本身是 no-op，因此 `commit_changes` / `publish_branch` / `draft_pr` / `dispatch_review` / `collect_review` 按规则跳过，但 `triage` / `review` / `sync_issue` / `update_issue` 仍然实跑成功
-- 2026-05-11：最新 fallback tail-chain smoke 仍确认 `mission_control_default` 会被 `claude_local` 预检挡住，而 `mission_control_openclaw_default + OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder + OPENCLAW_AGENT_ID=openclaw-control-ext` 仍可继续跑
-- 2026-05-11：最新 fallback live smoke `run-20260511T225359Z-f9e37e` 仍然 no-op；`README.md` 的 `github_bridge_smoke` 说明已追加这条记录，`commit_changes` / `publish_branch` / `draft_pr` / `dispatch_review` / `collect_review` 继续跳过，`triage` / `review` / `sync_issue` / `update_issue` 成功
-- 2026-05-12：`mission_control_default --live` 仍被 `claude_local` 预检超时挡住；最新 live smoke `run-20260511T230911Z-6e0886` 复现了这个 blocker，并继续给出 OpenClaw fallback 提示
-- 在 `OPENCLAW_ASSIGN_IMPLEMENT_LOCAL=openclaw_builder` 下，`mission_control_openclaw_default` 已完成 triage / implement / review live smoke，说明 OpenClaw 变体已经具备可用的本地闭环
-- 支持 `--web` 本地 Mission Control 控制台
-- live 运行时会输出 step 级 progress
+### 当前机器上的已知事实
 
-### Orchestration Layer
+- `mission_control_default --live` 仍会在 `claude_local` 预检处被挡住。
+- 当前可继续的本地 live 入口仍是 OpenClaw fallback，而不是默认 Claude 路径。
+- `github_collect_review_resume` 与 `github_bridge_smoke` 已有真实成功记录。
 
-- 配置驱动 pipeline（已支持继承 / 覆盖 / remove_steps 组合）
-- assignment 分配层
-- managed-agent registry
-- capability / fallback 解析
-- assignment failure -> blocked policy
-- 依赖调度
-- worktree 隔离
-- artifacts 落盘
-- blocked / failed / skipped 区分
+## 当前阻塞项
 
-### Execution Layer
+1. 默认 `mission_control_default --live` 还没有在当前机器上形成稳定可复跑的完整闭环。
+2. GitHub 协作尾链虽然已经可用，但还需要更多真实 end-to-end 验证来证明“失败可解释、恢复可继续、重复运行不飘”。
+3. OpenClaw 与 Hermes 的最终角色边界虽然大方向已定，但“OpenClaw 何时升级成默认总控入口”还未决。
+4. 成本统计、自动 fallback、更细 review / merge 审核阶段仍未完成。
 
-- CLI 执行层
-- OpenClaw 本地执行层
-- GitHub 执行层
-- 受控 agent 池：Claude / Gemini / Codex / Cursor / OpenClaw
-- GitHub issue / PR / workflow run refs 回流
-- `dispatch_review -> collect_review` workflow 状态回流已落地
-- 新增 `github_collect_review_resume` pipeline 和 `--workflow-run-ref`，可直接回流已有 workflow run 而不重新触发 `dispatch_review`
-- `collect_review` resume 现在会保留外部注入的 workflow run ref，并在 prompt / GitHub workflow_view 命令里一致使用
-- 已用真实 live run `25504962543` 验证 `github_collect_review_resume` 可以直接收敛为 success
-- 2026-05-07：重新跑通 `github_collect_review_resume` live smoke，workflow run `25504962543` 仍能直接收敛为 success
-- 2026-05-07：全量 Python 单测 221 项通过，`node --check openclaw_v2/webui/app.js` 通过，当前基线可继续作为收口底座
-- `collect_review` 已支持 failed jobs 摘要回流
-- Web UI 的 run summary / issue update / PR note 现在也会回流 review workflow 的 conclusion 和 failed jobs，方便直接把异步检查结果转成可读结论
-- `collect_review` 在 workflow failed / action_required / in_progress 等状态下，现在也会统一带出 `github_failure_kind`、`github_retryable` 和 `github_recovery_hint`
-- Web UI 的 GitHub bridge、run summary、issue update 和 PR note 现在也会显示 review recovery 提示，便于协作方直接采取下一步动作
-- 非 workflow 的 GitHub 失败现在也会汇总成 `github.latestFailure`，供 Web UI 和导出文案统一消费
-- Web UI 的 Bridge state 现在会优先显示最新 GitHub 失败，而不是把 `draft_pr` / `dispatch_review` 之类的真实失败误表述成“pending”
-- 新增 `github_bridge_smoke` pipeline，可绕过本地 `triage/implement/review` 单独验证 GitHub review workflow
-- Web UI 的 Launch Pad 现在暴露 `workflow run ref` 输入，并会在 `github_collect_review_resume` 选中时把它带入 task payload 和 readiness gate，减少手动改请求体的需要
-- `collect_review` 已支持约 30 秒的短轮询等待，减少 workflow 刚触发时立即返回 `queued` 的手工重跑
-- 2026-05-07 已用真实 `github_bridge_smoke` live run 验证更长 polling 窗口：workflow `25504962543` 在同一次 run 内成功从 dispatch 收敛到 collect success
-- 本地 CLI executor 已有超时护栏，`claude/codex` 长时间无响应时不会再无限挂住 run
-- GitHub 步骤 CLI 会打印 `github:` 摘要
-- GitHub bridge 的失败会分类为 auth / repository / workflow / reference / network / unknown
-- GitHub 失败结果会保留 `stderr`、retryability 和恢复提示
-- GitHub bridge 的 `repository_unavailable` / `workflow_missing` 失败分支已补上回归测试，和现有 auth / permission / reference / network 路径一起覆盖主要失败形态
-- GitHub bridge 面板里的 repo / workflow 外链也已统一走 `safeExternalUrl`，避免把非 http(s) URL 直接挂到 `href`
-- GitHub bridge cards 现在即使拿不到 issue / PR / workflow 引用，也会为失败步骤保留 operator 卡片，并带出 summary / failure kind / recovery hint
-- GitHub bridge 已支持显式配置的网络类自动重试
-- GitHub repo 已支持显式开启的 `origin` fallback
-- `gh issue create` 如果因为仓库里缺少 labels 失败，会自动去掉 labels 重试一次，并把被忽略的 labels 回写到结果
-- GitHub bridge state 现在会同步写入 run summary、issue update 和 PR note，方便协作方直接看到最新桥接状态
-- `implement` 为 no-op 且 `sync_issue` 已成功时，`update_issue` 现在允许继续执行 issue 收尾；PR / workflow 尾链仍保持跳过
-- 主线已新增显式 `commit_changes` 步骤，用于在 `review` 后、`publish_branch` 前提交实现工作区里的改动
-- `commit_changes` 会复用实现步骤的 workspace 和分支，而不是回落到仓库根目录
-- `commit_changes` 现在会保留提交前的变更文件列表，并明确记录 `changes_committed` / `head_commit`
-- 只有当改动被提交为干净 commit 后，`publish_branch` 才会继续；否则继续明确 `blocked`
+## 已归档的阶段性工作
 
-### Supervision Layer
+下列历史过程已经转存到 `PROJECT_LOG.md`，不再继续堆在当前状态文件里：
 
-- preflight
-- review step
-- run summary
-- blocked 原因透传
-- `first_blocked` 根因摘要
-- 本地 Web UI 已具备 readiness gate、run compare、artifact browser、health snapshot（含最近 preflight 摘要与来源）、GitHub bridge 总览状态卡和 housekeeping 入口
-- Web UI 的健康面板在渠道数据为空时会保守显示 warning，不再误报 passed
-- Web UI 的 repo/config 作用域已默认收紧到启动时绑定的仓库，避免页面层面对任意路径做历史清理和健康检查
-- housekeeping 清理已改为校验 manifest 的 repo/worktree/branch 范围，防止 run 产物被篡改后越界删除其他仓库对象
-- housekeeping 危险操作已要求当前 dashboard 会话携带服务端确认 token，降低绕过前端弹窗直接调用接口的风险
-- Web UI 对 repo 内替代配置的支持已进一步收紧：允许调整 pipeline/assignment，但不允许改写 dashboard 绑定的 artifacts/worktrees roots
-- Web UI 的安全头现在覆盖 4xx / 5xx 响应，未捕获异常会回落到干净的内部错误响应
-- Web UI 的 artifact file 预览现在会拒绝逃逸 run 目录的路径，避免通过 `../` 之类的相对路径越界读取
-- Web UI 的 history compare 接口现在会拒绝非 list / 非字符串项 / 非恰好两个 / 非不同 run 的 `runIds` 请求，避免比较入口静默接受歧义输入
-- Web API 的 JSON 入口现在会把坏 JSON 统一转换成 `400 Invalid JSON body.`，不再让解析错误冒泡成 `500`
-- Web UI 的 run history / recent runs 读取现在会把损坏、非对象、或嵌套 `plan/results` 形状异常的 run 元数据做保守降级处理；损坏的 `preflight.json` 会按缺失处理，避免浏览历史时炸出 `500`
-- Web UI 的 health snapshot 现在会对 `openclaw health --json` 的 `channelOrder` / `channels` / `agents` / `defaultAgentId` 做保守解析，避免健康页被坏 payload 拖成 `500`
-- Web UI 的 recent runs / cleanup manifest 读取现在也会跳过坏字节输入，避免 `summary.json` / workspace manifest 的编码错误拖垮页面
-- Web UI 的 recent runs / history 读取现在能容忍 `summary.json` 在扫描或读取间消失，避免竞争条件把页面拖成 `500`
-- Web UI 的 history / cleanup / prune 现在会复用请求内已解析的 config，不再在后台线程里二次打开配置文件；这样 config 在请求中途消失时，不会把已经开始的历史读取或清理拖成 `500`
-- Web UI 的 history 文件列表和单文件读取现在也会容忍文件在 size/stat 阶段消失，避免 artifact browser 的竞态把页面拖成 `500`
-- Web UI 的 recent runs / housekeeping prune 现在也会跳过在排序阶段消失的 run 目录，避免目录级竞态把页面拖成 `500`
-- Web UI 的 history 详情页现在也会把 run 目录在更新时间戳阶段消失收敛成 404，避免目录级竞态冒成 `500`
-- Web UI 的 recent runs 现在也会把 `preflight.json` 在读取时消失收敛成缺失预检，避免首页因为预检竞态冒成 `500`
-- Web UI 的 cleanup manifest 读取现在也会跳过在读取时消失的 workspace manifest，避免 housekeeping 因竞态冒成 `500`
-- Web UI 的 cleanup artifact 删除现在也会把 run 目录在删除时消失收敛成已缺失，不再把 housekeeping 因竞态拖成 `500`
-- Web UI 的 artifact file 预览在 stat 消失时会保留原始大小，不再把截断文件误报成 limit 大小
-- Web UI 的 cleanup artifact 删除在真实 OSError 下会返回 failure 记录，不再伪装成 skipped
-- Web UI 的 history 文件枚举现在会把 artifact tree glob 失败收敛成空列表，不再把目录级竞态顶成 `404`
-- Web UI 的 cleanup manifest 枚举现在会把 workspace glob 失败收敛成空列表，不再把 manifest 竞态顶成 `404`
-- Worktree cleanup 现在会把 `git worktree remove` 在 workspace 已经消失时的错误当成可恢复竞态，并把后续 `git branch -D` 在分支已不存在时的错误也视作可恢复，不再因为 cleanup 对象被别的流程先清掉就中断整段 cleanup
-- Hermes preflight 的 `.env` 读取现在也会把文件在 exists/open 之间消失收敛成空值，不再把 Hermes 前置检查拖成异常
-- Hermes preflight 的 `config.yaml` 读取现在也会把文件在 exists/open 之间消失收敛成空配置，不再把 Hermes 前置检查拖成异常；这条也覆盖 PyYAML 和 Ruby fallback 解析路径
-- Hermes runtime probe 现在也会把 probe 文件在选中后、读出前消失收敛成 warning，不再把 Hermes 前置检查拖成异常
-- 配置加载器的 Ruby fallback 现在会把“文件在读取时消失”统一成 `FileNotFoundError`，避免调用方把同一个竞态误报成 YAML 解析失败；判定依据是文件当前是否仍然存在，而不是 Ruby stderr 文本
-- Web UI 的历史与概览里，`success` / `dry_run` 这类状态位现在只认真正的 JSON 布尔值，字符串值不再被误报为 `true`
-- Web UI 的 history compare 现在会对 malformed `statusCounts` / `workflow` / `sessionCount` 做保守降级，避免比较摘要被坏字段拖垮
-- Web UI 的 history compare 现在也会保守忽略非列表的 `plan/results`，避免摘要里的结构异常拖出 `500`
-- Web UI 的 history compare 现在也会显示 `latestFailureChanged` 和左右 run 的 `latestFailures`，方便直接判断 GitHub 失败根因是否已经变化
-- Web UI 的 run insights 现在新增 `usage` 聚合层，会从 `summary.json` 里汇总 `openclaw_usage` / `openclaw_last_call_usage`，为后续成本展示打底
-- Web UI 的 recent runs 和 run summary 现在也会显示 OpenClaw usage 汇总，便于先按 token 量做粗粒度观察
-- Web UI 的 history compare 现在也会显示 OpenClaw usage delta，便于直接比较两次 run 的 token 消耗变化
-- Web UI 的 recent runs 现在也会显示相邻 run 的 OpenClaw usage trend，便于快速看出最近 token 消耗是上升、下降还是持平
-- Web UI 的 run summary / issue update / PR note copy 文本现在也会回流 OpenClaw usage 汇总，桥接输出和可视面板的语义已经对齐
-- Web UI 现在新增 Token Stats 面板，会直接读取当前加载 run 或最近一次 recent run 的 `openclaw_usage` / `openclaw_last_call_usage`，用 token 汇总和 breakdown 辅助看运行态，不再只靠输出区里的单行 usage 文案
-- Web UI 的 recent runs 列表现在也会显示每次 run 的最新 GitHub failure、失败摘要和 recovery 提示，方便直接从首页判断最近几次协作失败点
-- Web UI 的 loaded run detail 和 artifact context 现在也会显示最新 GitHub failure 与 recovery，单次 run 浏览入口和 bridge/operator 视图的失败语义已基本对齐
-- Web UI 的 runtime snapshot / Hermes overview / GitHub overview 现在会把字符串型布尔和坏列表保守降级，避免配置快照误报
-- Web API 的任务创建现在会拒绝非布尔的 `live`，避免字符串值误入 live 模式
-- Web API 的任务创建现在会严格校验 `steps` 形状，避免非字符串列表项进入后台执行
-- Web API 的任务创建现在会在入队前拒绝空请求文本和未知 step id，避免先返回 `202` 再异步失败
-- Web UI 的 bootstrap 接口现在会把未知 pipeline override 直接拒绝为 `400`，不再让首页请求落成 `500`
-- Web API 的 housekeeping cleanup / prune 现在会拒绝非布尔的 `removeWorktrees` / `removeArtifacts`，避免字符串值被误判为 `true`
-- Web UI 的 history prune 接口现在会拒绝非整数 `keepLatest`，避免无效保留策略输入漏成 `500`
-- Web API 的 history prune 现在也会拒绝布尔型 `keepLatest`，避免 `true` 被误当成 `1`
-- Web API 的 history prune 现在还会拒绝负数 `keepLatest`，避免错误输入被静默钳成 `0` 后误删全部历史
-- Web API 的 JSON 入口现在还会拒绝非对象 JSON body，避免数组 / 标量 payload 触发 handler 内部异常
+- 2026-03-14 ~ 2026-03-16：方向收敛和 v2 可行性判断
+- 2026-03-27 ~ 2026-04-02：默认 pipeline 脊柱、worktree、commit/publish 约束
+- 2026-04-16 ~ 2026-04-30：OpenClaw / Hermes / Web UI control room 扩展
+- 2026-04-29 ~ 2026-05-03：Web / API / race / scope / safety hardening
+- 2026-05-06 ~ 2026-05-07：GitHub recovery / resume / reviewer-facing 输出
+- 2026-05-08 ~ 2026-05-12：usage 面板、Token Stats、Claude blocker 与 OpenClaw fallback 记录
 
-## 部分完成
+## 下一阶段验收线
 
-- 任务拆分仍然以配置驱动 pipeline 为主，已经支持 pipeline 继承 / 覆盖 / remove_steps 组合，planner 也已开始按依赖关系排序，但还不是智能动态 planner
-- OpenClaw 接入骨架已落地，但目前只安全接到 `triage` 变体 pipeline
-- OpenClaw 已验证“仓库外 workspace + repo 绝对路径 handoff”可运行，当前已有 `mission_control_openclaw_triage` 和 `mission_control_openclaw_default` 两条变体 pipeline；后者已在本机用 `openclaw_builder` 跑通 triage / implement / review live smoke
-- Hermes 已作为本机 `supervisor + recorder` 接入，新增 `mission_control_hermes_supervised` 变体 pipeline，但不承担 `implement`
-- 当前分支上的 Web UI control room 已把 CLI / GitHub / Hermes / OpenClaw 的运行态集中到一个本地面板里
-- `Gemini` 和 `Cursor` 已进入受控 agent 注册表，但还没进入默认 assignment
-- 当前 fallback 仍是静态配置回退，不是实时在线调度
-- live 模式下已默认禁止 fallback managed agent 静默执行
-- GitHub 当前仍是 `gh` bridge，不是 native agent / MCP 编排
-- GitHub 缺少 issue / PR / branch 引用时会被标记为 `blocked`
-- `workflow_dispatch` 已会在 preflight 检查本地 workflow 文件是否存在
-- GitHub 自动重试默认仍是关闭状态
-- GitHub repo 的 `origin` fallback 当前默认已开启
-- `doctor-config` 已覆盖 GitHub runtime retry、GitHub profile action / workflow 配置，以及 pipeline 依赖引用 / 循环校验
-- 真实正向 live 闭环仍取决于外部 agent 环境是否可用，例如 Claude/Codex/OpenClaw/GitHub 权限与配额
+项目要进入“接近完成”的收口状态，至少还需要满足三条：
 
-## 未完成
-
-- OpenClaw 成为默认统一总控入口
-- 成本统计
-- 跨层自动 fallback
-- 更细的 review / merge 审核阶段
-
-## 建议优先级
-
-1. 继续稳定默认 `mission_control_default` pipeline
-2. 决定 OpenClaw 什么时候从变体执行器升级成默认控制入口
-3. 决定哪些 step 默认由 Claude / Codex 继续承担，哪些开始尝试切到 Gemini / Cursor / OpenClaw
-4. 继续补 GitHub bridge 的结果诊断、review 透传和失败恢复
-5. 再考虑真正的动态 planner、fallback 和成本控制
+1. 默认 pipeline 能稳定复跑，或明确宣布 OpenClaw fallback 成为当前机器上的默认可运行入口。
+2. GitHub 尾链在真实 workflow / issue / PR / review 场景下继续验证，且失败结果对人可读、可恢复。
+3. Web UI 继续作为真实运营控制台，而不是只停留在演示面。

@@ -15,6 +15,11 @@ OpenClaw 是一个多 AI agent 的 Mission Control。
 
 当前实现和目标方向需要分开看：
 
+项目跟踪入口：
+
+- `PROJECT_STATUS.md`：当前完成度、稳定基线、阻塞项
+- `PROJECT_MEMORY.md`：当前主线、目标文件、下一步
+- `PROJECT_LOG.md`：完整项目日志与历史归档
 - 目标方向：让 OpenClaw 最终成为多 agent 的统一控制面
 - 当前落地：真正的控制层仍然是 `main_v2.py` + `openclaw_v2/`
 - 当前 OpenClaw 现状：已经接入执行层和受控 agent 体系，但还不是默认统一总控入口
@@ -63,6 +68,8 @@ config.yaml               v1 配置
 config_v2.yaml            v2 配置
 FRAMEWORK_V2.md           v2 架构说明
 PROJECT_STATUS.md         当前阶段状态
+PROJECT_MEMORY.md         当前焦点与下一步工作记忆
+PROJECT_LOG.md            完整项目日志归档
 SETUP_GUIDE.md            环境搭建与运行指南
 Solutions.md              方案分析与长期路线
 openclaw_v2/
