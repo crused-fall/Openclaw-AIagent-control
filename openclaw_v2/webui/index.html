@@ -55,6 +55,16 @@
 
         <section class="panel compact-panel">
           <div class="panel-head">
+            <h2>Token Stats</h2>
+            <span class="subtle">OpenClaw usage from the loaded run or the latest recent run.</span>
+          </div>
+          <div id="token-stats-panel" class="stack">
+            <div class="empty-state">Token usage statistics will appear here after bootstrap loads.</div>
+          </div>
+        </section>
+
+        <section class="panel compact-panel">
+          <div class="panel-head">
             <h2>Housekeeping</h2>
           </div>
           <label class="field">
@@ -140,6 +150,20 @@
             <label class="field">
               <span>Pipeline</span>
               <select id="pipeline" name="pipeline"></select>
+            </label>
+
+            <label class="field field-full">
+              <span>Workflow run ref</span>
+              <input
+                id="workflow-run-ref"
+                name="workflowRunRef"
+                type="text"
+                autocomplete="off"
+                placeholder="Run id or run URL"
+              />
+              <small class="subtle">
+                Resume an existing GitHub Actions workflow run when the selected pipeline needs one.
+              </small>
             </label>
 
             <label class="field toggle-field">

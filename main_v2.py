@@ -23,6 +23,11 @@ def _parse_args() -> argparse.Namespace:
         help="Comma-separated step ids to run. Dependencies are included automatically.",
     )
     parser.add_argument(
+        "--workflow-run-ref",
+        default="",
+        help="Existing GitHub workflow run reference for collect_review resume flows.",
+    )
+    parser.add_argument(
         "--live",
         action="store_true",
         help="Run in live mode. Overrides config.runtime.dry_run=false.",
@@ -418,6 +423,7 @@ async def main() -> None:
         config.runtime.dry_run = False
 
     orchestrator = HybridOrchestrator(config)
+    orchestrator.workflow_run_ref = args.workflow_run_ref.strip()
     selected_steps = [step.strip() for step in args.steps.split(",") if step.strip()] if args.steps else None
     repo_path = os.path.abspath(args.repo_path)
     is_inspection_mode = any(

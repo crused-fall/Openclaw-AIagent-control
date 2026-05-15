@@ -12,6 +12,15 @@ class WebUiStaticTests(unittest.TestCase):
         self.assertIn('return `<span class=\"status-chip ${tone}\">${escapeHtml(normalized)}</span>`;', source)
         self.assertNotIn('class=\"status-chip ${normalized}\"', source)
 
+    def test_launch_pad_exposes_workflow_run_ref_input(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "index.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="workflow-run-ref"', source)
+        self.assertIn('name="workflowRunRef"', source)
+        self.assertIn("Resume an existing GitHub Actions workflow run", source)
+
     def test_channel_health_status_uses_helper(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
             encoding="utf-8"
@@ -25,6 +34,19 @@ class WebUiStaticTests(unittest.TestCase):
             source,
         )
 
+    def test_task_payload_includes_workflow_run_ref_and_ready_state_checks_it(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function currentWorkflowRunRef()", source)
+        self.assertIn("function pipelineRequiresWorkflowRunRef()", source)
+        self.assertIn("function workflowRunRefReady()", source)
+        self.assertIn("workflowRunRef: currentWorkflowRunRef(),", source)
+        self.assertIn("const workflowRunRefIsReady = workflowRunRefReady();", source)
+        self.assertIn("elements.workflowRunRef.addEventListener(\"input\"", source)
+        self.assertIn("workflowRunRefReady()", source)
+
     def test_preflight_snapshot_status_is_shared_between_panels(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
             encoding="utf-8"
@@ -32,11 +54,14 @@ class WebUiStaticTests(unittest.TestCase):
 
         self.assertIn("function latestPreflightSource()", source)
         self.assertIn("function preflightSnapshotStatus(checks)", source)
+        self.assertIn("function formatPreflightRecoveryHint(checks)", source)
         self.assertIn("const preflight = preflightSnapshotStatus(preflightChecks);", source)
+        self.assertIn("const preflightRecovery = formatPreflightRecoveryHint(preflightChecks);", source)
         self.assertIn("const preflight = preflightSnapshotStatus(latestPreflightChecks());", source)
         self.assertIn("const preflightSource = latestPreflightSource();", source)
         self.assertIn("<div><dt>Source</dt><dd>${escapeHtml(preflightSource)}</dd></div>", source)
         self.assertIn('${makeStatusChip(preflight.status)}', source)
+        self.assertIn('<div><dt>Recovery</dt><dd>${escapeHtml(preflightRecovery)}</dd></div>', source)
         self.assertNotIn(
             'No preflight snapshot loaded yet.',
             source.split("function preflightSnapshotStatus(checks)")[0],
@@ -102,12 +127,83 @@ class WebUiStaticTests(unittest.TestCase):
         self.assertIn("formatGitHubFailureLine(run.insights?.github?.latestFailure || null)", source)
         self.assertIn("Recovery: ${failureRecovery}", source)
 
+    def test_openclaw_usage_is_rendered_from_run_insights(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function formatOpenClawUsageSummary(usage)", source)
+        self.assertIn("function formatOpenClawUsageDelta(usageDelta)", source)
+        self.assertIn("function formatOpenClawUsageTrend(runs)", source)
+        self.assertIn("function currentOpenClawUsage()", source)
+        self.assertIn("const usageLine = formatOpenClawUsageSummary(run.insights?.usage || null);", source)
+        self.assertIn("const usageLine = formatOpenClawUsageSummary(insights?.usage || null);", source)
+        self.assertIn("const usageDeltaLine = formatOpenClawUsageDelta(comparison.usageDelta || null);", source)
+        self.assertIn("const usageTrend = formatOpenClawUsageTrend(runs);", source)
+        self.assertIn("const usageLine = formatOpenClawUsageSummary(currentOpenClawUsage());", source)
+        self.assertIn("lines.push(usageLine);", source)
+        self.assertIn("lines.push(`- ${usageLine}`);", source)
+        self.assertIn("OpenClaw usage trend", source)
+        self.assertIn("OpenClaw usage", source)
+        self.assertIn("OpenClaw usage delta", source)
+        self.assertIn("generateRunSummaryText()", source)
+        self.assertIn("generateIssueUpdateText()", source)
+        self.assertIn("generatePrNoteText()", source)
+        self.assertIn(
+            "chunks.push(renderRunResults(payload.runResult, payload.history?.insights || payload.insights || null));",
+            source,
+        )
+        self.assertIn(
+            "chunks.push(renderRunResults(payload.summary, payload.insights || null));",
+            source,
+        )
+        self.assertIn("comparison.usageDelta", source)
+
+    def test_token_stats_panel_is_rendered_from_usage_helpers(self) -> None:
+        app_source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        html_source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "index.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="token-stats-panel"', html_source)
+        self.assertIn("function formatUsageBreakdown(usage)", app_source)
+        self.assertIn("function tokenStatsSnapshot(bootstrap)", app_source)
+        self.assertIn("function renderTokenStatsPanel(bootstrap)", app_source)
+        self.assertIn("elements.tokenStatsPanel", app_source)
+        self.assertIn("renderTokenStatsPanel(bootstrap);", app_source)
+        self.assertIn("renderTokenStatsPanel(state.bootstrap || {});", app_source)
+        self.assertIn("formatOpenClawUsageSummary(usage)", app_source)
+        self.assertIn("formatOpenClawUsageTrend(snapshot.recentRuns)", app_source)
+        self.assertIn("Aggregate breakdown", app_source)
+        self.assertIn("Last-call breakdown", app_source)
+        self.assertNotIn("estimatedCost", app_source)
+        self.assertNotIn("usd", app_source.lower())
+
+    def test_preflight_recovery_hint_is_shared_across_copy_surfaces(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function currentPreflightRecoveryHint()", source)
+        self.assertIn("function formatPreflightRecoveryLine(preflightRecovery)", source)
+        self.assertIn("const preflightRecovery = currentPreflightRecoveryHint();", source)
+        self.assertIn('<div><dt>Preflight recovery</dt><dd>${escapeHtml(preflightRecovery)}</dd></div>', source)
+        self.assertIn("const preflightRecoveryLine = formatPreflightRecoveryLine(currentPreflightRecoveryHint());", source)
+        self.assertEqual(source.count("lines.push(preflightRecoveryLine);"), 2)
+        self.assertEqual(source.count("lines.push(`- ${preflightRecoveryLine}`);"), 1)
+        self.assertEqual(
+            source.count("const preflightRecoveryLine = formatPreflightRecoveryLine(currentPreflightRecoveryHint());"),
+            3,
+        )
+
     def test_run_detail_surfaces_latest_github_failure(self) -> None:
         source = (Path(__file__).resolve().parents[1] / "openclaw_v2" / "webui" / "app.js").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn("function renderRunResults(runResult)", source)
+        self.assertIn("function renderRunResults(runResult, insights = null)", source)
         self.assertIn("const workflow = currentGitHubWorkflow();", source)
         self.assertIn("const failure = currentGitHubFailure();", source)
         self.assertIn("const failureLine = formatGitHubFailureLine(failure);", source)

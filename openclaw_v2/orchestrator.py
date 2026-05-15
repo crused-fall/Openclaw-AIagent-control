@@ -24,6 +24,7 @@ class HybridOrchestrator:
         self.artifact_store = ArtifactStore()
         self.worktree_manager = WorktreeManager()
         self.preflight_runner = PreflightRunner(config)
+        self.workflow_run_ref = ""
         self.executors = {
             ExecutionMode.CLI: CLIExecutor(config),
             ExecutionMode.GITHUB: GitHubWorkflowExecutor(config),
@@ -37,7 +38,23 @@ class HybridOrchestrator:
         return f"run-{timestamp}-{uuid.uuid4().hex[:6]}"
 
     def build_plan(self, selected_steps: list[str] | None = None) -> list[WorkItem]:
-        return self.planner.build_plan(selected_steps=selected_steps)
+        plan = self.planner.build_plan(selected_steps=selected_steps)
+        self._apply_workflow_run_ref(plan)
+        return plan
+
+    def _apply_workflow_run_ref(self, plan: list[WorkItem]) -> None:
+        workflow_run_ref = str(self.workflow_run_ref).strip()
+        for work_item in plan:
+            profile = self.config.profiles.get(work_item.profile)
+            if workflow_run_ref and profile and profile.action == "workflow_view":
+                work_item.metadata["primary_workflow_run_ref"] = workflow_run_ref
+            if bool(work_item.metadata.get("requires_external_workflow_run_ref", False)) and not str(
+                work_item.metadata.get("primary_workflow_run_ref", "")
+            ).strip():
+                work_item.planning_blocked_reason = (
+                    f"Step {work_item.title} requires an existing GitHub workflow run reference, "
+                    "but none was provided."
+                )
 
     async def preflight(
         self,
@@ -271,6 +288,17 @@ class HybridOrchestrator:
             )
         return ""
 
+    @staticmethod
+    def _required_external_workflow_run_reason(work_item: WorkItem) -> str:
+        if not bool(work_item.metadata.get("requires_external_workflow_run_ref", False)):
+            return ""
+        if str(work_item.metadata.get("primary_workflow_run_ref", "")).strip():
+            return ""
+        return (
+            f"Step {work_item.title} requires an existing GitHub workflow run reference, "
+            "but none was provided."
+        )
+
     @classmethod
     def _pre_execution_block_reason(
         cls,
@@ -280,7 +308,10 @@ class HybridOrchestrator:
         branch_reason = cls._required_dependency_branch_reason(work_item, completed)
         if branch_reason:
             return branch_reason
-        return cls._required_dependency_commit_reason(work_item, completed)
+        commit_reason = cls._required_dependency_commit_reason(work_item, completed)
+        if commit_reason:
+            return commit_reason
+        return cls._required_external_workflow_run_reason(work_item)
 
     @classmethod
     def _dependency_is_satisfied(
@@ -309,6 +340,10 @@ class HybridOrchestrator:
     ) -> str:
         dependency_summaries = self._dependency_summary(work_item, completed)
         dependency_values = self._collect_dependency_values(work_item, completed)
+        primary_workflow_run_ref = str(
+            work_item.metadata.get("primary_workflow_run_ref", "")
+            or dependency_values.get("primary_workflow_run_ref", "")
+        ).strip()
         values = {
             "run_id": context.run_id,
             "user_request": context.user_request,
@@ -319,7 +354,14 @@ class HybridOrchestrator:
             "dependency_summaries": dependency_summaries,
             **dependency_values,
         }
+        values["primary_workflow_run_ref"] = primary_workflow_run_ref
         return work_item.prompt_template.format(**values).strip()
+
+    @staticmethod
+    def _merge_dependency_values(work_item: WorkItem, dependency_values: dict[str, str]) -> None:
+        for key, value in dependency_values.items():
+            if value or key not in work_item.metadata:
+                work_item.metadata[key] = value
 
     @staticmethod
     def _trace_artifacts(work_item: WorkItem) -> dict[str, object]:
@@ -382,7 +424,7 @@ class HybridOrchestrator:
                 )
                 continue
             try:
-                work_item.metadata.update(self._collect_dependency_values(work_item, completed))
+                self._merge_dependency_values(work_item, self._collect_dependency_values(work_item, completed))
                 await self.worktree_manager.prepare(work_item, context)
                 self.artifact_store.write_workspace_manifest(context, work_item)
                 profile = self.config.profiles[work_item.profile]

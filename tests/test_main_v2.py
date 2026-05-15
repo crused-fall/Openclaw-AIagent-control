@@ -466,6 +466,47 @@ class MainV2WebModeTests(unittest.IsolatedAsyncioTestCase):
             port=9900,
         )
 
+    async def test_main_passes_workflow_run_ref_to_orchestrator(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeOrchestrator:
+            def __init__(self, config) -> None:
+                self.config = config
+                self.workflow_run_ref = ""
+
+            async def run(self, user_input, repo_path, selected_steps=None, progress_callback=None):
+                captured["workflow_run_ref"] = self.workflow_run_ref
+                captured["selected_steps"] = selected_steps
+                return RunResult(
+                    run_id="run-resume",
+                    plan=[],
+                    results=[],
+                    success=True,
+                    artifacts_dir="/tmp/run-resume",
+                )
+
+        with (
+            mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "main_v2.py",
+                    "--request",
+                    "Resume review collection",
+                    "--steps",
+                    "collect_review",
+                    "--workflow-run-ref",
+                    "25504962543",
+                ],
+            ),
+            mock.patch("main_v2.HybridOrchestrator", FakeOrchestrator),
+            mock.patch("builtins.input", side_effect=AssertionError("request mode should not prompt")),
+        ):
+            await main()
+
+        self.assertEqual(captured["workflow_run_ref"], "25504962543")
+        self.assertEqual(captured["selected_steps"], ["collect_review"])
+
     async def test_main_rejects_web_with_request(self) -> None:
         class FakeOrchestrator:
             def __init__(self, config) -> None:
